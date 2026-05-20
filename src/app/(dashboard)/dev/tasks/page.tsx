@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Tag {
   id: string;
@@ -504,17 +505,12 @@ function InlineEditPanel({
           <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
             Priority
           </label>
-          <select
+          <Dropdown
             value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30"
-          >
-            {PRIORITY_LEVELS.map((p) => (
-              <option key={p} value={p}>
-                {PRIORITY_LABELS[p]}
-              </option>
-            ))}
-          </select>
+            options={PRIORITY_LEVELS.map((p) => ({ value: p, label: PRIORITY_LABELS[p] }))}
+            onChange={setPriority}
+            size="sm"
+          />
         </div>
         <div>
           <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
@@ -622,17 +618,12 @@ function TaskRow({
             </div>
           )}
         </div>
-        <select
+        <Dropdown
           value={task.status}
-          onChange={(e) => onStatusChange(task.id, e.target.value)}
-          className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30 shrink-0"
-        >
-          {STATUS_ORDER.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
+          options={STATUS_ORDER.map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
+          onChange={(val) => onStatusChange(task.id, val)}
+          size="sm"
+        />
       </div>
 
       {/* Inline edit panel */}

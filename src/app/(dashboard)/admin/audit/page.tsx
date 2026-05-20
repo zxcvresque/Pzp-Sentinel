@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface AuditEntry {
   id: string;
@@ -163,35 +164,31 @@ export default function AuditPage() {
           <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
             Action
           </label>
-          <select
+          <Dropdown
             value={filterAction}
-            onChange={(e) => setFilterAction(e.target.value)}
-            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
-          >
-            <option value="">All actions</option>
-            {actions.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "All actions" },
+              ...actions.map((a) => ({ value: a, label: a })),
+            ]}
+            onChange={setFilterAction}
+            placeholder="All actions"
+            size="sm"
+          />
         </div>
         <div>
           <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
             Entity
           </label>
-          <select
+          <Dropdown
             value={filterEntity}
-            onChange={(e) => setFilterEntity(e.target.value)}
-            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
-          >
-            <option value="">All entities</option>
-            {entityTypes.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "All entities" },
+              ...entityTypes.map((e) => ({ value: e, label: e })),
+            ]}
+            onChange={setFilterEntity}
+            placeholder="All entities"
+            size="sm"
+          />
         </div>
         {(filterAction || filterEntity) && (
           <div className="flex items-end">

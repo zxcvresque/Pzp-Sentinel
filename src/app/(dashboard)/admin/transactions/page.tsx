@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Transaction {
   id: string;
@@ -316,44 +317,56 @@ export default function TransactionsPage() {
             </div>
             <div>
               <label className={labelClass}>Currency</label>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={selectClass}>
-                <option value="INR">INR (&#8377;)</option>
-                <option value="USD">USD ($)</option>
-              </select>
+              <Dropdown
+                value={currency}
+                options={[
+                  { value: "INR", label: "INR (₹)" },
+                  { value: "USD", label: "USD ($)" },
+                ]}
+                onChange={setCurrency}
+              />
             </div>
             <div>
               <label className={labelClass}>Direction</label>
-              <select
+              <Dropdown
                 value={direction}
-                onChange={(e) => {
-                  setDirection(e.target.value);
-                  if (e.target.value !== "IN") setFromUserId("");
+                options={[
+                  { value: "OUT", label: "Expense (OUT)" },
+                  { value: "IN", label: "Income (IN)" },
+                ]}
+                onChange={(val) => {
+                  setDirection(val);
+                  if (val !== "IN") setFromUserId("");
                 }}
-                className={selectClass}
-              >
-                <option value="OUT">Expense (OUT)</option>
-                <option value="IN">Income (IN)</option>
-              </select>
+              />
             </div>
             <div>
               <label className={labelClass}>Type</label>
-              <select value={type} onChange={(e) => setType(e.target.value)} className={selectClass}>
-                <option value="EXPENSE">Expense</option>
-                <option value="SUBSCRIPTION">Subscription</option>
-                <option value="DONATION">Donation</option>
-                <option value="OTHER">Other</option>
-              </select>
+              <Dropdown
+                value={type}
+                options={[
+                  { value: "EXPENSE", label: "Expense" },
+                  { value: "SUBSCRIPTION", label: "Subscription" },
+                  { value: "DONATION", label: "Donation" },
+                  { value: "OTHER", label: "Other" },
+                ]}
+                onChange={setType}
+              />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className={labelClass}>Method</label>
-              <select value={method} onChange={(e) => setMethod(e.target.value)} className={selectClass}>
-                <option value="UPI">UPI</option>
-                <option value="BMC">Buy Me a Coffee</option>
-                <option value="BANK">Bank Transfer</option>
-                <option value="OTHER">Other</option>
-              </select>
+              <Dropdown
+                value={method}
+                options={[
+                  { value: "UPI", label: "UPI" },
+                  { value: "BMC", label: "Buy Me a Coffee" },
+                  { value: "BANK", label: "Bank Transfer" },
+                  { value: "OTHER", label: "Other" },
+                ]}
+                onChange={setMethod}
+              />
             </div>
             <div>
               <label className={labelClass}>Description</label>
@@ -379,21 +392,18 @@ export default function TransactionsPage() {
             ) : direction === "IN" ? (
               <div>
                 <label className={labelClass}>From User</label>
-                <select
+                <Dropdown
                   value={fromUserId}
-                  onChange={(e) => setFromUserId(e.target.value)}
-                  className={selectClass}
-                  disabled={usersLoading}
-                >
-                  <option value="">
-                    {usersLoading ? "Loading users..." : "-- Select user (optional) --"}
-                  </option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}{u.telegramUser ? ` (@${u.telegramUser})` : ""}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: usersLoading ? "Loading users..." : "-- Select user (optional) --" },
+                    ...users.map((u) => ({
+                      value: u.id,
+                      label: `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`,
+                    })),
+                  ]}
+                  onChange={setFromUserId}
+                  placeholder={usersLoading ? "Loading users..." : "-- Select user (optional) --"}
+                />
               </div>
             ) : null}
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Member {
   id: string;
@@ -425,17 +426,11 @@ export default function DevDashboard() {
           Project <span className="font-display text-lime">Board</span>
         </h1>
         <div className="flex items-center gap-3">
-          <select
+          <Dropdown
             value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            options={projects.map((p) => ({ value: p.id, label: p.name }))}
+            onChange={setSelectedProjectId}
+          />
           <button
             onClick={() => {
               setShowProjectForm(!showProjectForm);
@@ -549,34 +544,22 @@ export default function DevDashboard() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Priority
               </label>
-              <select
+              <Dropdown
                 value={formPriority}
-                onChange={(e) => setFormPriority(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                {PRIORITY_OPTIONS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+                options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+                onChange={setFormPriority}
+              />
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Assignee
               </label>
-              <select
+              <Dropdown
                 value={formAssignee}
-                onChange={(e) => setFormAssignee(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="">Unassigned</option>
-                {selectedProject?.members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name })) || [])]}
+                onChange={setFormAssignee}
+                placeholder="Unassigned"
+              />
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -593,18 +576,12 @@ export default function DevDashboard() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Parent Task (subtask of)
               </label>
-              <select
+              <Dropdown
                 value={formParentId}
-                onChange={(e) => setFormParentId(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="">None (top-level task)</option>
-                {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
+                options={[{ value: "", label: "None (top-level task)" }, ...tasks.map((t) => ({ value: t.id, label: t.title }))]}
+                onChange={setFormParentId}
+                placeholder="None (top-level task)"
+              />
             </div>
           </div>
           <div className="mb-4">
@@ -804,33 +781,21 @@ export default function DevDashboard() {
                   <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                     Status
                   </label>
-                  <select
+                  <Dropdown
                     value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value)}
-                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {s.replace(/_/g, " ")}
-                      </option>
-                    ))}
-                  </select>
+                    options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
+                    onChange={setEditStatus}
+                  />
                 </div>
                 <div>
                   <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                     Priority
                   </label>
-                  <select
+                  <Dropdown
                     value={editPriority}
-                    onChange={(e) => setEditPriority(e.target.value)}
-                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                  >
-                    {PRIORITY_OPTIONS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
+                    options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+                    onChange={setEditPriority}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -838,18 +803,12 @@ export default function DevDashboard() {
                   <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                     Assignee
                   </label>
-                  <select
+                  <Dropdown
                     value={editAssignee}
-                    onChange={(e) => setEditAssignee(e.target.value)}
-                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                  >
-                    <option value="">Unassigned</option>
-                    {selectedProject?.members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name })) || [])]}
+                    onChange={setEditAssignee}
+                    placeholder="Unassigned"
+                  />
                 </div>
                 <div>
                   <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -867,20 +826,12 @@ export default function DevDashboard() {
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Parent Task
                 </label>
-                <select
+                <Dropdown
                   value={editParentId}
-                  onChange={(e) => setEditParentId(e.target.value)}
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                >
-                  <option value="">None (top-level task)</option>
-                  {tasks
-                    .filter((t) => t.id !== editingTask.id)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title}
-                      </option>
-                    ))}
-                </select>
+                  options={[{ value: "", label: "None (top-level task)" }, ...tasks.filter((t) => t.id !== editingTask.id).map((t) => ({ value: t.id, label: t.title }))]}
+                  onChange={setEditParentId}
+                  placeholder="None (top-level task)"
+                />
               </div>
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -1061,18 +1012,13 @@ function TaskCard({
         </div>
       )}
 
-      <select
+      <Dropdown
         value={task.status}
+        options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
+        onChange={(val) => onStatusChange(task.id, val)}
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => { e.stopPropagation(); onStatusChange(task.id, e.target.value); }}
-        className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30"
-      >
-        {STATUS_OPTIONS.map((s) => (
-          <option key={s} value={s}>
-            {s.replace(/_/g, " ")}
-          </option>
-        ))}
-      </select>
+        size="sm"
+      />
     </div>
   );
 }

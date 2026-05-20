@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Transaction {
   id: string;
@@ -202,30 +203,30 @@ export default function DonorDashboard() {
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Currency
                 </label>
-                <select
+                <Dropdown
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-[var(--border-active)] transition-colors"
-                >
-                  <option value="INR">INR (&#8377;)</option>
-                  <option value="USD">USD ($)</option>
-                </select>
+                  options={[
+                    { value: "INR", label: "INR (₹)" },
+                    { value: "USD", label: "USD ($)" },
+                  ]}
+                  onChange={setCurrency}
+                />
               </div>
               {/* Method */}
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Method
                 </label>
-                <select
+                <Dropdown
                   value={method}
-                  onChange={(e) => setMethod(e.target.value)}
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-[var(--border-active)] transition-colors"
-                >
-                  <option value="UPI">UPI</option>
-                  <option value="BMC">Buy Me a Coffee</option>
-                  <option value="BANK">Bank Transfer</option>
-                  <option value="OTHER">Other</option>
-                </select>
+                  options={[
+                    { value: "UPI", label: "UPI" },
+                    { value: "BMC", label: "Buy Me a Coffee" },
+                    { value: "BANK", label: "Bank Transfer" },
+                    { value: "OTHER", label: "Other" },
+                  ]}
+                  onChange={setMethod}
+                />
               </div>
             </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Reminder {
   id: string;
@@ -201,16 +202,16 @@ export default function RemindersPage() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Frequency
               </label>
-              <select
+              <Dropdown
                 value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="ONCE">Once</option>
-                <option value="DAILY">Daily</option>
-                <option value="WEEKLY">Weekly</option>
-                <option value="MONTHLY">Monthly</option>
-              </select>
+                options={[
+                  { value: "ONCE", label: "Once" },
+                  { value: "DAILY", label: "Daily" },
+                  { value: "WEEKLY", label: "Weekly" },
+                  { value: "MONTHLY", label: "Monthly" },
+                ]}
+                onChange={setFrequency}
+              />
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -228,15 +229,15 @@ export default function RemindersPage() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Channel
               </label>
-              <select
+              <Dropdown
                 value={channel}
-                onChange={(e) => setChannel(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="BOTH">Both</option>
-                <option value="BOT">Bot</option>
-                <option value="WEB">Web</option>
-              </select>
+                options={[
+                  { value: "BOTH", label: "Both" },
+                  { value: "BOT", label: "Bot" },
+                  { value: "WEB", label: "Web" },
+                ]}
+                onChange={setChannel}
+              />
             </div>
           </div>
           <div className="mb-4">

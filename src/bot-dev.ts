@@ -79,10 +79,22 @@ bot.command("start", async (ctx) => {
     return;
   }
 
+  if (user.status === "INACTIVE") {
+    try {
+      await ctx.reply(
+        `Hey ${user.name},\n\n` +
+        `Your account has been deactivated. Contact an admin if you think this is a mistake.`,
+      );
+    } catch (err) {
+      console.error("Failed to reply to deactivated user:", err);
+    }
+    return;
+  }
+
   if (user.roles.length === 0) {
     try {
       await ctx.reply(
-        `Hey ${user.name}! 👋\n\n` +
+        `Hey ${user.name}!\n\n` +
         `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
         `Once approved, you'll be able to open Sentinel from right here.`,
       );

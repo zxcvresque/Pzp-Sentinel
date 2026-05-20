@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Dropdown from "@/components/Dropdown";
 
 interface Subscription {
   id: string;
@@ -202,15 +203,15 @@ export default function SubscriptionsPage() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Frequency
               </label>
-              <select
+              <Dropdown
                 value={form.frequency}
-                onChange={(e) => setForm({ ...form, frequency: e.target.value })}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="MONTHLY">Monthly</option>
-                <option value="YEARLY">Yearly</option>
-                <option value="ONE_TIME">One Time</option>
-              </select>
+                options={[
+                  { value: "MONTHLY", label: "Monthly" },
+                  { value: "YEARLY", label: "Yearly" },
+                  { value: "ONE_TIME", label: "One Time" },
+                ]}
+                onChange={(val) => setForm({ ...form, frequency: val })}
+              />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -242,14 +243,14 @@ export default function SubscriptionsPage() {
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Currency
               </label>
-              <select
+              <Dropdown
                 value={form.currency}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="INR">INR</option>
-                <option value="USD">USD</option>
-              </select>
+                options={[
+                  { value: "INR", label: "INR" },
+                  { value: "USD", label: "USD" },
+                ]}
+                onChange={(val) => setForm({ ...form, currency: val })}
+              />
             </div>
           </div>
           <button
