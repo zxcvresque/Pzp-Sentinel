@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
   try {
     await bot.api.sendMessage(
       user.chatId,
-      `🔐 Your PzP login code: *${otp}*\n\nExpires in 5 minutes. Do not share this code.`,
-      { parse_mode: "Markdown" }
+      `🔐 Your Sentinel login code:\n\n<code>${otp}</code>\n\nExpires in 5 minutes. Do not share this code.`,
+      { parse_mode: "HTML" }
     );
   } catch {
     return NextResponse.json({ error: "Failed to send OTP. Please try again." }, { status: 500 });

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
+import { jwtVerify } from "jose";
 import type { Role } from "@/generated/prisma/enums";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "dev-secret-change-me");
 
 const publicPaths = ["/", "/login", "/api/auth", "/api/bot"];
 
@@ -12,7 +12,7 @@ const roleRoutes: Record<string, Role> = {
   "/dev": "DEV",
 };
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
@@ -29,10 +29,11 @@ export function middleware(req: NextRequest) {
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { roles: Role[] };
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const roles = payload.roles as Role[];
 
     for (const [prefix, role] of Object.entries(roleRoutes)) {
-      if (pathname.startsWith(prefix) && !payload.roles.includes(role)) {
+      if (pathname.startsWith(prefix) && !roles.includes(role)) {
         return NextResponse.redirect(new URL("/login", req.url));
       }
     }

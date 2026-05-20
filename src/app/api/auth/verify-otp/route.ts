@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole } from "@/lib/auth";
-import { cookies } from "next/headers";
 
 export async function POST(req: NextRequest) {
   const { telegramId, otp } = await req.json();
@@ -35,10 +34,18 @@ export async function POST(req: NextRequest) {
     data: { otpCode: null, otpExpiresAt: null },
   });
 
-  const token = signToken({ userId: user.id, roles: user.roles });
+  const token = await signToken({ userId: user.id, roles: user.roles });
 
-  const cookieStore = await cookies();
-  cookieStore.set("token", token, {
+  const defaultRole = highestRole(user.roles);
+  const redirectMap: Record<string, string> = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" };
+
+  const response = NextResponse.json({
+    success: true,
+    user: { id: user.id, name: user.name, roles: user.roles },
+    redirect: redirectMap[defaultRole] || "/donor",
+  });
+
+  response.cookies.set("token", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -46,12 +53,5 @@ export async function POST(req: NextRequest) {
     path: "/",
   });
 
-  const defaultRole = highestRole(user.roles);
-  const redirectMap: Record<string, string> = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" };
-
-  return NextResponse.json({
-    success: true,
-    user: { id: user.id, name: user.name, roles: user.roles },
-    redirect: redirectMap[defaultRole] || "/donor",
-  });
+  return response;
 }

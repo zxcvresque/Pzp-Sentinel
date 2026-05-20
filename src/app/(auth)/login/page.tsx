@@ -55,7 +55,7 @@ export default function LoginPage() {
         setError(data.error);
         return;
       }
-      router.push(data.redirect);
+      window.location.href = data.redirect;
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -75,8 +75,8 @@ export default function LoginPage() {
 
       <div className="w-full max-w-sm px-6 relative z-10">
         <div className="text-center mb-8">
-          <h1 className="font-display text-4xl text-lime mb-2">PzP</h1>
-          <p className="text-text-secondary text-sm">Community Treasury</p>
+          <h1 className="text-3xl sm:text-4xl text-lime mb-2 font-extrabold" style={{ letterSpacing: "0.05em" }}>{"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}</h1>
+          <p className="text-text-secondary text-sm">PzP Finance &amp; Developers Hub</p>
         </div>
 
         <div className="card p-6">
@@ -106,7 +106,7 @@ export default function LoginPage() {
                   rel="noopener noreferrer"
                   className="text-cyan text-sm mt-1 block hover:underline"
                 >
-                  Start the bot first →
+                  Start the bot first
                 </a>
               )}
 
@@ -174,7 +174,7 @@ export default function LoginPage() {
                 }}
                 className="w-full mt-2 text-text-secondary text-sm hover:text-text-primary transition-colors"
               >
-                ← Back
+                Back
               </button>
             </form>
           )}
