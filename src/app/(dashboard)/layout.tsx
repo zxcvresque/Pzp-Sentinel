@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-import type { Role } from "@/generated/prisma";
+import type { Role } from "@/generated/prisma/enums";
 
 interface UserData {
   id: string;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
-import type { Role } from "@/generated/prisma";
+import type { Role } from "@/generated/prisma/enums";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 

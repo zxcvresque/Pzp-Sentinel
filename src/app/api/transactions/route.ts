@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransaction, logProofScreenshot } from "@/lib/telegram-log";
-import { Prisma } from "@/generated/prisma";
+import { Prisma } from "@/generated/prisma/client";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();

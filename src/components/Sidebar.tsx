@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { Role } from "@/generated/prisma";
+import type { Role } from "@/generated/prisma/enums";
 
 interface NavItem {
   label: string;
