@@ -10,13 +10,7 @@ interface TopBarProps {
   roles: string[];
 }
 
-const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
-  ADMIN: { bg: "rgba(99,102,241,0.10)", text: "var(--lime)" },
-  DEV: { bg: "rgba(103,184,244,0.10)", text: "var(--cyan)" },
-  DONOR: { bg: "rgba(240,182,68,0.10)", text: "var(--amber)" },
-};
-
-const ROLE_FALLBACK = { bg: "var(--bg-elevated)", text: "var(--text-tertiary)" };
+import { getRoleColor } from "@/lib/role-colors";
 
 export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -225,7 +219,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
               {roles.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {roles.map((role) => {
-                    const colors = ROLE_COLORS[role.toUpperCase()] ?? ROLE_FALLBACK;
+                    const colors = getRoleColor(role);
                     return (
                       <span
                         key={role}

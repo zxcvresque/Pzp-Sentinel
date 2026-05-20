@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Role } from "@/generated/prisma/enums";
+import { getRoleColor } from "@/lib/role-colors";
 
 /* ------------------------------------------------------------------ */
 /*  SVG Icon components (inline, no library)                          */
@@ -448,6 +449,7 @@ export default function Sidebar({
             <div style={{ display: "flex", gap: 6, padding: "0 4px" }}>
               {roles.map((role) => {
                 const isActive = role === activeRole;
+                const rc = getRoleColor(role);
                 return (
                   <button
                     key={role}
@@ -461,9 +463,9 @@ export default function Sidebar({
                       letterSpacing: "0.08em",
                       padding: "6px 0",
                       borderRadius: 20,
-                      border: isActive ? "1px solid rgba(99,102,241,0.25)" : "1px solid var(--border)",
-                      background: isActive ? "rgba(99,102,241,0.10)" : "transparent",
-                      color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                      border: isActive ? `1px solid ${rc.border}` : "1px solid var(--border)",
+                      background: isActive ? rc.bg : "transparent",
+                      color: isActive ? rc.text : "var(--text-secondary)",
                       cursor: "pointer",
                       fontWeight: isActive ? 600 : 400,
                       transition: "all 150ms ease",
@@ -503,6 +505,7 @@ export default function Sidebar({
           >
             {roles.map((role) => {
               const isActive = role === activeRole;
+              const rc = getRoleColor(role);
               return (
                 <button
                   key={role}
@@ -512,9 +515,9 @@ export default function Sidebar({
                     width: 36,
                     height: 36,
                     borderRadius: "50%",
-                    border: isActive ? "1.5px solid rgba(99,102,241,0.25)" : "1.5px solid var(--border)",
-                    background: isActive ? "rgba(99,102,241,0.10)" : "transparent",
-                    color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                    border: isActive ? `1.5px solid ${rc.border}` : "1.5px solid var(--border)",
+                    background: isActive ? rc.bg : "transparent",
+                    color: isActive ? rc.text : "var(--text-secondary)",
                     cursor: "pointer",
                     fontFamily: "var(--font-mono, monospace)",
                     fontSize: 10,

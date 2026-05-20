@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import ThemeColorPicker from "@/components/ThemeColorPicker";
+import { getRoleColor } from "@/lib/role-colors";
 
 interface UserProfile {
   id: string;
@@ -14,12 +15,6 @@ interface UserProfile {
   roles: string[];
   createdAt: string | null;
 }
-
-const ROLE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  ADMIN: { bg: "rgba(99,102,241,0.12)", text: "var(--lime)", border: "rgba(99,102,241,0.25)" },
-  DEV: { bg: "rgba(56,189,248,0.12)", text: "var(--cyan)", border: "rgba(56,189,248,0.25)" },
-  DONOR: { bg: "rgba(251,191,36,0.12)", text: "var(--amber)", border: "rgba(251,191,36,0.25)" },
-};
 
 export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -252,19 +247,15 @@ export default function ProfilePage() {
           {/* Roles */}
           <div className="flex flex-wrap gap-1.5 mb-4">
             {user.roles.map((role) => {
-              const colors = ROLE_COLORS[role] || {
-                bg: "rgba(228,228,232,0.08)",
-                text: "var(--text-secondary)",
-                border: "rgba(228,228,232,0.15)",
-              };
+              const c = getRoleColor(role);
               return (
                 <span
                   key={role}
                   className="font-mono text-[9px] uppercase tracking-[0.08em] px-2.5 py-1 rounded-full font-semibold"
                   style={{
-                    background: colors.bg,
-                    color: colors.text,
-                    border: `1px solid ${colors.border}`,
+                    background: c.bg,
+                    color: c.text,
+                    border: `1px solid ${c.border}`,
                   }}
                 >
                   {role}

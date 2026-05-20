@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getRoleColor } from "@/lib/role-colors";
 
 interface User {
   id: string;
@@ -264,40 +265,37 @@ export default function UsersPage() {
         <td className="p-4 text-center">
           {isEditing ? (
             <div className="flex gap-1 justify-center flex-wrap">
-              {["ADMIN", "DONOR", "DEV"].map((role) => (
-                <button
-                  key={role}
-                  onClick={() => toggleEditRole(role)}
-                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                    editState.roles.includes(role)
-                      ? role === "ADMIN"
-                        ? "bg-coral/20 text-coral ring-1 ring-coral/40"
-                        : role === "DEV"
-                          ? "bg-violet/20 text-violet ring-1 ring-violet/40"
-                          : "bg-mint/20 text-mint ring-1 ring-mint/40"
-                      : "bg-[var(--bg-deep)] text-text-tertiary"
-                  }`}
-                >
-                  {role}
-                </button>
-              ))}
+              {["ADMIN", "DONOR", "DEV"].map((role) => {
+                const rc = getRoleColor(role);
+                return (
+                  <button
+                    key={role}
+                    onClick={() => toggleEditRole(role)}
+                    className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                    style={editState.roles.includes(role)
+                      ? { background: rc.bg, color: rc.text, boxShadow: `inset 0 0 0 1px ${rc.border}` }
+                      : { background: "var(--bg-deep)", color: "var(--text-tertiary)" }
+                    }
+                  >
+                    {role}
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="flex gap-1 justify-center flex-wrap">
-              {u.roles.map((r) => (
-                <span
-                  key={r}
-                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded ${
-                    r === "ADMIN"
-                      ? "bg-coral/10 text-coral"
-                      : r === "DEV"
-                        ? "bg-violet/10 text-violet"
-                        : "bg-mint/10 text-mint"
-                  }`}
-                >
-                  {r}
-                </span>
-              ))}
+              {u.roles.map((r) => {
+                const rc = getRoleColor(r);
+                return (
+                  <span
+                    key={r}
+                    className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded"
+                    style={{ background: rc.bg, color: rc.text }}
+                  >
+                    {r}
+                  </span>
+                );
+              })}
             </div>
           )}
         </td>
@@ -405,23 +403,22 @@ export default function UsersPage() {
           </div>
           {isEditing ? (
             <div className="flex items-center gap-2">
-              {["ADMIN", "DONOR", "DEV"].map((role) => (
-                <button
-                  key={role}
-                  onClick={() => toggleEditRole(role)}
-                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors ${
-                    editState.roles.includes(role)
-                      ? role === "ADMIN"
-                        ? "bg-coral text-bg-void border-coral"
-                        : role === "DEV"
-                          ? "bg-violet text-bg-void border-violet"
-                          : "bg-mint text-bg-void border-mint"
-                      : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
-                  }`}
-                >
-                  {role}
-                </button>
-              ))}
+              {["ADMIN", "DONOR", "DEV"].map((role) => {
+                const rc = getRoleColor(role);
+                return (
+                  <button
+                    key={role}
+                    onClick={() => toggleEditRole(role)}
+                    className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors"
+                    style={editState.roles.includes(role)
+                      ? { background: rc.bgSolid, color: "var(--bg-void)", borderColor: rc.bgSolid }
+                      : { color: "var(--text-secondary)", borderColor: "var(--border)" }
+                    }
+                  >
+                    {role}
+                  </button>
+                );
+              })}
               <button
                 onClick={() => saveEdit(u.id)}
                 disabled={editState.roles.length === 0 || !editState.name.trim()}
@@ -612,20 +609,23 @@ export default function UsersPage() {
                 Roles
               </label>
               <div className="flex gap-2">
-                {["ADMIN", "DONOR", "DEV"].map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    onClick={() => toggleRole(role)}
-                    className={`font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors ${
-                      roles.includes(role)
-                        ? "bg-lime text-bg-void border-lime"
-                        : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
-                    }`}
-                  >
-                    {role}
-                  </button>
-                ))}
+                {["ADMIN", "DONOR", "DEV"].map((role) => {
+                  const rc = getRoleColor(role);
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => toggleRole(role)}
+                      className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors"
+                      style={roles.includes(role)
+                        ? { background: rc.bgSolid, color: "var(--bg-void)", borderColor: rc.bgSolid }
+                        : { color: "var(--text-secondary)", borderColor: "var(--border)" }
+                      }
+                    >
+                      {role}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <button
