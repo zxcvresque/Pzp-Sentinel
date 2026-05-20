@@ -68,13 +68,13 @@ export default function LoginPage() {
       {/* Background image */}
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('/login-bg.png')" }}
+        style={{ backgroundImage: "url('/login-bg.png')", filter: "brightness(1.3)" }}
       />
       {/* Tinted overlay for readability */}
       <div
         className="absolute inset-0"
         style={{
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 100%)",
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%)",
         }}
       />
 
