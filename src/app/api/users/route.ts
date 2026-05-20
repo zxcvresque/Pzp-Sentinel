@@ -72,3 +72,43 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ user: newUser }, { status: 201 });
 }
+
+export async function PATCH(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user || !hasRole(user.roles, "ADMIN")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
+  const { id, roles, status } = await req.json();
+
+  if (!id) {
+    return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+  }
+
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const data: Record<string, unknown> = {};
+  if (roles !== undefined) data.roles = roles;
+  if (status !== undefined) data.status = status;
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data,
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: "UPDATE_ROLES",
+    entityType: "User",
+    entityId: id,
+    before: { roles: target.roles, status: target.status },
+    after: { roles: updated.roles, status: updated.status },
+    userName: user.name,
+    details: `${target.name}: ${target.roles.join(",")||"none"} → ${updated.roles.join(",")||"none"}`,
+  });
+
+  return NextResponse.json({ user: updated });
+}

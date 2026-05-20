@@ -19,6 +19,8 @@ export default function UsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRoles, setEditRoles] = useState<string[]>([]);
 
   const [name, setName] = useState("");
   const [telegramId, setTelegramId] = useState("");
@@ -34,6 +36,12 @@ export default function UsersPage() {
 
   function toggleRole(role: string) {
     setRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  }
+
+  function toggleEditRole(role: string) {
+    setEditRoles((prev) =>
       prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
     );
   }
@@ -63,6 +71,29 @@ export default function UsersPage() {
     }
     setSubmitting(false);
   }
+
+  function startEditing(u: User) {
+    setEditingId(u.id);
+    setEditRoles([...u.roles]);
+  }
+
+  async function saveRoles(id: string) {
+    const res = await fetch("/api/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, roles: editRoles }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, roles: data.user.roles } : u))
+      );
+    }
+    setEditingId(null);
+  }
+
+  const pendingUsers = users.filter((u) => u.roles.length === 0);
+  const activeUsers = users.filter((u) => u.roles.length > 0);
 
   if (loading) {
     return (
@@ -166,66 +197,177 @@ export default function UsersPage() {
         </form>
       )}
 
-      {users.length === 0 ? (
+      {pendingUsers.length > 0 && (
+        <div className="mb-8">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-amber mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber animate-pulse" />
+            Awaiting Role Assignment ({pendingUsers.length})
+          </h2>
+          <div className="space-y-3">
+            {pendingUsers.map((u) => (
+              <div key={u.id} className="card p-4 border-l-2 border-l-amber">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">{u.name}</div>
+                    <div className="text-text-tertiary text-xs mt-0.5">
+                      @{u.telegramUser || u.telegramId} · started bot {new Date(u.createdAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  {editingId === u.id ? (
+                    <div className="flex items-center gap-2">
+                      {["ADMIN", "DONOR", "DEV"].map((role) => (
+                        <button
+                          key={role}
+                          onClick={() => toggleEditRole(role)}
+                          className={`font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors ${
+                            editRoles.includes(role)
+                              ? role === "ADMIN"
+                                ? "bg-coral text-bg-void border-coral"
+                                : role === "DEV"
+                                  ? "bg-violet text-bg-void border-violet"
+                                  : "bg-mint text-bg-void border-mint"
+                              : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
+                          }`}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => saveRoles(u.id)}
+                        disabled={editRoles.length === 0}
+                        className="bg-lime text-bg-void font-semibold px-4 py-1.5 rounded-full text-xs hover:bg-lime/90 disabled:opacity-40 transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-text-tertiary text-xs hover:text-text-primary transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => startEditing(u)}
+                      className="bg-amber/10 text-amber font-semibold px-4 py-1.5 rounded-full text-xs hover:bg-amber/20 transition-colors"
+                    >
+                      Assign Role
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeUsers.length === 0 && pendingUsers.length === 0 ? (
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No users yet.</p>
-          <p className="text-text-tertiary text-sm">Add the first community member.</p>
+          <p className="text-text-tertiary text-sm">Users will appear here when they start the bot.</p>
         </div>
-      ) : (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-[var(--border)]">
-                  <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Name</th>
-                  <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Telegram</th>
-                  <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Roles</th>
-                  <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Status</th>
-                  <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Bot</th>
-                  <th className="text-right p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
-                    <td className="p-4 text-sm font-medium">{u.name}</td>
-                    <td className="p-4 text-sm text-text-secondary">
-                      <div>@{u.telegramUser}</div>
-                      <div className="text-text-tertiary text-xs">{u.telegramId}</div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex gap-1 justify-center flex-wrap">
-                        {u.roles.map((r) => (
-                          <span
-                            key={r}
-                            className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded ${
-                              r === "ADMIN"
-                                ? "bg-coral/10 text-coral"
-                                : r === "DEV"
-                                  ? "bg-violet/10 text-violet"
-                                  : "bg-mint/10 text-mint"
-                            }`}
-                          >
-                            {r}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <span className={`font-mono text-[10px] uppercase ${u.status === "ACTIVE" ? "text-mint" : "text-text-tertiary"}`}>
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="p-4 text-center">
-                      <span className={`w-2 h-2 rounded-full inline-block ${u.chatId ? "bg-mint" : "bg-text-tertiary"}`} />
-                    </td>
-                    <td className="p-4 text-right text-text-secondary text-sm">
-                      {new Date(u.createdAt).toLocaleDateString()}
-                    </td>
+      ) : activeUsers.length > 0 && (
+        <div>
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
+            Active Members ({activeUsers.length})
+          </h2>
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Name</th>
+                    <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Telegram</th>
+                    <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Roles</th>
+                    <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Bot</th>
+                    <th className="text-right p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Joined</th>
+                    <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {activeUsers.map((u) => (
+                    <tr key={u.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                      <td className="p-4 text-sm font-medium">{u.name}</td>
+                      <td className="p-4 text-sm text-text-secondary">
+                        <div>@{u.telegramUser || "—"}</div>
+                        <div className="text-text-tertiary text-xs">{u.telegramId}</div>
+                      </td>
+                      <td className="p-4 text-center">
+                        {editingId === u.id ? (
+                          <div className="flex gap-1 justify-center flex-wrap">
+                            {["ADMIN", "DONOR", "DEV"].map((role) => (
+                              <button
+                                key={role}
+                                onClick={() => toggleEditRole(role)}
+                                className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                                  editRoles.includes(role)
+                                    ? role === "ADMIN"
+                                      ? "bg-coral/20 text-coral ring-1 ring-coral/40"
+                                      : role === "DEV"
+                                        ? "bg-violet/20 text-violet ring-1 ring-violet/40"
+                                        : "bg-mint/20 text-mint ring-1 ring-mint/40"
+                                    : "bg-[var(--bg-deep)] text-text-tertiary"
+                                }`}
+                              >
+                                {role}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex gap-1 justify-center flex-wrap">
+                            {u.roles.map((r) => (
+                              <span
+                                key={r}
+                                className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded ${
+                                  r === "ADMIN"
+                                    ? "bg-coral/10 text-coral"
+                                    : r === "DEV"
+                                      ? "bg-violet/10 text-violet"
+                                      : "bg-mint/10 text-mint"
+                                }`}
+                              >
+                                {r}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`w-2 h-2 rounded-full inline-block ${u.chatId ? "bg-mint" : "bg-text-tertiary"}`} />
+                      </td>
+                      <td className="p-4 text-right text-text-secondary text-sm">
+                        {new Date(u.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="p-4 text-center">
+                        {editingId === u.id ? (
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() => saveRoles(u.id)}
+                              className="px-3 py-1 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20 transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="px-3 py-1 rounded-full text-xs text-text-tertiary hover:text-text-primary transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => startEditing(u)}
+                            className="px-3 py-1 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+                          >
+                            Edit Roles
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

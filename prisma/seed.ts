@@ -9,17 +9,17 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const admin = await prisma.user.upsert({
-    where: { telegramId: "REPLACE_WITH_YOUR_TG_ID" },
-    update: {},
+    where: { telegramId: "1800754304" },
+    update: { roles: ["ADMIN", "DONOR", "DEV"] },
     create: {
-      telegramId: "REPLACE_WITH_YOUR_TG_ID",
-      telegramUser: "REPLACE_WITH_YOUR_TG_USERNAME",
-      name: "Admin",
+      telegramId: "1800754304",
+      telegramUser: "varad",
+      name: "Varad",
       roles: ["ADMIN", "DONOR", "DEV"],
     },
   });
 
-  console.log("Seeded admin user:", admin.id, admin.name);
+  console.log("Seeded admin:", admin.id, admin.name, admin.roles);
 }
 
 main()
