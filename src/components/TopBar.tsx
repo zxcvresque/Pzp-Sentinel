@@ -11,9 +11,9 @@ interface TopBarProps {
 }
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
-  ADMIN: { bg: "rgba(200,255,0,0.10)", text: "var(--lime)" },
-  DEV: { bg: "rgba(0,212,255,0.10)", text: "var(--cyan)" },
-  DONOR: { bg: "rgba(255,184,0,0.10)", text: "var(--amber)" },
+  ADMIN: { bg: "rgba(99,102,241,0.10)", text: "var(--lime)" },
+  DEV: { bg: "rgba(103,184,244,0.10)", text: "var(--cyan)" },
+  DONOR: { bg: "rgba(240,182,68,0.10)", text: "var(--amber)" },
 };
 
 const ROLE_FALLBACK = { bg: "var(--bg-elevated)", text: "var(--text-tertiary)" };
@@ -93,9 +93,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           <div
             className="absolute right-0 top-full mt-2.5 w-80 rounded-[14px] border border-[var(--border)] shadow-xl z-50 overflow-hidden animate-scale-in"
             style={{
-              background: "rgba(12,12,15,0.82)",
-              backdropFilter: "blur(20px) saturate(1.4)",
-              WebkitBackdropFilter: "blur(20px) saturate(1.4)",
+              background: "rgba(18,18,24,0.85)",
+              backdropFilter: "blur(40px) saturate(1.6)",
+              WebkitBackdropFilter: "blur(40px) saturate(1.6)",
             }}
           >
             <div className="px-4 py-3 border-b border-[var(--border)]">
@@ -150,7 +150,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           }}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLElement).style.boxShadow =
-              "0 0 0 1.5px rgba(200,255,0,0.35), 0 0 12px rgba(200,255,0,0.08)";
+              "0 0 0 1.5px rgba(99,102,241,0.30), 0 0 12px rgba(99,102,241,0.08)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.boxShadow =
@@ -168,7 +168,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
             <span
               className="w-full h-full flex items-center justify-center text-[11px] font-bold text-[var(--text-primary)]"
               style={{
-                background: "linear-gradient(145deg, #1c1c22 0%, #111114 100%)",
+                background: "linear-gradient(145deg, #26262f 0%, #1a1a22 100%)",
               }}
             >
               {initials}
@@ -180,9 +180,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           <div
             className="absolute right-0 top-full mt-2.5 w-64 rounded-[14px] border border-[var(--border)] shadow-xl z-50 overflow-hidden animate-scale-in"
             style={{
-              background: "rgba(12,12,15,0.82)",
-              backdropFilter: "blur(20px) saturate(1.4)",
-              WebkitBackdropFilter: "blur(20px) saturate(1.4)",
+              background: "rgba(18,18,24,0.85)",
+              backdropFilter: "blur(40px) saturate(1.6)",
+              WebkitBackdropFilter: "blur(40px) saturate(1.6)",
             }}
           >
             {/* User info header */}
@@ -206,7 +206,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     <span
                       className="w-full h-full flex items-center justify-center text-xs font-bold text-[var(--text-primary)]"
                       style={{
-                        background: "linear-gradient(145deg, #1c1c22 0%, #111114 100%)",
+                        background: "linear-gradient(145deg, #26262f 0%, #1a1a22 100%)",
                       }}
                     >
                       {initials}

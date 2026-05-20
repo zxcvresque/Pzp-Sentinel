@@ -93,7 +93,7 @@ export default function DashboardLayout({
         onRoleSwitch={handleRoleSwitch}
       />
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)] bg-bg-void/80 backdrop-blur-md">
+        <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)]" style={{ background: "rgba(17,17,22,0.6)", backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)" }}>
           <span className="font-mono text-[11px] uppercase tracking-widest text-text-tertiary">
             {breadcrumb}
           </span>

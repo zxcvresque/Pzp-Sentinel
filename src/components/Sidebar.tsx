@@ -218,7 +218,9 @@ export default function Sidebar({
       {/* ── Desktop sidebar ── */}
       <aside
         style={{
-          background: "var(--bg-deepest)",
+          background: "rgba(17,17,22,0.55)",
+          backdropFilter: "blur(40px) saturate(1.6)",
+          WebkitBackdropFilter: "blur(40px) saturate(1.6)",
           borderRight: "1px solid var(--border)",
           width: collapsed ? 60 : 232,
           transition: "width 200ms cubic-bezier(.4,0,.2,1)",
@@ -242,13 +244,12 @@ export default function Sidebar({
               onClick={() => setCollapsed(false)}
               title="Expand sidebar"
               style={{
-                color: "var(--lime)",
+                color: "var(--text-primary)",
                 fontWeight: 800,
                 fontSize: 18,
                 background: "none",
                 border: "none",
                 cursor: "pointer",
-                textShadow: "0 0 12px var(--lime-glow)",
                 lineHeight: 1,
               }}
             >
@@ -259,13 +260,12 @@ export default function Sidebar({
               <Link
                 href="/"
                 style={{
-                  color: "var(--lime)",
+                  color: "var(--text-primary)",
                   fontWeight: 800,
                   fontSize: 16,
                   letterSpacing: "0.05em",
                   whiteSpace: "nowrap",
                   textDecoration: "none",
-                  textShadow: "0 0 18px var(--lime-glow), 0 0 40px rgba(200,255,0,0.06)",
                   lineHeight: 1,
                 }}
               >
@@ -342,16 +342,14 @@ export default function Sidebar({
                     title={item.label}
                     style={{
                       display: "flex",
-                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
                       padding: "10px 0",
-                      borderRadius: 10,
-                      color: active ? "var(--lime)" : "var(--text-secondary)",
-                      background: active ? "var(--lime-dim)" : "transparent",
+                      borderRadius: 8,
+                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: active ? "rgba(255,255,255,0.06)" : "transparent",
                       transition: "all 150ms ease",
                       textDecoration: "none",
-                      position: "relative",
                       marginBottom: 2,
                     }}
                     onMouseEnter={(e) => {
@@ -368,18 +366,6 @@ export default function Sidebar({
                     }}
                   >
                     <Icon style={{ width: 20, height: 20 }} />
-                    {active && (
-                      <span
-                        style={{
-                          width: 4,
-                          height: 4,
-                          borderRadius: "50%",
-                          background: "var(--lime)",
-                          marginTop: 4,
-                          boxShadow: "0 0 6px var(--lime-glow)",
-                        }}
-                      />
-                    )}
                   </Link>
                 ) : (
                   /* ── Expanded nav item ── */
@@ -389,17 +375,15 @@ export default function Sidebar({
                       display: "flex",
                       alignItems: "center",
                       gap: 12,
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      color: active ? "var(--lime)" : "var(--text-secondary)",
-                      background: active ? "var(--lime-dim)" : "transparent",
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: active ? "rgba(255,255,255,0.06)" : "transparent",
                       textDecoration: "none",
                       transition: "all 150ms ease",
-                      position: "relative",
                       marginBottom: 1,
                       fontSize: 13,
                       fontWeight: active ? 500 : 400,
-                      borderLeft: active ? "2px solid var(--lime)" : "2px solid transparent",
                     }}
                     onMouseEnter={(e) => {
                       if (!active) {
@@ -419,7 +403,7 @@ export default function Sidebar({
                         width: 18,
                         height: 18,
                         flexShrink: 0,
-                        opacity: active ? 1 : 0.55,
+                        opacity: active ? 0.9 : 0.45,
                         transition: "opacity 150ms",
                       }}
                     />
@@ -467,11 +451,11 @@ export default function Sidebar({
                       letterSpacing: "0.08em",
                       padding: "6px 0",
                       borderRadius: 20,
-                      border: isActive ? "1px solid var(--lime)" : "1px solid var(--border)",
-                      background: isActive ? "var(--lime)" : "transparent",
-                      color: isActive ? "var(--bg-void)" : "var(--text-secondary)",
+                      border: isActive ? "1px solid rgba(99,102,241,0.25)" : "1px solid var(--border)",
+                      background: isActive ? "rgba(99,102,241,0.10)" : "transparent",
+                      color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                       cursor: "pointer",
-                      fontWeight: isActive ? 700 : 400,
+                      fontWeight: isActive ? 600 : 400,
                       transition: "all 150ms ease",
                     }}
                     onMouseEnter={(e) => {
@@ -518,13 +502,13 @@ export default function Sidebar({
                     width: 36,
                     height: 36,
                     borderRadius: "50%",
-                    border: isActive ? "1.5px solid var(--lime)" : "1.5px solid var(--border)",
-                    background: isActive ? "var(--lime)" : "transparent",
-                    color: isActive ? "var(--bg-void)" : "var(--text-secondary)",
+                    border: isActive ? "1.5px solid rgba(99,102,241,0.25)" : "1.5px solid var(--border)",
+                    background: isActive ? "rgba(99,102,241,0.10)" : "transparent",
+                    color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                     cursor: "pointer",
                     fontFamily: "var(--font-mono, monospace)",
                     fontSize: 10,
-                    fontWeight: isActive ? 700 : 400,
+                    fontWeight: isActive ? 600 : 400,
                     transition: "all 150ms ease",
                     display: "flex",
                     alignItems: "center",
@@ -577,24 +561,13 @@ export default function Sidebar({
                   fontSize: 9,
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
-                  color: active ? "var(--lime)" : "var(--text-tertiary)",
+                  color: active ? "var(--text-primary)" : "var(--text-tertiary)",
                   textDecoration: "none",
                   transition: "color 150ms",
                 }}
               >
                 <Icon style={{ width: 20, height: 20 }} />
-                <span>{item.label.substring(0, 6)}</span>
-                {active && (
-                  <span
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: "50%",
-                      background: "var(--lime)",
-                      boxShadow: "0 0 6px var(--lime-glow)",
-                    }}
-                  />
-                )}
+                <span style={{ fontWeight: active ? 500 : 400 }}>{item.label.substring(0, 6)}</span>
               </Link>
             );
           })}
