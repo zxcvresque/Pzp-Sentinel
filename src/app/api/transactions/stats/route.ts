@@ -14,12 +14,12 @@ export async function GET() {
   });
 
   const totalDonated = approved
-    .filter((t) => t.direction === "IN")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t: { direction: string }) => t.direction === "IN")
+    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
 
   const totalSpent = approved
-    .filter((t) => t.direction === "OUT")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t: { direction: string }) => t.direction === "OUT")
+    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
 
   const pendingCount = await prisma.transaction.count({
     where: { status: "PENDING" },

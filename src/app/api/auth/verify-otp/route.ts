@@ -47,11 +47,11 @@ export async function POST(req: NextRequest) {
   });
 
   const defaultRole = highestRole(user.roles);
-  const redirectMap = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" } as const;
+  const redirectMap: Record<string, string> = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" };
 
   return NextResponse.json({
     success: true,
     user: { id: user.id, name: user.name, roles: user.roles },
-    redirect: redirectMap[defaultRole],
+    redirect: redirectMap[defaultRole] || "/donor",
   });
 }

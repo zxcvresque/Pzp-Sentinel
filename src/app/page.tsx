@@ -2,6 +2,14 @@ import { prisma } from "@/lib/db";
 
 export const revalidate = 60;
 
+interface PublicSub {
+  platform: string;
+  price: unknown;
+  currency: string;
+  frequency: string;
+  expiryDate: Date;
+}
+
 async function getPublicStats() {
   const approved = await prisma.transaction.findMany({
     where: { status: "APPROVED" },
@@ -9,28 +17,28 @@ async function getPublicStats() {
   });
 
   const totalDonated = approved
-    .filter((t) => t.direction === "IN")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t: { direction: string }) => t.direction === "IN")
+    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
 
   const totalSpent = approved
-    .filter((t) => t.direction === "OUT")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .filter((t: { direction: string }) => t.direction === "OUT")
+    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
 
   const donorCount = await prisma.user.count({
     where: { roles: { has: "DONOR" } },
   });
 
-  const services = await prisma.service.findMany({
-    where: { active: true },
-    select: { name: true, cost: true, currency: true, renewsAt: true },
-    orderBy: { name: "asc" },
+  const subscriptions = await prisma.subscription.findMany({
+    where: { status: "ACTIVE" },
+    select: { platform: true, price: true, currency: true, frequency: true, expiryDate: true },
+    orderBy: { platform: "asc" },
   });
 
-  return { totalDonated, totalSpent, balance: totalDonated - totalSpent, donorCount, services };
+  return { totalDonated, totalSpent, balance: totalDonated - totalSpent, donorCount, subscriptions };
 }
 
 export default async function PublicPage() {
-  const { totalDonated, totalSpent, balance, donorCount, services } = await getPublicStats();
+  const { totalDonated, totalSpent, balance, donorCount, subscriptions } = await getPublicStats();
 
   return (
     <div className="min-h-screen bg-bg-void text-text-primary">
@@ -78,25 +86,23 @@ export default async function PublicPage() {
           </div>
         </div>
 
-        {services.length > 0 && (
+        {subscriptions.length > 0 && (
           <div>
             <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
-              Active Services
+              Active Subscriptions
             </h2>
             <div className="space-y-2">
-              {services.map((s) => (
-                <div key={s.name} className="card p-4 flex items-center justify-between">
-                  <span className="text-sm font-medium">{s.name}</span>
+              {subscriptions.map((s: PublicSub) => (
+                <div key={s.platform} className="card p-4 flex items-center justify-between">
+                  <span className="text-sm font-medium">{s.platform}</span>
                   <div className="flex items-center gap-3">
                     <span className="text-mint font-semibold text-sm">
                       {s.currency === "INR" ? "₹" : "$"}
-                      {Number(s.cost).toLocaleString()}/mo
+                      {Number(s.price).toLocaleString()}/{s.frequency === "YEARLY" ? "yr" : "mo"}
                     </span>
-                    {s.renewsAt && (
-                      <span className="text-text-tertiary text-xs">
-                        renews {new Date(s.renewsAt).toLocaleDateString()}
-                      </span>
-                    )}
+                    <span className="text-text-tertiary text-xs">
+                      expires {new Date(s.expiryDate).toLocaleDateString()}
+                    </span>
                   </div>
                 </div>
               ))}
