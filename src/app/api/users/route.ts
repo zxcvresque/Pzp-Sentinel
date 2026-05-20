@@ -79,7 +79,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const { id, roles, status } = await req.json();
+  const { id, roles, status, name, telegramUser } = await req.json();
 
   if (!id) {
     return NextResponse.json({ error: "User ID is required" }, { status: 400 });
@@ -93,21 +93,29 @@ export async function PATCH(req: NextRequest) {
   const data: Record<string, unknown> = {};
   if (roles !== undefined) data.roles = roles;
   if (status !== undefined) data.status = status;
+  if (name !== undefined) data.name = name;
+  if (telegramUser !== undefined) data.telegramUser = telegramUser;
 
   const updated = await prisma.user.update({
     where: { id },
     data,
   });
 
+  const changes: string[] = [];
+  if (roles !== undefined) changes.push(`roles: ${target.roles.join(",")||"none"} → ${updated.roles.join(",")||"none"}`);
+  if (status !== undefined) changes.push(`status: ${target.status} → ${updated.status}`);
+  if (name !== undefined && name !== target.name) changes.push(`name: ${target.name} → ${updated.name}`);
+  if (telegramUser !== undefined && telegramUser !== target.telegramUser) changes.push(`tg: @${target.telegramUser} → @${updated.telegramUser}`);
+
   await logAudit({
     userId: user.id,
-    action: "UPDATE_ROLES",
+    action: "UPDATE_USER",
     entityType: "User",
     entityId: id,
-    before: { roles: target.roles, status: target.status },
-    after: { roles: updated.roles, status: updated.status },
+    before: { roles: target.roles, status: target.status, name: target.name, telegramUser: target.telegramUser },
+    after: { roles: updated.roles, status: updated.status, name: updated.name, telegramUser: updated.telegramUser },
     userName: user.name,
-    details: `${target.name}: ${target.roles.join(",")||"none"} → ${updated.roles.join(",")||"none"}`,
+    details: `${target.name}: ${changes.join("; ")}`,
   });
 
   return NextResponse.json({ user: updated });
