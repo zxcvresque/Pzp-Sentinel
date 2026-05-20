@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logUserCreated } from "@/lib/telegram-log";
 import { logUserAction } from "@/lib/github-log";
+import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -81,6 +82,19 @@ export async function POST(req: NextRequest) {
     details: `roles: ${newUser.roles.join(",")}, tg: @${newUser.telegramUser}`,
   });
 
+  // Notify all admins about new user registration
+  notifyAdmins({
+    type: "USER_REGISTERED",
+    title: "New User Registered",
+    message: `${newUser.name} (@${newUser.telegramUser}) has been registered with roles: ${newUser.roles.join(", ")}. Added by ${user.name}.`,
+    priority: "HIGH",
+    telegramMessage: formatTgMessage(
+      "New User Registered",
+      `${newUser.name} (@${newUser.telegramUser})`,
+      `Roles: ${newUser.roles.join(", ")} -- Added by ${user.name}`,
+    ),
+  }).catch(() => {});
+
   return NextResponse.json({ user: newUser }, { status: 201 });
 }
 
@@ -138,6 +152,22 @@ export async function PATCH(req: NextRequest) {
     targetUserName: target.name,
     details: changes.join("; "),
   });
+
+  // Notify the target user if their roles changed
+  if (roles !== undefined && JSON.stringify(target.roles) !== JSON.stringify(updated.roles)) {
+    notify({
+      userId: id,
+      type: "ROLE_ASSIGNED",
+      title: "Role Updated",
+      message: `Your roles have been updated to ${updated.roles.join(", ")}. Changed by ${user.name}.`,
+      priority: "HIGH",
+      telegramMessage: formatTgMessage(
+        "Role Updated",
+        `Your roles have been updated to ${updated.roles.join(", ")}`,
+        `Changed by ${user.name}`,
+      ),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ user: updated });
 }

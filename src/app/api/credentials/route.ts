@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logCredentialAction } from "@/lib/github-log";
+import { notify, formatTgMessage } from "@/lib/notifications";
 
 export async function GET() {
   try {
@@ -102,6 +103,25 @@ export async function POST(req: NextRequest) {
       platform,
       details: `Admin created: ${label}`,
     });
+
+    // Notify each assignee about the shared credential
+    if (assigneeIds?.length) {
+      for (const assigneeId of assigneeIds) {
+        notify({
+          userId: assigneeId,
+          type: "CREDENTIAL_ASSIGNED",
+          title: "Credential Shared",
+          message: `${platform} -- ${label} has been shared with you by ${user.name}.`,
+          entityId: credential.id,
+          priority: "NORMAL",
+          telegramMessage: formatTgMessage(
+            "Credential Shared",
+            `${platform} -- ${label}`,
+            `Shared by ${user.name}`,
+          ),
+        }).catch(() => {});
+      }
+    }
 
     return NextResponse.json({ credential }, { status: 201 });
   }

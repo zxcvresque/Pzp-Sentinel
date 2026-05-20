@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { notify, formatTgMessage } from "@/lib/notifications";
 
 export async function PATCH(
   req: NextRequest,
@@ -44,6 +45,23 @@ export async function PATCH(
       subtasks: { include: { assignee: { select: { id: true, name: true } } } },
     },
   });
+
+  // Notify new assignee when task is assigned
+  if (assigneeId !== undefined && assigneeId !== null && assigneeId !== task.assigneeId) {
+    notify({
+      userId: assigneeId,
+      type: "TASK_ASSIGNED",
+      title: "Task Assigned",
+      message: `You have been assigned to: ${updated.title}. Assigned by ${user.name}.`,
+      entityId: id,
+      priority: "NORMAL",
+      telegramMessage: formatTgMessage(
+        "Task Assigned",
+        updated.title,
+        `Assigned by ${user.name}`,
+      ),
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ task: updated });
 }

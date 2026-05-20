@@ -120,6 +120,35 @@ bot.command("start", async (ctx) => {
   }
 });
 
+// Detect bot blocked/unblocked — update chatId in real time
+bot.on("my_chat_member", async (ctx) => {
+  const update = ctx.myChatMember;
+  if (!update || update.chat.type !== "private") return;
+
+  const telegramId = update.from.id.toString();
+  const newStatus = update.new_chat_member.status; // "kicked" = blocked, "member" = unblocked
+
+  try {
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return;
+
+    if (newStatus === "kicked") {
+      // User blocked the bot — clear chatId
+      await prisma.user.update({ where: { id: user.id }, data: { chatId: null } });
+      console.log(`Bot blocked by ${user.name} (@${user.telegramUser}) — chatId cleared`);
+    } else if (newStatus === "member") {
+      // User unblocked the bot — restore chatId
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { chatId: update.chat.id.toString() },
+      });
+      console.log(`Bot unblocked by ${user.name} (@${user.telegramUser}) — chatId restored`);
+    }
+  } catch (err) {
+    console.error("Failed to handle my_chat_member update:", err);
+  }
+});
+
 bot.command("help", async (ctx) => {
   try {
     await ctx.reply(

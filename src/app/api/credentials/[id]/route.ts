@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logCredentialAction } from "@/lib/github-log";
+import { notify, formatTgMessage } from "@/lib/notifications";
 
 export async function PATCH(
   req: NextRequest,
@@ -19,10 +20,15 @@ export async function PATCH(
   const body = await req.json();
   const { platform, label, value, assigneeIds } = body;
 
-  const existing = await prisma.credential.findUnique({ where: { id } });
+  const existing = await prisma.credential.findUnique({
+    where: { id },
+    include: { assignees: { select: { id: true } } },
+  });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const previousAssigneeIds = new Set(existing.assignees.map((a) => a.id));
 
   const credential = await prisma.credential.update({
     where: { id },
@@ -49,6 +55,28 @@ export async function PATCH(
     platform: credential.platform,
     details: `Updated: ${credential.label}`,
   });
+
+  // Notify newly added assignees
+  if (assigneeIds !== undefined) {
+    const newAssignees = credential.assignees.filter(
+      (a) => !previousAssigneeIds.has(a.id),
+    );
+    for (const assignee of newAssignees) {
+      notify({
+        userId: assignee.id,
+        type: "CREDENTIAL_ASSIGNED",
+        title: "Credential Shared",
+        message: `${credential.platform} -- ${credential.label} has been shared with you by ${user.name}.`,
+        entityId: id,
+        priority: "NORMAL",
+        telegramMessage: formatTgMessage(
+          "Credential Shared",
+          `${credential.platform} -- ${credential.label}`,
+          `Shared by ${user.name}`,
+        ),
+      }).catch(() => {});
+    }
+  }
 
   return NextResponse.json({ credential });
 }

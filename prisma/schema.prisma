@@ -269,6 +269,10 @@ enum NotifType {
   TASK_ASSIGNED
   REMINDER
   SYSTEM
+  ROLE_ASSIGNED
+  CREDENTIAL_ASSIGNED
+  CREDENTIAL_REVIEWED
+  USER_REGISTERED
 }
 
 model Notification {
@@ -280,5 +284,6 @@ model Notification {
   message   String
   read      Boolean   @default(false)
   entityId  String?
+  priority  String    @default("NORMAL")
   createdAt DateTime  @default(now())
 }
