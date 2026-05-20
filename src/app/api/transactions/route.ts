@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { logTransaction, logProofScreenshot } from "@/lib/telegram-log";
 import { Prisma } from "@/generated/prisma";
 
 export async function GET(req: NextRequest) {
@@ -82,7 +83,26 @@ export async function POST(req: NextRequest) {
     entityId: transaction.id,
     transactionId: transaction.id,
     after: transaction,
+    userName: user.name,
+    details: `${transaction.direction} ${transaction.currency} ${transaction.amount}`,
   });
+
+  logTransaction({
+    id: transaction.id,
+    amount: transaction.amount,
+    currency: transaction.currency,
+    method: transaction.method,
+    direction: transaction.direction,
+    type: transaction.type,
+    description: transaction.description,
+    status: transaction.status,
+    fromUserName: transaction.fromUser?.name,
+    createdByName: transaction.createdBy?.name,
+  });
+
+  if (proofFileId) {
+    logProofScreenshot(transaction.id, proofFileId, description);
+  }
 
   return NextResponse.json({ transaction }, { status: 201 });
 }

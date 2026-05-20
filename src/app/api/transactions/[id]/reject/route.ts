@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { logTransactionReview } from "@/lib/telegram-log";
 import { bot } from "@/lib/bot";
 
 export async function POST(
@@ -47,6 +48,17 @@ export async function POST(
     transactionId: id,
     before: { status: "PENDING" },
     after: { status: "REJECTED", reviewNote: reason },
+    userName: user.name,
+  });
+
+  logTransactionReview({
+    id,
+    amount: updated.amount,
+    currency: updated.currency,
+    description: updated.description,
+    status: "REJECTED",
+    reviewerName: user.name,
+    reason,
   });
 
   if (updated.fromUser?.chatId) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { logUserCreated } from "@/lib/telegram-log";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest) {
     entityType: "User",
     entityId: newUser.id,
     after: newUser,
+    userName: user.name,
+  });
+
+  logUserCreated({
+    name: newUser.name,
+    telegramUser: newUser.telegramUser,
+    roles: newUser.roles,
+    createdByName: user.name,
   });
 
   return NextResponse.json({ user: newUser }, { status: 201 });
