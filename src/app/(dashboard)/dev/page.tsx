@@ -91,6 +91,27 @@ export default function DevDashboard() {
 
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
 
+  // Edit modal state
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editPriority, setEditPriority] = useState("MEDIUM");
+  const [editAssignee, setEditAssignee] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editParentId, setEditParentId] = useState("");
+  const [editStatus, setEditStatus] = useState("BACKLOG");
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Project creation state
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [projName, setProjName] = useState("");
+  const [projDesc, setProjDesc] = useState("");
+  const [projRepo, setProjRepo] = useState("");
+  const [projSubmitting, setProjSubmitting] = useState(false);
+
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   const fetchTasks = useCallback(() => {
@@ -161,6 +182,108 @@ export default function DevDashboard() {
     setFormParentId("");
   }
 
+  function openEdit(task: Task) {
+    setEditingTask(task);
+    setEditTitle(task.title);
+    setEditDesc(task.description || "");
+    setEditPriority(task.priority);
+    setEditAssignee(task.assignee?.id || "");
+    setEditDeadline(task.deadline ? task.deadline.slice(0, 10) : "");
+    setEditTags(task.tags.map((t) => t.id));
+    setEditParentId("");
+    setEditStatus(task.status);
+    setConfirmDelete(false);
+  }
+
+  function closeEdit() {
+    setEditingTask(null);
+    setConfirmDelete(false);
+  }
+
+  function toggleEditTag(tagId: string) {
+    setEditTags((prev) =>
+      prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+    );
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingTask || !editTitle.trim()) return;
+    setSaving(true);
+
+    const body: Record<string, unknown> = {
+      title: editTitle.trim(),
+      description: editDesc.trim() || null,
+      priority: editPriority,
+      status: editStatus,
+      assigneeId: editAssignee || null,
+      deadline: editDeadline || null,
+      tagIds: editTags,
+      parentId: editParentId || null,
+    };
+
+    const res = await fetch(`/api/tasks/${editingTask.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      closeEdit();
+      fetchTasks();
+    }
+    setSaving(false);
+  }
+
+  async function handleDeleteTask() {
+    if (!editingTask) return;
+    setDeleting(true);
+    const res = await fetch(`/api/tasks/${editingTask.id}`, { method: "DELETE" });
+    if (res.ok) {
+      closeEdit();
+      fetchTasks();
+    }
+    setDeleting(false);
+  }
+
+  async function handleCreateProject(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projName.trim() || !projDesc.trim()) return;
+    setProjSubmitting(true);
+
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projName.trim(),
+        description: projDesc.trim(),
+        repoUrl: projRepo.trim() || null,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const newProj = data.project;
+      setProjects((prev) => [
+        {
+          id: newProj.id,
+          name: newProj.name,
+          description: newProj.description,
+          repoUrl: newProj.repoUrl,
+          members: newProj.members || [],
+          taskCounts: { BACKLOG: 0, TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 },
+        },
+        ...prev,
+      ]);
+      setSelectedProjectId(newProj.id);
+      setShowProjectForm(false);
+      setProjName("");
+      setProjDesc("");
+      setProjRepo("");
+    }
+    setProjSubmitting(false);
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!formTitle.trim() || !selectedProjectId) return;
@@ -209,10 +332,72 @@ export default function DevDashboard() {
           Project <span className="font-display text-lime">Board</span>
         </h1>
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No projects found.</p>
-          <p className="text-text-tertiary text-sm">
-            Ask an admin to create a project to get started.
-          </p>
+          <p className="text-text-secondary mb-2">No projects yet.</p>
+          {!showProjectForm ? (
+            <button
+              onClick={() => setShowProjectForm(true)}
+              className="bg-lime text-bg-void font-semibold px-5 py-2 rounded-full text-sm hover:bg-lime/90 transition-colors mt-2"
+            >
+              + New Project
+            </button>
+          ) : (
+            <form onSubmit={handleCreateProject} className="text-left mt-4 max-w-md mx-auto space-y-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Project Name
+                </label>
+                <input
+                  type="text"
+                  value={projName}
+                  onChange={(e) => setProjName(e.target.value)}
+                  placeholder="My Project"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={projDesc}
+                  onChange={(e) => setProjDesc(e.target.value)}
+                  placeholder="What is this project about?"
+                  required
+                  rows={2}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Repo URL (optional)
+                </label>
+                <input
+                  type="url"
+                  value={projRepo}
+                  onChange={(e) => setProjRepo(e.target.value)}
+                  placeholder="https://github.com/..."
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="submit"
+                  disabled={projSubmitting || !projName.trim() || !projDesc.trim()}
+                  className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+                >
+                  {projSubmitting ? "Creating..." : "Create Project"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowProjectForm(false)}
+                  className="px-4 py-2.5 rounded-full text-sm text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -240,27 +425,97 @@ export default function DevDashboard() {
           Project <span className="font-display text-lime">Board</span>
         </h1>
         <div className="flex items-center gap-3">
-          {projects.length > 1 && (
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          )}
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <button
-            onClick={() => (showForm ? resetForm() : setShowForm(true))}
+            onClick={() => {
+              setShowProjectForm(!showProjectForm);
+              if (showForm) resetForm();
+            }}
+            className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${
+              showProjectForm
+                ? "border-coral/30 text-coral hover:bg-coral/10"
+                : "border-[var(--border)] text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            {showProjectForm ? "Cancel" : "+ Project"}
+          </button>
+          <button
+            onClick={() => {
+              if (showForm) {
+                resetForm();
+              } else {
+                setShowForm(true);
+                setShowProjectForm(false);
+              }
+            }}
             className="bg-lime text-bg-void font-semibold px-5 py-2 rounded-full text-sm hover:bg-lime/90 transition-colors"
           >
             {showForm ? "Cancel" : "+ New Task"}
           </button>
         </div>
       </div>
+
+      {showProjectForm && (
+        <form onSubmit={handleCreateProject} className="card p-6 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Project Name
+              </label>
+              <input
+                type="text"
+                value={projName}
+                onChange={(e) => setProjName(e.target.value)}
+                placeholder="My Project"
+                required
+                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+              />
+            </div>
+            <div>
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Repo URL (optional)
+              </label>
+              <input
+                type="url"
+                value={projRepo}
+                onChange={(e) => setProjRepo(e.target.value)}
+                placeholder="https://github.com/..."
+                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Description
+              </label>
+              <textarea
+                value={projDesc}
+                onChange={(e) => setProjDesc(e.target.value)}
+                placeholder="What is this project about?"
+                required
+                rows={2}
+                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={projSubmitting || !projName.trim() || !projDesc.trim()}
+            className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+          >
+            {projSubmitting ? "Creating..." : "Create Project"}
+          </button>
+        </form>
+      )}
 
       {showForm && (
         <form onSubmit={handleCreate} className="card p-6 mb-6">
@@ -453,6 +708,7 @@ export default function DevDashboard() {
                         key={task.id}
                         task={task}
                         onStatusChange={handleStatusChange}
+                        onEdit={openEdit}
                         expanded={expandedTasks.has(task.id)}
                         onToggleExpand={() => toggleExpand(task.id)}
                       />
@@ -493,6 +749,7 @@ export default function DevDashboard() {
                       key={task.id}
                       task={task}
                       onStatusChange={handleStatusChange}
+                      onEdit={openEdit}
                       expanded={expandedTasks.has(task.id)}
                       onToggleExpand={() => toggleExpand(task.id)}
                     />
@@ -503,6 +760,198 @@ export default function DevDashboard() {
           })}
         </div>
       )}
+
+      {/* Edit Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeEdit} />
+          <div className="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-bold">Edit Task</h2>
+              <button
+                onClick={closeEdit}
+                className="text-text-tertiary hover:text-text-primary transition-colors text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  rows={3}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                  >
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    Priority
+                  </label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value)}
+                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                  >
+                    {PRIORITY_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    Assignee
+                  </label>
+                  <select
+                    value={editAssignee}
+                    onChange={(e) => setEditAssignee(e.target.value)}
+                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                  >
+                    <option value="">Unassigned</option>
+                    {selectedProject?.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    Deadline
+                  </label>
+                  <input
+                    type="date"
+                    value={editDeadline}
+                    onChange={(e) => setEditDeadline(e.target.value)}
+                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Parent Task
+                </label>
+                <select
+                  value={editParentId}
+                  onChange={(e) => setEditParentId(e.target.value)}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                >
+                  <option value="">None (top-level task)</option>
+                  {tasks
+                    .filter((t) => t.id !== editingTask.id)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {allTags.map((tag) => {
+                    const selected = editTags.includes(tag.id);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleEditTag(tag.id)}
+                        className="px-3 py-1 rounded-full text-xs font-semibold transition-all border"
+                        style={{
+                          backgroundColor: selected ? tag.color + "30" : "transparent",
+                          borderColor: selected ? tag.color : "var(--border)",
+                          color: selected ? tag.color : "var(--text-secondary)",
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="submit"
+                  disabled={saving || !editTitle.trim()}
+                  className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+                >
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+                {!confirmDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="text-coral text-sm hover:text-coral/80 transition-colors"
+                  >
+                    Delete
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-tertiary">
+                      {editingTask.subtasks.length > 0
+                        ? `Delete with ${editingTask.subtasks.length} subtask${editingTask.subtasks.length !== 1 ? "s" : ""}?`
+                        : "Are you sure?"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleDeleteTask}
+                      disabled={deleting}
+                      className="bg-coral/20 text-coral px-3 py-1 rounded-full text-xs font-semibold hover:bg-coral/30 disabled:opacity-40 transition-colors"
+                    >
+                      {deleting ? "Deleting..." : "Confirm"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="text-text-tertiary text-xs hover:text-text-secondary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -510,16 +959,18 @@ export default function DevDashboard() {
 function TaskCard({
   task,
   onStatusChange,
+  onEdit,
   expanded,
   onToggleExpand,
 }: {
   task: Task;
   onStatusChange: (id: string, status: string) => void;
+  onEdit: (task: Task) => void;
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
   return (
-    <div className="card p-4">
+    <div className="card p-4 cursor-pointer hover:border-[var(--lime)]/20 transition-colors" onClick={() => onEdit(task)}>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span
           className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded ${PRIORITY_COLOR[task.priority]} ${PRIORITY_BG[task.priority]}`}
@@ -556,7 +1007,7 @@ function TaskCard({
 
       {task.subtasks.length > 0 && (
         <button
-          onClick={onToggleExpand}
+          onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
           className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors mb-2"
         >
           <span className="font-mono text-[10px]">
@@ -612,7 +1063,8 @@ function TaskCard({
 
       <select
         value={task.status}
-        onChange={(e) => onStatusChange(task.id, e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => { e.stopPropagation(); onStatusChange(task.id, e.target.value); }}
         className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-2 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30"
       >
         {STATUS_OPTIONS.map((s) => (
