@@ -1,0 +1,140 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@1,400;1,500;1,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-void: #030303;
+  --bg-deepest: #060606;
+  --bg-deep: #0A0A0A;
+  --bg-card: #0F0F0F;
+  --bg-elevated: #161616;
+  --bg-hover: #1C1C1C;
+  --bg-glass: rgba(15,15,15,0.65);
+
+  --lime: #C8FF00;
+  --lime-dim: rgba(200,255,0,0.08);
+  --lime-glow: rgba(200,255,0,0.15);
+  --coral: #FF6B6B;
+  --coral-dim: rgba(255,107,107,0.08);
+  --cyan: #00D4FF;
+  --cyan-dim: rgba(0,212,255,0.08);
+  --amber: #FFB800;
+  --amber-dim: rgba(255,184,0,0.08);
+  --violet: #A78BFA;
+  --violet-dim: rgba(167,139,250,0.08);
+  --mint: #34D399;
+  --mint-dim: rgba(52,211,153,0.08);
+  --rose: #FF4081;
+  --rose-dim: rgba(255,64,129,0.08);
+  --blue: #60A5FA;
+  --blue-dim: rgba(96,165,250,0.08);
+
+  --text-primary: #F0F0F0;
+  --text-secondary: rgba(240,240,240,0.55);
+  --text-tertiary: rgba(240,240,240,0.25);
+  --border: rgba(255,255,255,0.06);
+  --border-hover: rgba(255,255,255,0.12);
+}
+
+@theme inline {
+  --color-bg-void: var(--bg-void);
+  --color-bg-deepest: var(--bg-deepest);
+  --color-bg-deep: var(--bg-deep);
+  --color-bg-card: var(--bg-card);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+
+  --color-lime: var(--lime);
+  --color-coral: var(--coral);
+  --color-cyan: var(--cyan);
+  --color-amber: var(--amber);
+  --color-violet: var(--violet);
+  --color-mint: var(--mint);
+  --color-rose: var(--rose);
+  --color-blue: var(--blue);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+.font-display {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+}
+
+.font-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.4);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--lime), transparent);
+  opacity: 0.3;
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  transition: all 150ms ease;
+}
+
+.grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+.status-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-approved { background: var(--mint-dim); color: var(--mint); }
+.status-pending { background: var(--amber-dim); color: var(--amber); }
+.status-rejected { background: var(--coral-dim); color: var(--coral); }
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.skeleton {
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}

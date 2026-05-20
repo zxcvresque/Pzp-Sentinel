@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  DONOR
+  DEV
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Currency {
+  INR
+  USD
+}
+
+enum PaymentMethod {
+  UPI
+  BMC
+  BANK
+  OTHER
+}
+
+enum Direction {
+  IN
+  OUT
+}
+
+enum TxStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TxType {
+  DONATION
+  EXPENSE
+  SUBSCRIPTION
+  OTHER
+}
+
+enum SubStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum Frequency {
+  MONTHLY
+  YEARLY
+  ONE_TIME
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjStatus {
+  ACTIVE
+  ARCHIVED
+  ON_HOLD
+}
+
+enum ReminderFreq {
+  ONCE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum Channel {
+  BOT
+  WEB
+  BOTH
+}
+
+model User {
+  id           String     @id @default(cuid())
+  telegramId   String     @unique
+  telegramUser String
+  name         String
+  chatId       String?
+  roles        Role[]
+  status       UserStatus @default(ACTIVE)
+  createdById  String?
+  createdBy    User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
+  createdUsers User[]     @relation("CreatedByAdmin")
+  createdAt    DateTime   @default(now())
+
+  otpCode      String?
+  otpExpiresAt DateTime?
+
+  transactionsCreated  Transaction[] @relation("TxCreatedBy")
+  transactionsFrom     Transaction[] @relation("TxFromUser")
+  transactionsReviewed Transaction[] @relation("TxReviewedBy")
+  tasksAssigned        Task[]        @relation("TaskAssignee")
+  tasksCreated         Task[]        @relation("TaskCreatedBy")
+  remindersCreated     Reminder[]
+  projectMembers       Project[]     @relation("ProjectMembers")
+}
+
+model Transaction {
+  id          String        @id @default(cuid())
+  amount      Decimal
+  currency    Currency      @default(INR)
+  method      PaymentMethod @default(UPI)
+  direction   Direction
+  type        TxType        @default(OTHER)
+  fromUserId  String?
+  fromUser    User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
+  description String
+  proofFileId String?
+  date        DateTime      @default(now())
+  status      TxStatus      @default(PENDING)
+  reviewedById String?
+  reviewedBy   User?        @relation("TxReviewedBy", fields: [reviewedById], references: [id])
+  reviewNote   String?
+  bmcEventId   String?      @unique
+  createdById  String
+  createdBy    User         @relation("TxCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  subscription Subscription? @relation("SubPaidTx")
+  auditLogs    AuditLog[]
+}
+
+model Subscription {
+  id              String    @id @default(cuid())
+  platform        String
+  planUrl         String?
+  price           Decimal
+  currency        Currency  @default(INR)
+  frequency       Frequency @default(MONTHLY)
+  proofFileId     String?
+  specs           Json?
+  expiryDate      DateTime
+  lastRenewalDate DateTime?
+  paidTxId        String?   @unique
+  paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
+  status          SubStatus @default(ACTIVE)
+  createdAt       DateTime  @default(now())
+}
+
+model Service {
+  id       String @id @default(cuid())
+  category String
+  name     String
+  columns  Json?
+  entries  Json?
+}
+
+model Project {
+  id          String     @id @default(cuid())
+  name        String
+  repoUrl     String?
+  description String
+  status      ProjStatus @default(ACTIVE)
+  members     User[]     @relation("ProjectMembers")
+  tasks       Task[]
+  createdAt   DateTime   @default(now())
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id])
+  title       String
+  description String?
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  status      TaskStatus @default(BACKLOG)
+  priority    Priority   @default(MEDIUM)
+  startDate   DateTime?
+  deadline    DateTime?
+  createdById String
+  createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime   @default(now())
+}
+
+model Reminder {
+  id            String       @id @default(cuid())
+  createdById   String
+  createdBy     User         @relation(fields: [createdById], references: [id])
+  message       String
+  frequency     ReminderFreq @default(ONCE)
+  nextFire      DateTime
+  channel       Channel      @default(BOTH)
+  recipientRoles Role[]
+  createdAt     DateTime     @default(now())
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  userId        String
+  action        String
+  entityType    String
+  entityId      String
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  before        Json?
+  after         Json?
+  timestamp     DateTime @default(now())
+}
