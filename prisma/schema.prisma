@@ -100,6 +100,7 @@ model User {
   telegramUser String
   name         String
   photoUrl     String?
+  themeColor   String     @default("#ffffff")
   chatId       String?
   roles        Role[]
   status       UserStatus @default(ACTIVE)
@@ -121,6 +122,7 @@ model User {
   credentialsCreated   Credential[]  @relation("CredCreatedBy")
   credentialsReviewed  Credential[]  @relation("CredReviewedBy")
   credentialAccess     Credential[]  @relation("CredentialAssignees")
+  notifications        Notification[]
 }
 
 model Transaction {
@@ -259,4 +261,24 @@ model AuditLog {
   before        Json?
   after         Json?
   timestamp     DateTime @default(now())
+}
+
+enum NotifType {
+  TX_APPROVED
+  TX_REJECTED
+  TASK_ASSIGNED
+  REMINDER
+  SYSTEM
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  type      NotifType
+  title     String
+  message   String
+  read      Boolean   @default(false)
+  entityId  String?
+  createdAt DateTime  @default(now())
 }

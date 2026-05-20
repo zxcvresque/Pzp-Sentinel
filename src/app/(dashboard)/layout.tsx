@@ -11,7 +11,27 @@ interface UserData {
   name: string;
   telegramUser: string;
   photoUrl: string | null;
+  themeColor?: string;
   roles: Role[];
+}
+
+function applyThemeColor(hex: string) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  document.documentElement.style.setProperty("--lime", hex);
+  document.documentElement.style.setProperty(
+    "--lime-dim",
+    `rgba(${r}, ${g}, ${b}, 0.08)`,
+  );
+  document.documentElement.style.setProperty(
+    "--lime-glow",
+    `rgba(${r}, ${g}, ${b}, 0.12)`,
+  );
+  document.documentElement.style.setProperty(
+    "--border-active",
+    `rgba(${r}, ${g}, ${b}, 0.3)`,
+  );
 }
 
 export default function DashboardLayout({
@@ -32,6 +52,9 @@ export default function DashboardLayout({
       })
       .then((data) => {
         setUser(data.user);
+        if (data.user.themeColor) {
+          applyThemeColor(data.user.themeColor);
+        }
         const roleFromPath = pathname.startsWith("/admin")
           ? "ADMIN"
           : pathname.startsWith("/dev")

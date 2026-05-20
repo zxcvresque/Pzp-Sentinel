@@ -14,7 +14,10 @@ export async function GET() {
       telegramId: user.telegramId,
       telegramUser: user.telegramUser,
       photoUrl: user.photoUrl,
+      themeColor: user.themeColor,
+      chatId: user.chatId,
       roles: user.roles,
+      createdAt: user.createdAt.toISOString(),
     },
   });
 }

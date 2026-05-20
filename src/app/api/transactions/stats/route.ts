@@ -59,6 +59,35 @@ export async function GET() {
     expenseByType[typ] = (expenseByType[typ] || 0) + Number(t.amount);
   }
 
+  // Burn rate: average monthly OUT spending over last 6 months
+  const monthsWithSpending = monthlyBreakdown.filter((m) => m.spent > 0);
+  const burnRate =
+    monthsWithSpending.length > 0
+      ? monthlyBreakdown.reduce((s, m) => s + m.spent, 0) /
+        monthlyBreakdown.length
+      : 0;
+  const runwayMonths =
+    burnRate > 0
+      ? Math.round(((totalDonated - totalSpent) / burnRate) * 10) / 10
+      : null;
+
+  // Active subscriptions
+  const activeSubs = await prisma.subscription.count({
+    where: { status: "ACTIVE" },
+  });
+
+  const activeSubRecords = await prisma.subscription.findMany({
+    where: { status: "ACTIVE" },
+    select: { price: true, frequency: true },
+  });
+
+  const monthlySubs = activeSubRecords.reduce((sum, sub) => {
+    const price = Number(sub.price);
+    if (sub.frequency === "YEARLY") return sum + price / 12;
+    if (sub.frequency === "ONE_TIME") return sum;
+    return sum + price; // MONTHLY
+  }, 0);
+
   return NextResponse.json({
     totalBalance: totalDonated - totalSpent,
     totalDonated,
@@ -66,5 +95,9 @@ export async function GET() {
     pendingCount,
     monthlyBreakdown,
     expenseByType,
+    burnRate: Math.round(burnRate * 100) / 100,
+    runwayMonths,
+    activeSubs,
+    monthlySubs: Math.round(monthlySubs * 100) / 100,
   });
 }

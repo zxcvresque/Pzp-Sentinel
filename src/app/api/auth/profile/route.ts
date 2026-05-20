@@ -9,18 +9,41 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
-  const name = typeof body.name === "string" ? body.name.trim() : "";
 
-  if (!name || name.length > 100) {
+  const data: Record<string, string> = {};
+
+  if (body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name || name.length > 100) {
+      return NextResponse.json(
+        { error: "Name must be between 1 and 100 characters" },
+        { status: 400 },
+      );
+    }
+    data.name = name;
+  }
+
+  if (body.themeColor !== undefined) {
+    const themeColor = typeof body.themeColor === "string" ? body.themeColor.trim() : "";
+    if (!/^#[0-9a-fA-F]{6}$/.test(themeColor)) {
+      return NextResponse.json(
+        { error: "themeColor must be a valid hex color (e.g. #ff00aa)" },
+        { status: 400 },
+      );
+    }
+    data.themeColor = themeColor;
+  }
+
+  if (Object.keys(data).length === 0) {
     return NextResponse.json(
-      { error: "Name must be between 1 and 100 characters" },
+      { error: "No valid fields to update" },
       { status: 400 },
     );
   }
 
   const updated = await prisma.user.update({
     where: { id: user.id },
-    data: { name },
+    data,
   });
 
   return NextResponse.json({
@@ -30,7 +53,10 @@ export async function PATCH(req: NextRequest) {
       telegramId: updated.telegramId,
       telegramUser: updated.telegramUser,
       photoUrl: updated.photoUrl,
+      themeColor: updated.themeColor,
+      chatId: updated.chatId,
       roles: updated.roles,
+      createdAt: updated.createdAt.toISOString(),
     },
   });
 }

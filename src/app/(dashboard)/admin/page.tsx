@@ -27,6 +27,10 @@ interface Stats {
   pendingCount: number;
   monthlyBreakdown: MonthlyData[];
   expenseByType: Record<string, number>;
+  burnRate: number;
+  runwayMonths: number | null;
+  activeSubs: number;
+  monthlySubs: number;
 }
 
 export default function AdminDashboard() {
@@ -36,8 +40,14 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/transactions?limit=10").then((r) => r.json()),
-      fetch("/api/transactions/stats").then((r) => r.json()),
+      fetch("/api/transactions?limit=10").then((r) => {
+        if (!r.ok) throw new Error(`Transactions: ${r.status}`);
+        return r.json();
+      }),
+      fetch("/api/transactions/stats").then((r) => {
+        if (!r.ok) throw new Error(`Stats: ${r.status}`);
+        return r.json();
+      }),
     ])
       .then(([txData, statsData]) => {
         setTransactions(txData.transactions || []);
@@ -74,8 +84,8 @@ export default function AdminDashboard() {
             Treasury <span className="font-display text-lime">Overview</span>
           </h1>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {[...Array(4)].map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          {[...Array(6)].map((_, i) => (
             <div key={i} className="card p-5">
               <div className="skeleton h-3 w-20 mb-3" />
               <div className="skeleton h-8 w-28" />
@@ -101,16 +111,39 @@ export default function AdminDashboard() {
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="card p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        {/* Balance */}
+        <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
             Total Balance
           </div>
           <div className="text-3xl font-extrabold text-mint">
             ₹{(stats?.totalBalance ?? 0).toLocaleString("en-IN")}
           </div>
+          {stats && stats.totalDonated > 0 && (
+            <div
+              className="mt-3 h-1.5 rounded-full overflow-hidden"
+              style={{ backgroundColor: "rgba(255,255,255,0.05)" }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.min((stats.totalBalance / stats.totalDonated) * 100, 100)}%`,
+                  backgroundColor: "var(--mint)",
+                  opacity: 0.7,
+                }}
+              />
+            </div>
+          )}
+          <div className="text-text-tertiary text-[10px] mt-1.5 font-mono">
+            {stats && stats.totalDonated > 0
+              ? `${((stats.totalBalance / stats.totalDonated) * 100).toFixed(0)}% of donated funds remaining`
+              : "no donations yet"}
+          </div>
         </div>
-        <div className="card p-5">
+
+        {/* Donated */}
+        <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
             Total Donated
           </div>
@@ -118,7 +151,9 @@ export default function AdminDashboard() {
             ₹{(stats?.totalDonated ?? 0).toLocaleString("en-IN")}
           </div>
         </div>
-        <div className="card p-5">
+
+        {/* Spent */}
+        <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
             Total Spent
           </div>
@@ -126,54 +161,83 @@ export default function AdminDashboard() {
             ₹{(stats?.totalSpent ?? 0).toLocaleString("en-IN")}
           </div>
         </div>
-        <div className="card p-5">
+
+        {/* Burn Rate + Runway (combined card) */}
+        <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
-            Pending
+            Burn Rate / Runway
+          </div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-3xl font-extrabold text-coral">
+              ₹{Math.round(stats?.burnRate ?? 0).toLocaleString("en-IN")}
+            </div>
+            <span className="text-text-tertiary text-xs">/mo</span>
+          </div>
+          <div
+            className="mt-3 flex items-center gap-2 px-2.5 py-1.5 rounded-md"
+            style={{ backgroundColor: "rgba(99,102,241,0.08)" }}
+          >
+            <span
+              className="font-mono text-xs font-semibold"
+              style={{ color: "var(--lime)" }}
+            >
+              {stats?.runwayMonths !== null && stats?.runwayMonths !== undefined
+                ? `${stats.runwayMonths} month${stats.runwayMonths !== 1 ? "s" : ""}`
+                : "Infinite"}
+            </span>
+            <span className="text-text-tertiary text-[10px] font-mono">runway</span>
+          </div>
+          <div className="text-text-tertiary text-[10px] mt-1.5 font-mono">
+            avg over last 6 months
+          </div>
+        </div>
+
+        {/* Subscriptions */}
+        <div className="stat-card card p-5">
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+            Subscriptions
+          </div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-3xl font-extrabold" style={{ color: "var(--violet)" }}>
+              {stats?.activeSubs ?? 0}
+            </div>
+            <span className="text-text-tertiary text-xs">active</span>
+          </div>
+          <div
+            className="mt-3 flex items-center gap-2 px-2.5 py-1.5 rounded-md"
+            style={{ backgroundColor: "rgba(167,139,250,0.08)" }}
+          >
+            <span className="font-mono text-xs font-semibold" style={{ color: "var(--violet)" }}>
+              ₹{Math.round(stats?.monthlySubs ?? 0).toLocaleString("en-IN")}
+            </span>
+            <span className="text-text-tertiary text-[10px] font-mono">/month</span>
+          </div>
+        </div>
+
+        {/* Pending */}
+        <div className="stat-card card p-5">
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+            Pending Approvals
           </div>
           <div className="text-3xl font-extrabold text-amber">
             {stats?.pendingCount ?? 0}
           </div>
+          {(stats?.pendingCount ?? 0) > 0 && (
+            <div
+              className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md"
+              style={{ backgroundColor: "rgba(251,191,36,0.08)" }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: "var(--amber)", animation: "pulse 2s infinite" }}
+              />
+              <span className="text-amber text-[10px] font-mono">needs review</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Burn Rate + Runway */}
-      {stats && (() => {
-        const breakdown = stats.monthlyBreakdown ?? [];
-        const last3 = breakdown.slice(-3);
-        const burnRate =
-          last3.length > 0
-            ? last3.reduce((s, m) => s + m.spent, 0) / last3.length
-            : 0;
-        const runway =
-          burnRate > 0 ? Math.floor(stats.totalBalance / burnRate) : null;
-
-        return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-            <div className="card p-5">
-              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
-                Monthly Burn
-              </div>
-              <div className="text-3xl font-extrabold text-coral">
-                ₹{Math.round(burnRate).toLocaleString("en-IN")}
-              </div>
-              <div className="text-text-tertiary text-xs mt-1">avg last 3 months</div>
-            </div>
-            <div className="card p-5">
-              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
-                Runway
-              </div>
-              <div className="text-3xl font-extrabold text-cyan">
-                {runway !== null
-                  ? `${runway} month${runway !== 1 ? "s" : ""}`
-                  : "∞"}
-              </div>
-              <div className="text-text-tertiary text-xs mt-1">at current burn rate</div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Monthly Trend Chart */}
+      {/* Monthly Trend — Horizontal Bar Chart */}
       {stats?.monthlyBreakdown && stats.monthlyBreakdown.length > 0 && (() => {
         const data = stats.monthlyBreakdown;
         const maxVal = Math.max(
@@ -186,37 +250,79 @@ export default function AdminDashboard() {
             <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
               Monthly Trend
             </h2>
-            <div className="card p-5">
-              <div className="flex items-end gap-3 justify-between" style={{ height: 160 }}>
-                {data.map((m) => (
-                  <div key={m.month} className="flex-1 flex flex-col items-center gap-1 h-full">
-                    <div className="flex-1 w-full flex items-end justify-center gap-1">
-                      <div
-                        className="w-2/5 rounded-t transition-all"
-                        style={{
-                          height: `${Math.max((m.donated / maxVal) * 100, 2)}%`,
-                          backgroundColor: "var(--mint)",
-                          opacity: m.donated > 0 ? 1 : 0.2,
-                        }}
-                        title={`Donated: ₹${m.donated.toLocaleString("en-IN")}`}
-                      />
-                      <div
-                        className="w-2/5 rounded-t transition-all"
-                        style={{
-                          height: `${Math.max((m.spent / maxVal) * 100, 2)}%`,
-                          backgroundColor: "var(--coral)",
-                          opacity: m.spent > 0 ? 1 : 0.2,
-                        }}
-                        title={`Spent: ₹${m.spent.toLocaleString("en-IN")}`}
-                      />
-                    </div>
-                    <div className="font-mono text-[9px] text-text-tertiary mt-1 whitespace-nowrap">
+            <div className="card p-5 space-y-4">
+              {data.map((m) => (
+                <div key={m.month}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-[11px] text-text-secondary font-medium w-16 shrink-0">
                       {m.month}
+                    </span>
+                    <div className="flex items-center gap-3 font-mono text-[10px]">
+                      <span className="text-text-tertiary">
+                        Net:{" "}
+                        <span
+                          className="font-semibold"
+                          style={{ color: m.donated - m.spent >= 0 ? "var(--mint)" : "var(--coral)" }}
+                        >
+                          {m.donated - m.spent >= 0 ? "+" : ""}
+                          ₹{(m.donated - m.spent).toLocaleString("en-IN")}
+                        </span>
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-4 mt-4 pt-3 border-t border-[var(--border)]">
+                  {/* Donated bar */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className="font-mono text-[9px] w-10 text-right shrink-0"
+                      style={{ color: "var(--mint)", opacity: 0.7 }}
+                    >
+                      IN
+                    </span>
+                    <div
+                      className="flex-1 h-3 rounded-full overflow-hidden"
+                      style={{ backgroundColor: "rgba(255,255,255,0.04)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.max((m.donated / maxVal) * 100, 0.5)}%`,
+                          backgroundColor: "var(--mint)",
+                          opacity: m.donated > 0 ? 0.85 : 0.15,
+                        }}
+                      />
+                    </div>
+                    <span className="font-mono text-[10px] text-text-tertiary w-20 text-right shrink-0">
+                      ₹{m.donated.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  {/* Spent bar */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="font-mono text-[9px] w-10 text-right shrink-0"
+                      style={{ color: "var(--coral)", opacity: 0.7 }}
+                    >
+                      OUT
+                    </span>
+                    <div
+                      className="flex-1 h-3 rounded-full overflow-hidden"
+                      style={{ backgroundColor: "rgba(255,255,255,0.04)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${Math.max((m.spent / maxVal) * 100, 0.5)}%`,
+                          backgroundColor: "var(--coral)",
+                          opacity: m.spent > 0 ? 0.85 : 0.15,
+                        }}
+                      />
+                    </div>
+                    <span className="font-mono text-[10px] text-text-tertiary w-20 text-right shrink-0">
+                      ₹{m.spent.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <div className="flex items-center gap-4 pt-3 border-t border-[var(--border)]">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "var(--mint)" }} />
                   <span className="font-mono text-[10px] text-text-tertiary">Donated</span>

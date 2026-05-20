@@ -18,55 +18,88 @@ export default function DonorDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("INR");
   const [method, setMethod] = useState("UPI");
-  const [description, setDescription] = useState("");
+  const [reference, setReference] = useState("");
 
   useEffect(() => {
     fetch("/api/transactions?limit=50")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load transactions");
+        return r.json();
+      })
       .then((data) => setTransactions(data.transactions || []))
+      .catch(() => setTransactions([]))
       .finally(() => setLoading(false));
   }, []);
 
-  const totalContributed = transactions
-    .filter((t) => t.status === "APPROVED")
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const approved = transactions.filter((t) => t.status === "APPROVED");
+  const totalContributed = approved.reduce(
+    (sum, t) => sum + parseFloat(t.amount),
+    0
+  );
+  const pendingCount = transactions.filter(
+    (t) => t.status === "PENDING"
+  ).length;
+  const approvedCount = approved.length;
+  const rejectedCount = transactions.filter(
+    (t) => t.status === "REJECTED"
+  ).length;
 
   const filteredTransactions =
     statusFilter === "ALL"
       ? transactions
       : transactions.filter((t) => t.status === statusFilter);
 
+  function currencySymbol(cur: string) {
+    return cur === "USD" ? "$" : "₹";
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setFormError("");
 
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amount,
-        method,
-        direction: "IN",
-        type: "DONATION",
-        description: description || `Donation via ${method}`,
-      }),
-    });
+    try {
+      const desc =
+        reference.trim() || `Donation via ${method}`;
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          currency,
+          method,
+          direction: "IN",
+          type: "DONATION",
+          description: desc,
+        }),
+      });
 
-    if (res.ok) {
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Submission failed");
+      }
+
       const data = await res.json();
       setTransactions((prev) => [data.transaction, ...prev]);
       setShowForm(false);
       setAmount("");
-      setDescription("");
+      setReference("");
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
+    } catch (err: unknown) {
+      setFormError(
+        err instanceof Error ? err.message : "Something went wrong"
+      );
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   }
 
   if (loading) {
@@ -81,87 +114,156 @@ export default function DonorDashboard() {
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold">
             Your <span className="font-display text-lime">Donations</span>
           </h1>
           <p className="text-text-secondary text-sm mt-1">
-            Total contributed:{" "}
-            <span className="text-mint font-semibold">
-              ₹{totalContributed.toLocaleString("en-IN")}
-            </span>
+            Track and submit your contributions
           </p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            setShowForm(!showForm);
+            setFormError("");
+          }}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
           {showForm ? "Cancel" : "Submit Payment"}
         </button>
       </div>
 
+      {/* Stats summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+            Total Contributed
+          </div>
+          <div className="text-xl font-bold text-mint">
+            {currencySymbol("INR")}
+            {totalContributed.toLocaleString("en-IN")}
+          </div>
+        </div>
+        <div className="stat-card" style={{ "--accent": "var(--amber)" } as React.CSSProperties}>
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+            Pending
+          </div>
+          <div className="text-xl font-bold text-amber">{pendingCount}</div>
+        </div>
+        <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+            Approved
+          </div>
+          <div className="text-xl font-bold text-mint">{approvedCount}</div>
+        </div>
+        <div className="stat-card" style={{ "--accent": "var(--coral)" } as React.CSSProperties}>
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+            Rejected
+          </div>
+          <div className="text-xl font-bold text-coral">{rejectedCount}</div>
+        </div>
+      </div>
+
+      {/* Success banner */}
       {success && (
-        <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm">
+        <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm animate-fade-in">
           Payment submitted! Your donation is pending admin approval.
         </div>
       )}
 
+      {/* Submission form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="card p-6 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
+        <div className="glass-card p-6 mb-6 animate-scale-in">
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
+            New Donation
+          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              {/* Amount */}
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Amount
+                </label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0"
+                  min="1"
+                  step="any"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
+                />
+              </div>
+              {/* Currency */}
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Currency
+                </label>
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-[var(--border-active)] transition-colors"
+                >
+                  <option value="INR">INR (&#8377;)</option>
+                  <option value="USD">USD ($)</option>
+                </select>
+              </div>
+              {/* Method */}
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Method
+                </label>
+                <select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value)}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-[var(--border-active)] transition-colors"
+                >
+                  <option value="UPI">UPI</option>
+                  <option value="BMC">Buy Me a Coffee</option>
+                  <option value="BANK">Bank Transfer</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Reference / proof note */}
+            <div className="mb-5">
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Amount (INR)
+                Reference / Proof Note
               </label>
               <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0"
-                min="1"
-                required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                type="text"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="UPI transaction ID, receipt number, or any reference"
+                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
               />
+              <p className="text-text-tertiary text-[11px] mt-1.5">
+                Add a payment reference to help admins verify your donation
+              </p>
             </div>
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Method
-              </label>
-              <select
-                value={method}
-                onChange={(e) => setMethod(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
-                <option value="UPI">UPI</option>
-                <option value="BMC">Buy Me a Coffee</option>
-                <option value="BANK">Bank Transfer</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-          </div>
-          <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-              Description
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional note"
-              className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={submitting || !amount}
-            className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
-          >
-            {submitting ? "Submitting..." : "Submit Donation"}
-          </button>
-        </form>
+
+            {formError && (
+              <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
+                {formError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting || !amount}
+              className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+            >
+              {submitting ? "Submitting..." : "Submit Donation"}
+            </button>
+          </form>
+        </div>
       )}
 
+      {/* Filter tabs */}
       {transactions.length > 0 && (
         <div className="flex items-center gap-2 mb-4">
           {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
@@ -191,6 +293,7 @@ export default function DonorDashboard() {
         </div>
       )}
 
+      {/* Transaction list */}
       {filteredTransactions.length === 0 ? (
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">
@@ -211,15 +314,21 @@ export default function DonorDashboard() {
               key={tx.id}
               className="card p-4 flex items-center justify-between"
             >
-              <div>
-                <div className="text-sm font-medium">{tx.description}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">
+                  {tx.description}
+                </div>
                 <div className="text-text-tertiary text-xs mt-1">
-                  {new Date(tx.date).toLocaleDateString()} · {tx.method}
+                  {new Date(tx.date).toLocaleDateString()} &middot; {tx.method}
+                  {tx.currency !== "INR" && (
+                    <span className="ml-1">&middot; {tx.currency}</span>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0 ml-3">
                 <span className="text-mint font-semibold">
-                  ₹{parseFloat(tx.amount).toLocaleString()}
+                  {currencySymbol(tx.currency)}
+                  {parseFloat(tx.amount).toLocaleString()}
                 </span>
                 <span
                   className={`status-tag ${

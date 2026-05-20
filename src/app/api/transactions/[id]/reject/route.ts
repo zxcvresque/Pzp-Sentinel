@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { logTransactionReview } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { bot } from "@/lib/bot";
+import { createNotification } from "@/lib/notifications";
 
 export async function POST(
   req: NextRequest,
@@ -83,6 +84,21 @@ export async function POST(
     reason,
   });
 
+  // In-app notification for the donor
+  if (updated.fromUserId) {
+    const notifMessage = reason
+      ? `Your donation of ${updated.currency} ${updated.amount} was rejected. Reason: ${reason}`
+      : `Your donation of ${updated.currency} ${updated.amount} was rejected.`;
+    await createNotification({
+      userId: updated.fromUserId,
+      type: "TX_REJECTED",
+      title: "Donation Rejected",
+      message: notifMessage,
+      entityId: id,
+    });
+  }
+
+  // Bot DM — in-app notification above is the fallback if this fails
   if (updated.fromUser?.chatId) {
     try {
       const msg = reason
@@ -90,7 +106,7 @@ export async function POST(
         : `❌ Your donation of ${updated.currency} ${updated.amount} was rejected.`;
       await bot.api.sendMessage(updated.fromUser.chatId, msg);
     } catch {
-      // notification failed
+      // bot DM failed — donor will see the in-app notification
     }
   }
 

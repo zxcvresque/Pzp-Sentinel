@@ -21,10 +21,14 @@ bot.command("start", async (ctx) => {
   // Deep link: /start myid — reply with the user's Telegram ID
   const payload = ctx.match?.trim();
   if (payload === "myid") {
-    await ctx.reply(
-      `Your Telegram ID is:\n\n<code>${telegramId}</code>\n\nCopy it and paste it on the login page.`,
-      { parse_mode: "HTML" },
-    );
+    try {
+      await ctx.reply(
+        `Your Telegram ID is:\n\n<code>${telegramId}</code>\n\nCopy it and paste it on the login page.`,
+        { parse_mode: "HTML" },
+      );
+    } catch (err) {
+      console.error("Failed to reply with user ID:", err);
+    }
     return;
   }
 
@@ -58,25 +62,33 @@ bot.command("start", async (ctx) => {
       details: `@${username || telegramId} started the bot — awaiting role assignment`,
     });
 
-    await ctx.reply(
-      `Hey ${firstName}! 👋\n\n` +
-      `I'm Sentinel — the bot for PzP's finance & developer hub.\n\n` +
-      `Here's what PzP Sentinel does:\n` +
-      `💰 Tracks community treasury — donations, expenses, subscriptions\n` +
-      `📋 Manages developer tasks & project boards\n` +
-      `🔔 Sends payment reminders & notifications\n` +
-      `📊 Keeps everything transparent for the community\n\n` +
-      `You're not registered yet. An admin will review and assign your access shortly. Sit tight!`,
-    );
+    try {
+      await ctx.reply(
+        `Hey ${firstName}! 👋\n\n` +
+        `I'm Sentinel — the bot for PzP's finance & developer hub.\n\n` +
+        `Here's what PzP Sentinel does:\n` +
+        `💰 Tracks community treasury — donations, expenses, subscriptions\n` +
+        `📋 Manages developer tasks & project boards\n` +
+        `🔔 Sends payment reminders & notifications\n` +
+        `📊 Keeps everything transparent for the community\n\n` +
+        `You're not registered yet. An admin will review and assign your access shortly. Sit tight!`,
+      );
+    } catch (err) {
+      console.error("Failed to reply to new user:", err);
+    }
     return;
   }
 
   if (user.roles.length === 0) {
-    await ctx.reply(
-      `Hey ${user.name}! 👋\n\n` +
-      `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
-      `Once approved, you'll be able to open Sentinel from right here.`,
-    );
+    try {
+      await ctx.reply(
+        `Hey ${user.name}! 👋\n\n` +
+        `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
+        `Once approved, you'll be able to open Sentinel from right here.`,
+      );
+    } catch (err) {
+      console.error("Failed to reply to unassigned user:", err);
+    }
     return;
   }
 
@@ -90,18 +102,80 @@ bot.command("start", async (ctx) => {
     .map((r) => roleLabels[r] || r)
     .join("\n");
 
-  await ctx.reply(
-    `Welcome back, ${user.name}! 🏦\n\n` +
-    `Your access:\n${yourRoles}\n\n` +
-    `Open Sentinel to get started.`,
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
-        ],
-      },
+  try {
+    await ctx.reply(
+      `Welcome back, ${user.name}! 🏦\n\n` +
+      `Your access:\n${yourRoles}\n\n` +
+      `Open Sentinel to get started.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
+          ],
+        },
+      }
+    );
+  } catch (err) {
+    console.error("Failed to reply to returning user:", err);
+  }
+});
+
+bot.command("help", async (ctx) => {
+  try {
+    await ctx.reply(
+      `📖 <b>Sentinel Commands</b>\n\n` +
+      `/start — Register or open the Sentinel web app\n` +
+      `/start myid — Get your Telegram ID for login\n` +
+      `/help — Show this help message\n\n` +
+      `📸 <b>Screenshot Upload</b>\n` +
+      `Send a photo to this chat and it will be forwarded to the PzP group for storage. You'll receive the file ID for reference.`,
+      { parse_mode: "HTML" },
+    );
+  } catch (err) {
+    console.error("Failed to reply with help:", err);
+  }
+});
+
+bot.on("message:photo", async (ctx) => {
+  const photos = ctx.message.photo;
+  const largest = photos[photos.length - 1];
+  const fileId = largest.file_id;
+  const caption = ctx.message.caption || `Screenshot from @${ctx.from?.username || ctx.from?.id}`;
+
+  const groupId = process.env.TG_GROUP_ID;
+  const threadId = process.env.TG_TOPIC_SCREENSHOTS;
+
+  if (groupId && threadId) {
+    try {
+      await bot.api.sendPhoto(groupId, fileId, {
+        caption,
+        message_thread_id: Number(threadId),
+      });
+    } catch (err) {
+      console.error("Failed to forward photo to group:", err);
+      try {
+        await ctx.reply("Failed to forward the screenshot to the group. Please try again.");
+      } catch (replyErr) {
+        console.error("Failed to send error reply:", replyErr);
+      }
+      return;
     }
-  );
+  } else {
+    console.warn("TG_GROUP_ID or TG_TOPIC_SCREENSHOTS not set — skipping photo forward");
+  }
+
+  try {
+    await ctx.reply(
+      `✅ Screenshot received!\n\n<code>${fileId}</code>`,
+      { parse_mode: "HTML" },
+    );
+  } catch (err) {
+    console.error("Failed to reply with file_id:", err);
+  }
+});
+
+bot.catch((err) => {
+  console.error("Bot error:", err);
 });
 
 (async () => {

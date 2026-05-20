@@ -258,7 +258,7 @@ export default function Sidebar({
           ) : (
             <>
               <Link
-                href="/"
+                href={`/${activeRole.toLowerCase()}`}
                 style={{
                   color: "var(--text-primary)",
                   fontWeight: 800,

@@ -19,8 +19,8 @@ interface Feature {
 
 const FEATURES: Feature[] = [
   // ── Admin Portal ──
-  { id: "a1",  title: "Finance logging",           details: "Manual entry with amount, from, method, screenshot proof, date/time, notes. Edit/delete with audit trail",              status: "partial", portal: "ADMIN", phase: 1 },
-  { id: "a2",  title: "Balance dashboard",          details: "Burn rate, runway months, donation trends chart, cost breakdown by category",                                          status: "partial", portal: "ADMIN", phase: 1 },
+  { id: "a1",  title: "Finance logging",           details: "Manual entry with amount, from, method, screenshot proof, date/time, notes. Edit/delete with audit trail",              status: "done",    portal: "ADMIN", phase: 1 },
+  { id: "a2",  title: "Balance dashboard",          details: "Burn rate, runway months, donation trends chart, cost breakdown by category",                                          status: "done",    portal: "ADMIN", phase: 1 },
   { id: "a3",  title: "Subscription manager",       details: "Track ongoing costs with platform, price, frequency, specs. Expiry alerts at 7/3/1 days with color-coded badges",      status: "partial", portal: "ADMIN", phase: 2 },
   { id: "a4",  title: "Services registry",          details: "Categories with custom columns and entries that admins define",                                                         status: "done",    portal: "ADMIN", phase: 2 },
   { id: "a5",  title: "User & role management",     details: "Create accounts, assign multi-role, deactivate. No self-signup",                                                       status: "done",    portal: "ADMIN", phase: 1 },
@@ -34,10 +34,10 @@ const FEATURES: Feature[] = [
 
   // ── Donor Portal ──
   { id: "d1",  title: "Donation history",           details: "Full log of contributions with status (pending/approved/rejected)",                                                     status: "done",    portal: "DONOR", phase: 1 },
-  { id: "d2",  title: "Submit payment",             details: "Upload proof, enter amount/method, goes to admin approval queue",                                                       status: "todo",    portal: "DONOR", phase: 1 },
+  { id: "d2",  title: "Submit payment",             details: "Upload proof, enter amount/method, goes to admin approval queue",                                                       status: "done",    portal: "DONOR", phase: 1 },
   { id: "d3",  title: "BMC integration",            details: "One-time + recurring via Buy Me a Coffee. Webhook auto-logs donations",                                                 status: "todo",    portal: "DONOR", phase: 2 },
   { id: "d4",  title: "Receipt download",           details: "Per-donation or monthly summary PDF receipts",                                                                          status: "todo",    portal: "DONOR", phase: 4 },
-  { id: "d5",  title: "Donor profile",              details: "Basic info, notification preferences",                                                                                  status: "partial", portal: "DONOR", phase: 1 },
+  { id: "d5",  title: "Donor profile",              details: "Basic info, notification preferences, theme color picker",                                                               status: "done",    portal: "DONOR", phase: 1 },
 
   // ── Dev Portal ──
   { id: "e1",  title: "Kanban board",               details: "5 status columns, drag-and-drop cards, assignee, priority, deadline, notes",                                            status: "done",    portal: "DEV",   phase: 1 },
@@ -51,13 +51,13 @@ const FEATURES: Feature[] = [
   { id: "b1",  title: "/start + webapp button",     details: "Welcome message with Open PzP Finance webapp button",                                                                   status: "done",    portal: "BOT",   phase: 1 },
   { id: "b2",  title: "/start myid deep link",      details: "Returns user's Telegram ID in copyable format",                                                                         status: "done",    portal: "BOT",   phase: 1 },
   { id: "b3",  title: "OTP delivery",               details: "Sends login code when user authenticates on webapp",                                                                     status: "done",    portal: "BOT",   phase: 1 },
-  { id: "b4",  title: "Notifications",              details: "Reminders, approval status changes, expiry alerts, new task assignments",                                                status: "partial", portal: "BOT",   phase: 1 },
-  { id: "b5",  title: "File relay",                 details: "Receives screenshots via webapp, stores to TG group, returns file reference",                                            status: "todo",    portal: "BOT",   phase: 1 },
+  { id: "b4",  title: "Notifications",              details: "Reminders, approval status changes, expiry alerts, new task assignments",                                                status: "done",    portal: "BOT",   phase: 1 },
+  { id: "b5",  title: "File relay",                 details: "Receives screenshots via webapp, stores to TG group, returns file reference",                                            status: "done",    portal: "BOT",   phase: 1 },
 
   // ── Infra / Cross-cutting ──
   { id: "i1",  title: "GitHub immutable logs",      details: "Separate repo with JSONL files, each commit = log entry. Full audit trail",                                              status: "done",    portal: "INFRA", phase: 1 },
-  { id: "i2",  title: "TG upload failure handling",  details: "Wrap sendPhoto in try/catch. Don't save transaction without valid proof",                                               status: "todo",    portal: "INFRA", phase: 1 },
-  { id: "i3",  title: "Notification fallback",      details: "If bot DM fails, fall back to in-app notification. Log delivery failure",                                                status: "todo",    portal: "INFRA", phase: 1 },
+  { id: "i2",  title: "TG upload failure handling",  details: "Wrap sendPhoto in try/catch. Don't save transaction without valid proof",                                               status: "done",    portal: "INFRA", phase: 1 },
+  { id: "i3",  title: "Notification fallback",      details: "If bot DM fails, fall back to in-app notification. Log delivery failure",                                                status: "done",    portal: "INFRA", phase: 1 },
   { id: "i4",  title: "BMC webhook dedup",          details: "Store BMC event ID, check before insert. Idempotency pattern",                                                          status: "todo",    portal: "INFRA", phase: 2 },
 ];
 

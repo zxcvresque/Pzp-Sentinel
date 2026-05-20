@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { logTransactionReview } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { bot } from "@/lib/bot";
+import { createNotification } from "@/lib/notifications";
 
 export async function POST(
   req: NextRequest,
@@ -75,6 +76,18 @@ export async function POST(
     reviewerName: user.name,
   });
 
+  // In-app notification for the donor
+  if (updated.fromUserId) {
+    await createNotification({
+      userId: updated.fromUserId,
+      type: "TX_APPROVED",
+      title: "Donation Approved",
+      message: `Your donation of ${updated.currency} ${updated.amount} has been approved.`,
+      entityId: id,
+    });
+  }
+
+  // Bot DM — in-app notification above is the fallback if this fails
   if (updated.fromUser?.chatId) {
     try {
       await bot.api.sendMessage(
@@ -82,7 +95,7 @@ export async function POST(
         `✅ Your donation of ${updated.currency} ${updated.amount} has been approved!`
       );
     } catch {
-      // notification failed — donor will see status in-app
+      // bot DM failed — donor will see the in-app notification
     }
   }
 

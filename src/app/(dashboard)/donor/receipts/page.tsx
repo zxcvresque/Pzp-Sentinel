@@ -23,7 +23,10 @@ export default function ReceiptsPage() {
 
   useEffect(() => {
     fetch("/api/transactions?limit=100")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status}`);
+        return r.json();
+      })
       .then((data) =>
         setTransactions(
           (data.transactions || []).filter(
@@ -31,6 +34,7 @@ export default function ReceiptsPage() {
           )
         )
       )
+      .catch(() => {})
       .finally(() => setLoading(false));
 
     fetch("/api/auth/me")

@@ -12,13 +12,39 @@ interface Transaction {
   description: string;
   status: string;
   date: string;
+  proofFileId?: string | null;
+  reviewNote?: string | null;
   fromUser?: { name: string } | null;
   createdBy?: { name: string } | null;
+  reviewedBy?: { name: string } | null;
+}
+
+interface UserOption {
+  id: string;
+  name: string;
+  telegramUser: string | null;
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return iso;
+  }
 }
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [directionFilter, setDirectionFilter] = useState("ALL");
   const [showForm, setShowForm] = useState(false);
@@ -26,31 +52,73 @@ export default function TransactionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("INR");
   const [method, setMethod] = useState("UPI");
   const [direction, setDirection] = useState("OUT");
   const [type, setType] = useState("EXPENSE");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState("");
+  const [fromUserId, setFromUserId] = useState("");
+
+  const [users, setUsers] = useState<UserOption[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
   }, []);
 
+  useEffect(() => {
+    if (direction === "IN" && users.length === 0) {
+      fetchUsers();
+    }
+  }, [direction, users.length]);
+
+  async function fetchUsers() {
+    setUsersLoading(true);
+    try {
+      const res = await fetch("/api/users");
+      if (!res.ok) {
+        console.error("Failed to fetch users:", res.status);
+        return;
+      }
+      const data = await res.json();
+      setUsers(data.users || []);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+    } finally {
+      setUsersLoading(false);
+    }
+  }
+
   async function fetchTransactions() {
     setLoading(true);
-    const res = await fetch("/api/transactions?limit=100");
-    const data = await res.json();
-    setTransactions(data.transactions || []);
-    setLoading(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/transactions?limit=100");
+      if (!res.ok) {
+        setError(`Failed to load transactions (${res.status})`);
+        setTransactions([]);
+        return;
+      }
+      const data = await res.json();
+      setTransactions(data.transactions || []);
+    } catch (err) {
+      setError("Network error loading transactions");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function resetForm() {
     setAmount("");
+    setCurrency("INR");
     setMethod("UPI");
     setDirection("OUT");
     setType("EXPENSE");
     setDescription("");
     setDate("");
+    setFromUserId("");
     setEditingId(null);
     setShowForm(false);
   }
@@ -58,6 +126,7 @@ export default function TransactionsPage() {
   function startEdit(tx: Transaction) {
     setEditingId(tx.id);
     setAmount(parseFloat(tx.amount).toString());
+    setCurrency(tx.currency || "INR");
     setMethod(tx.method);
     setDirection(tx.direction);
     setType(tx.type);
@@ -72,34 +141,58 @@ export default function TransactionsPage() {
   }
 
   async function handleApprove(id: string) {
-    await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: "APPROVED" } : t))
-    );
+    try {
+      const res = await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to approve");
+        return;
+      }
+      const data = await res.json();
+      setTransactions((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...data.transaction, status: "APPROVED" } : t))
+      );
+    } catch {
+      alert("Network error approving transaction");
+    }
   }
 
   async function handleReject(id: string) {
     const reason = prompt("Rejection reason (optional):");
-    await fetch(`/api/transactions/${id}/reject`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    });
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: "REJECTED" } : t))
-    );
+    try {
+      const res = await fetch(`/api/transactions/${id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to reject");
+        return;
+      }
+      const data = await res.json();
+      setTransactions((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...data.transaction, status: "REJECTED" } : t))
+      );
+    } catch {
+      alert("Network error rejecting transaction");
+    }
   }
 
   async function handleDelete(tx: Transaction) {
     if (!confirm(`Delete transaction "${tx.description}" for ${tx.currency === "INR" ? "₹" : "$"}${parseFloat(tx.amount).toLocaleString()}?`)) {
       return;
     }
-    const res = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
-    if (res.ok) {
-      setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
-    } else {
-      const data = await res.json();
-      alert(data.error || "Failed to delete transaction");
+    try {
+      const res = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to delete transaction");
+      }
+    } catch {
+      alert("Network error deleting transaction");
     }
   }
 
@@ -107,32 +200,47 @@ export default function TransactionsPage() {
     e.preventDefault();
     setSubmitting(true);
 
-    if (editingId) {
-      const res = await fetch(`/api/transactions/${editingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, method, direction, type, description, date: date || undefined }),
-      });
-      if (res.ok) {
+    try {
+      if (editingId) {
+        const res = await fetch(`/api/transactions/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount, currency, method, direction, type, description, date: date || undefined }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || "Failed to update transaction");
+          return;
+        }
         const data = await res.json();
         setTransactions((prev) =>
           prev.map((t) => (t.id === editingId ? data.transaction : t))
         );
         resetForm();
-      }
-    } else {
-      const res = await fetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, method, direction, type, description }),
-      });
-      if (res.ok) {
+      } else {
+        const body: Record<string, unknown> = { amount, currency, method, direction, type, description };
+        if (direction === "IN" && fromUserId) {
+          body.fromUserId = fromUserId;
+        }
+        const res = await fetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || "Failed to create transaction");
+          return;
+        }
         const data = await res.json();
         setTransactions((prev) => [data.transaction, ...prev]);
         resetForm();
       }
+    } catch {
+      alert("Network error saving transaction");
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   }
 
   const filtered = transactions.filter((t) => {
@@ -151,8 +259,20 @@ export default function TransactionsPage() {
     );
   }
 
+  const selectClass = "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30";
+  const labelClass = "font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2";
+
   return (
     <div>
+      {error && (
+        <div className="mb-4 p-4 rounded-lg bg-coral/10 border border-coral/20 text-coral text-sm">
+          {error}
+          <button onClick={fetchTransactions} className="ml-3 underline hover:no-underline">
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           All <span className="font-display text-lime">Transactions</span>
@@ -181,11 +301,9 @@ export default function TransactionsPage() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Amount (INR)
-              </label>
+              <label className={labelClass}>Amount</label>
               <input
                 type="number"
                 value={amount}
@@ -193,31 +311,33 @@ export default function TransactionsPage() {
                 placeholder="0"
                 min="1"
                 required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                className={selectClass}
               />
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Direction
-              </label>
+              <label className={labelClass}>Currency</label>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className={selectClass}>
+                <option value="INR">INR (&#8377;)</option>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Direction</label>
               <select
                 value={direction}
-                onChange={(e) => setDirection(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                onChange={(e) => {
+                  setDirection(e.target.value);
+                  if (e.target.value !== "IN") setFromUserId("");
+                }}
+                className={selectClass}
               >
                 <option value="OUT">Expense (OUT)</option>
                 <option value="IN">Income (IN)</option>
               </select>
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Type
-              </label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
+              <label className={labelClass}>Type</label>
+              <select value={type} onChange={(e) => setType(e.target.value)} className={selectClass}>
                 <option value="EXPENSE">Expense</option>
                 <option value="SUBSCRIPTION">Subscription</option>
                 <option value="DONATION">Donation</option>
@@ -227,14 +347,8 @@ export default function TransactionsPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Method
-              </label>
-              <select
-                value={method}
-                onChange={(e) => setMethod(e.target.value)}
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              >
+              <label className={labelClass}>Method</label>
+              <select value={method} onChange={(e) => setMethod(e.target.value)} className={selectClass}>
                 <option value="UPI">UPI</option>
                 <option value="BMC">Buy Me a Coffee</option>
                 <option value="BANK">Bank Transfer</option>
@@ -242,31 +356,46 @@ export default function TransactionsPage() {
               </select>
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Description
-              </label>
+              <label className={labelClass}>Description</label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="What is this for?"
                 required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                className={selectClass}
               />
             </div>
-            {editingId && (
+            {editingId ? (
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Date
-                </label>
+                <label className={labelClass}>Date</label>
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                  className={selectClass}
                 />
               </div>
-            )}
+            ) : direction === "IN" ? (
+              <div>
+                <label className={labelClass}>From User</label>
+                <select
+                  value={fromUserId}
+                  onChange={(e) => setFromUserId(e.target.value)}
+                  className={selectClass}
+                  disabled={usersLoading}
+                >
+                  <option value="">
+                    {usersLoading ? "Loading users..." : "-- Select user (optional) --"}
+                  </option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}{u.telegramUser ? ` (@${u.telegramUser})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </div>
           <button
             type="submit"
@@ -331,11 +460,26 @@ export default function TransactionsPage() {
               </thead>
               <tbody>
                 {filtered.map((tx) => (
-                  <tr key={tx.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors ${editingId === tx.id ? "bg-[rgba(200,255,0,0.04)]" : ""}`}>
+                  <tr key={tx.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors ${editingId === tx.id ? "bg-[rgba(99,102,241,0.06)]" : ""}`}>
                     <td className="p-4 text-sm">
-                      <div>{tx.description}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span>{tx.description}</span>
+                        {tx.proofFileId && (
+                          <span
+                            title="Proof attached"
+                            className="inline-flex items-center justify-center w-5 h-5 rounded bg-violet/10 text-violet flex-shrink-0"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M14 10.667v2.666A1.333 1.333 0 0 1 12.667 14.667H3.333A1.333 1.333 0 0 1 2 13.333v-2.666M11.333 5.333 8 2 4.667 5.333M8 2v8.667" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </span>
+                        )}
+                      </div>
                       {tx.fromUser && (
-                        <div className="text-text-tertiary text-xs mt-0.5">by {tx.fromUser.name}</div>
+                        <div className="text-text-tertiary text-xs mt-0.5">from {tx.fromUser.name}</div>
+                      )}
+                      {tx.createdBy && !tx.fromUser && (
+                        <div className="text-text-tertiary text-xs mt-0.5">by {tx.createdBy.name}</div>
                       )}
                     </td>
                     <td className={`p-4 text-sm text-right font-medium ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}>
@@ -360,9 +504,21 @@ export default function TransactionsPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
                         {tx.status}
                       </span>
+                      {(tx.status === "APPROVED" || tx.status === "REJECTED") && (tx.reviewedBy || tx.reviewNote) && (
+                        <div className="mt-1">
+                          {tx.reviewedBy && (
+                            <div className="text-text-tertiary text-[10px]">by {tx.reviewedBy.name}</div>
+                          )}
+                          {tx.reviewNote && (
+                            <div className="text-text-tertiary text-[10px] italic truncate max-w-[120px] mx-auto" title={tx.reviewNote}>
+                              {tx.reviewNote}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="p-4 text-right text-text-secondary text-sm">
-                      {new Date(tx.date).toLocaleDateString()}
+                      {formatDate(tx.date)}
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex gap-1 justify-center flex-wrap">
