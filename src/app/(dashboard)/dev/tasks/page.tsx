@@ -60,7 +60,30 @@ const PRIORITY_RANK: Record<string, number> = {
   LOW: 3,
 };
 
+const PRIORITY_LEVELS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
+
+const PRIORITY_LABELS: Record<string, string> = {
+  CRITICAL: "Critical",
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+};
+
 type GroupMode = "status" | "tag";
+
+function getDeadlineStatus(deadline: string | null): "overdue" | "due-soon" | "upcoming" | null {
+  if (!deadline) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const due = new Date(deadline);
+  due.setHours(0, 0, 0, 0);
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays < 0) return "overdue";
+  if (diffDays <= 3) return "due-soon";
+  if (diffDays <= 7) return "upcoming";
+  return null;
+}
 
 export default function DevTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -68,6 +91,8 @@ export default function DevTasksPage() {
   const [groupMode, setGroupMode] = useState<GroupMode>("status");
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [filterTag, setFilterTag] = useState<string>("");
+  const [filterPriority, setFilterPriority] = useState<string>("");
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/tasks/mine")
@@ -88,6 +113,27 @@ export default function DevTasksPage() {
       body: JSON.stringify({ status: newStatus }),
     });
     if (!res.ok) setTasks(prev);
+  }
+
+  async function handleTaskUpdate(
+    taskId: string,
+    updates: { title?: string; description?: string | null; priority?: string; deadline?: string | null }
+  ) {
+    const prev = tasks;
+    setTasks((t) =>
+      t.map((task) => (task.id === taskId ? { ...task, ...updates } : task))
+    );
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) {
+      setTasks(prev);
+      return false;
+    }
+    setEditingTaskId(null);
+    return true;
   }
 
   function toggleExpand(id: string) {
@@ -111,9 +157,20 @@ export default function DevTasksPage() {
   }
   allTagsInTasks.sort((a, b) => a.name.localeCompare(b.name));
 
-  const filtered = filterTag
+  let filtered = filterTag
     ? tasks.filter((t) => t.tags.some((tag) => tag.id === filterTag))
     : tasks;
+
+  if (filterPriority) {
+    filtered = filtered.filter((t) => t.priority === filterPriority);
+  }
+
+  /* ---- Task count summary ---- */
+  const totalCount = filtered.length;
+  const inProgressCount = filtered.filter((t) => t.status === "IN_PROGRESS").length;
+  const overdueCount = filtered.filter(
+    (t) => t.status !== "DONE" && getDeadlineStatus(t.deadline) === "overdue"
+  ).length;
 
   if (loading) {
     return (
@@ -160,10 +217,29 @@ export default function DevTasksPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h1 className="text-3xl font-extrabold">
           My <span className="font-display text-lime">Tasks</span>
         </h1>
+      </div>
+
+      {/* Task count summary */}
+      <div className="flex flex-wrap items-center gap-4 mb-5">
+        <span className="font-mono text-xs text-text-secondary">
+          <span className="text-text-primary font-semibold">{totalCount}</span> task{totalCount !== 1 ? "s" : ""} total
+        </span>
+        <span className="opacity-20 text-text-tertiary">|</span>
+        <span className="font-mono text-xs text-amber">
+          <span className="font-semibold">{inProgressCount}</span> in progress
+        </span>
+        {overdueCount > 0 && (
+          <>
+            <span className="opacity-20 text-text-tertiary">|</span>
+            <span className="font-mono text-xs text-coral">
+              <span className="font-semibold">{overdueCount}</span> overdue
+            </span>
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -191,10 +267,38 @@ export default function DevTasksPage() {
           Tag
         </button>
 
+        {/* Priority filter */}
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary ml-4">
+          Priority
+        </span>
+        <button
+          onClick={() => setFilterPriority("")}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+            !filterPriority
+              ? "bg-lime/20 text-lime border border-lime/30"
+              : "bg-bg-deep text-text-secondary border border-[var(--border)] hover:text-text-primary"
+          }`}
+        >
+          All
+        </button>
+        {PRIORITY_LEVELS.map((p) => (
+          <button
+            key={p}
+            onClick={() => setFilterPriority(filterPriority === p ? "" : p)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+              filterPriority === p
+                ? `${PRIORITY_BG[p]} ${PRIORITY_COLOR[p]} border-current`
+                : "bg-bg-deep text-text-secondary border-[var(--border)] hover:text-text-primary"
+            }`}
+          >
+            {PRIORITY_LABELS[p]}
+          </button>
+        ))}
+
         {allTagsInTasks.length > 0 && (
           <>
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary ml-4">
-              Filter
+              Tag
             </span>
             <button
               onClick={() => setFilterTag("")}
@@ -228,11 +332,11 @@ export default function DevTasksPage() {
       {filtered.length === 0 ? (
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">
-            {filterTag ? "No tasks match this filter." : "No tasks assigned to you."}
+            {filterTag || filterPriority ? "No tasks match these filters." : "No tasks assigned to you."}
           </p>
           <p className="text-text-tertiary text-sm">
-            {filterTag
-              ? "Try a different tag or clear the filter."
+            {filterTag || filterPriority
+              ? "Try different filters or clear them."
               : "Tasks assigned to you across all projects will appear here."}
           </p>
         </div>
@@ -256,8 +360,12 @@ export default function DevTasksPage() {
                     key={task.id}
                     task={task}
                     onStatusChange={handleStatusChange}
+                    onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}
                     onToggleExpand={() => toggleExpand(task.id)}
+                    isEditing={editingTaskId === task.id}
+                    onStartEdit={() => setEditingTaskId(task.id)}
+                    onCancelEdit={() => setEditingTaskId(null)}
                   />
                 ))}
               </div>
@@ -286,8 +394,12 @@ export default function DevTasksPage() {
                     key={task.id}
                     task={task}
                     onStatusChange={handleStatusChange}
+                    onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}
                     onToggleExpand={() => toggleExpand(task.id)}
+                    isEditing={editingTaskId === task.id}
+                    onStartEdit={() => setEditingTaskId(task.id)}
+                    onCancelEdit={() => setEditingTaskId(null)}
                   />
                 ))}
               </div>
@@ -299,28 +411,189 @@ export default function DevTasksPage() {
   );
 }
 
+function DeadlineBadge({ deadline, status }: { deadline: string | null; status: string }) {
+  if (status === "DONE") return null;
+  const deadlineStatus = getDeadlineStatus(deadline);
+  if (!deadlineStatus) return null;
+
+  if (deadlineStatus === "overdue") {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[var(--coral-dim)] text-coral shrink-0">
+        Overdue
+      </span>
+    );
+  }
+  if (deadlineStatus === "due-soon") {
+    return (
+      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[var(--amber-dim)] text-amber shrink-0">
+        Due soon
+      </span>
+    );
+  }
+  /* upcoming (within 7 days) */
+  return (
+    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--bg-elevated)] text-text-tertiary shrink-0">
+      Due this week
+    </span>
+  );
+}
+
+function InlineEditPanel({
+  task,
+  onSave,
+  onCancel,
+}: {
+  task: Task;
+  onSave: (updates: { title?: string; description?: string | null; priority?: string; deadline?: string | null }) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description || "");
+  const [priority, setPriority] = useState(task.priority);
+  const [deadline, setDeadline] = useState(
+    task.deadline ? task.deadline.slice(0, 10) : ""
+  );
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!title.trim()) return;
+    setSaving(true);
+    const updates: Record<string, unknown> = {};
+    if (title !== task.title) updates.title = title.trim();
+    if (description !== (task.description || ""))
+      updates.description = description || null;
+    if (priority !== task.priority) updates.priority = priority;
+    const newDeadline = deadline || null;
+    const oldDeadline = task.deadline ? task.deadline.slice(0, 10) : null;
+    if (newDeadline !== oldDeadline) updates.deadline = newDeadline;
+
+    if (Object.keys(updates).length === 0) {
+      onCancel();
+      return;
+    }
+    await onSave(updates as { title?: string; description?: string | null; priority?: string; deadline?: string | null });
+    setSaving(false);
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-[var(--border)] space-y-3">
+      <div>
+        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
+          Title
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+        />
+      </div>
+      <div>
+        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
+          Description
+        </label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={2}
+          className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+        />
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
+            Priority
+          </label>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30"
+          >
+            {PRIORITY_LEVELS.map((p) => (
+              <option key={p} value={p}>
+                {PRIORITY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">
+            Deadline
+          </label>
+          <input
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-text-secondary focus:outline-none focus:border-lime/30"
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving || !title.trim()}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-lime/20 text-lime border border-lime/30 hover:bg-lime/30 transition-colors disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-bg-deep text-text-secondary border border-[var(--border)] hover:text-text-primary transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TaskRow({
   task,
   onStatusChange,
+  onTaskUpdate,
   expanded,
   onToggleExpand,
+  isEditing,
+  onStartEdit,
+  onCancelEdit,
 }: {
   task: Task;
   onStatusChange: (id: string, status: string) => void;
+  onTaskUpdate: (id: string, updates: { title?: string; description?: string | null; priority?: string; deadline?: string | null }) => Promise<boolean>;
   expanded: boolean;
   onToggleExpand: () => void;
+  isEditing: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
 }) {
   return (
     <div className="card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-sm font-medium truncate">{task.title}</span>
+            <button
+              onClick={onStartEdit}
+              className="text-sm font-medium truncate hover:text-lime transition-colors text-left"
+              title="Click to edit"
+            >
+              {task.title}
+            </button>
+            <button
+              onClick={onStartEdit}
+              className="text-text-tertiary hover:text-lime transition-colors shrink-0"
+              title="Edit task"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
             <span
               className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded shrink-0 ${PRIORITY_COLOR[task.priority]} ${PRIORITY_BG[task.priority]}`}
             >
               {task.priority}
             </span>
+            <DeadlineBadge deadline={task.deadline} status={task.status} />
             {task.tags.map((tag) => (
               <span
                 key={tag.id}
@@ -361,6 +634,15 @@ function TaskRow({
           ))}
         </select>
       </div>
+
+      {/* Inline edit panel */}
+      {isEditing && (
+        <InlineEditPanel
+          task={task}
+          onSave={(updates) => onTaskUpdate(task.id, updates)}
+          onCancel={onCancelEdit}
+        />
+      )}
 
       {task.subtasks.length > 0 && (
         <div className="mt-3 pt-3 border-t border-[var(--border)]">
