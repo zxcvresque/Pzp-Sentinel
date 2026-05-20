@@ -65,11 +65,16 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      {/* Background image */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/login-bg.png')" }}
+      />
+      {/* Tinted overlay for readability */}
+      <div
+        className="absolute inset-0"
         style={{
-          background:
-            "radial-gradient(ellipse 600px 400px at 50% 40%, rgba(200,255,0,0.04), transparent)",
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 100%)",
         }}
       />
 
@@ -79,7 +84,7 @@ export default function LoginPage() {
           <p className="text-text-secondary text-sm">PzP Finance &amp; Developers Hub</p>
         </div>
 
-        <div className="card p-6">
+        <div className="card p-6 backdrop-blur-sm bg-[var(--bg-surface)]/80 border border-[var(--border)]">
           {step === "id" ? (
             <form onSubmit={requestOtp}>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
