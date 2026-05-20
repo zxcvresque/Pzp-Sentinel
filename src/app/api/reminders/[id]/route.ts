@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logReminderAction } from "@/lib/github-log";
 
 export async function PATCH(
   req: NextRequest,
@@ -41,6 +42,15 @@ export async function PATCH(
     include: { createdBy: { select: { name: true } } },
   });
 
+  // GitHub immutable log
+  logReminderAction({
+    action: "UPDATED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    details: `Updated: ${reminder.frequency}: ${reminder.message.slice(0, 80)}`,
+  });
+
   return NextResponse.json({ reminder });
 }
 
@@ -62,6 +72,15 @@ export async function DELETE(
   }
 
   await prisma.reminder.delete({ where: { id } });
+
+  // GitHub immutable log
+  logReminderAction({
+    action: "DELETED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    details: `Deleted: ${reminder.message.slice(0, 80)}`,
+  });
 
   return NextResponse.json({ success: true });
 }

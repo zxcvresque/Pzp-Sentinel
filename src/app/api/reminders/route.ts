@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logReminderAction } from "@/lib/github-log";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -44,6 +45,15 @@ export async function POST(req: NextRequest) {
       createdById: user.id,
     },
     include: { createdBy: { select: { name: true } } },
+  });
+
+  // GitHub immutable log
+  logReminderAction({
+    action: "CREATED",
+    userId: user.id,
+    userName: user.name,
+    entityId: reminder.id,
+    details: `${reminder.frequency}: ${reminder.message.slice(0, 80)}`,
   });
 
   return NextResponse.json({ reminder }, { status: 201 });

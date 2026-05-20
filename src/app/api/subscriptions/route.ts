@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logSubscriptionAction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
 export async function GET() {
@@ -43,6 +44,17 @@ export async function POST(req: NextRequest) {
       specs: specs || undefined,
       currency: currency || "INR",
     },
+  });
+
+  // GitHub immutable log
+  logSubscriptionAction({
+    action: "CREATED",
+    userId: user.id,
+    userName: user.name,
+    entityId: subscription.id,
+    platform,
+    details: `${subscription.currency} ${subscription.price} ${subscription.frequency}`,
+    meta: { price: subscription.price.toString(), frequency: subscription.frequency },
   });
 
   return NextResponse.json({ subscription }, { status: 201 });

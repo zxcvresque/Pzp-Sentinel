@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logUserCreated } from "@/lib/telegram-log";
+import { logUserAction } from "@/lib/github-log";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -70,6 +71,16 @@ export async function POST(req: NextRequest) {
     createdByName: user.name,
   });
 
+  // GitHub immutable log
+  logUserAction({
+    action: "CREATED",
+    adminId: user.id,
+    adminName: user.name,
+    targetUserId: newUser.id,
+    targetUserName: newUser.name,
+    details: `roles: ${newUser.roles.join(",")}, tg: @${newUser.telegramUser}`,
+  });
+
   return NextResponse.json({ user: newUser }, { status: 201 });
 }
 
@@ -116,6 +127,16 @@ export async function PATCH(req: NextRequest) {
     after: { roles: updated.roles, status: updated.status, name: updated.name, telegramUser: updated.telegramUser },
     userName: user.name,
     details: `${target.name}: ${changes.join("; ")}`,
+  });
+
+  // GitHub immutable log
+  logUserAction({
+    action: "UPDATED",
+    adminId: user.id,
+    adminName: user.name,
+    targetUserId: id,
+    targetUserName: target.name,
+    details: changes.join("; "),
   });
 
   return NextResponse.json({ user: updated });

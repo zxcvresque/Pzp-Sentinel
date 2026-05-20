@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logSubscriptionAction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
 export async function PATCH(
@@ -38,6 +39,16 @@ export async function PATCH(
     data,
   });
 
+  // GitHub immutable log
+  logSubscriptionAction({
+    action: "UPDATED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    platform: subscription.platform,
+    details: `Updated: ${subscription.platform}`,
+  });
+
   return NextResponse.json({ subscription });
 }
 
@@ -52,7 +63,18 @@ export async function DELETE(
 
   const { id } = await params;
 
+  const existing = await prisma.subscription.findUnique({ where: { id } });
   await prisma.subscription.delete({ where: { id } });
+
+  // GitHub immutable log
+  logSubscriptionAction({
+    action: "DELETED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    platform: existing?.platform || "unknown",
+    details: `Deleted: ${existing?.platform || id}`,
+  });
 
   return NextResponse.json({ success: true });
 }

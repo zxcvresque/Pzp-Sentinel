@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logCredentialAction } from "@/lib/github-log";
 
 export async function PATCH(
   req: NextRequest,
@@ -39,6 +40,16 @@ export async function PATCH(
     },
   });
 
+  // GitHub immutable log
+  logCredentialAction({
+    action: "UPDATED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    platform: credential.platform,
+    details: `Updated: ${credential.label}`,
+  });
+
   return NextResponse.json({ credential });
 }
 
@@ -56,8 +67,19 @@ export async function DELETE(
 
   const { id } = await params;
 
+  const existing = await prisma.credential.findUnique({ where: { id } });
   await prisma.credential.deleteMany({ where: { parentId: id } });
   await prisma.credential.delete({ where: { id } });
+
+  // GitHub immutable log
+  logCredentialAction({
+    action: "DELETED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    platform: existing?.platform || "unknown",
+    details: `Deleted: ${existing?.label || id}`,
+  });
 
   return NextResponse.json({ success: true });
 }

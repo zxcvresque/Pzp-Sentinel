@@ -56,12 +56,30 @@ export default function DashboardLayout({
     router.push(routes[role]);
   }
 
+  // Breadcrumb label derived from current pathname
+  const breadcrumb = pathname.startsWith("/admin")
+    ? "Admin / Treasury"
+    : pathname.startsWith("/dev")
+      ? "Dev / Board"
+      : pathname.startsWith("/donor")
+        ? "Donor / Overview"
+        : "Dashboard";
+
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-lime/30 border-t-lime rounded-full animate-spin" />
-          <span className="text-text-tertiary text-sm">Loading...</span>
+      <div className="flex min-h-screen">
+        {/* Sidebar skeleton */}
+        <div className="skeleton w-[200px] min-h-screen shrink-0" />
+        {/* Content area skeleton */}
+        <div className="flex-1 flex flex-col gap-0">
+          {/* Header bar skeleton */}
+          <div className="skeleton h-14 w-full rounded-none" />
+          {/* Card skeletons */}
+          <div className="flex-1 p-6 md:p-8 flex flex-col gap-4">
+            <div className="skeleton h-32 w-full" />
+            <div className="skeleton h-32 w-full" />
+            <div className="skeleton h-32 w-full" />
+          </div>
         </div>
       </div>
     );
@@ -75,7 +93,10 @@ export default function DashboardLayout({
         onRoleSwitch={handleRoleSwitch}
       />
       <div className="flex-1 flex flex-col overflow-x-hidden">
-        <header className="sticky top-0 z-40 flex items-center justify-end gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)] bg-bg-void/80 backdrop-blur-md">
+        <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)] bg-bg-void/80 backdrop-blur-md">
+          <span className="font-mono text-[11px] uppercase tracking-widest text-text-tertiary">
+            {breadcrumb}
+          </span>
           <TopBar
             name={user.name}
             photoUrl={user.photoUrl}
@@ -84,9 +105,12 @@ export default function DashboardLayout({
           />
         </header>
         <main className="flex-1 p-6 md:p-8 pb-24 md:pb-8">
-          {children}
+          <div key={pathname} className="animate-fade-in">
+            {children}
+          </div>
         </main>
       </div>
+      <div className="grain" />
     </div>
   );
 }

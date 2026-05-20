@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransaction, logProofScreenshot } from "@/lib/telegram-log";
+import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -98,6 +99,19 @@ export async function POST(req: NextRequest) {
     status: transaction.status,
     fromUserName: transaction.fromUser?.name,
     createdByName: transaction.createdBy?.name,
+  });
+
+  // GitHub immutable log
+  ghLogTransaction({
+    action: "CREATED",
+    userId: user.id,
+    userName: user.name,
+    amount: transaction.amount.toString(),
+    currency: transaction.currency,
+    direction: transaction.direction,
+    method: transaction.method,
+    entityId: transaction.id,
+    details: `${transaction.type}: ${transaction.description}`,
   });
 
   if (proofFileId) {

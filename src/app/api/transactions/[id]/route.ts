@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { logTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
 export async function PATCH(
@@ -66,6 +67,19 @@ export async function PATCH(
     details: `Updated transaction: ${updated.direction} ${updated.currency} ${updated.amount}`,
   });
 
+  // GitHub immutable log
+  logTransaction({
+    action: "UPDATED",
+    userId: user.id,
+    userName: user.name,
+    amount: updated.amount.toString(),
+    currency: updated.currency,
+    direction: updated.direction,
+    method: updated.method,
+    entityId: id,
+    details: `Updated: ${updated.description}`,
+  });
+
   return NextResponse.json({ transaction: updated });
 }
 
@@ -111,6 +125,19 @@ export async function DELETE(
     },
     userName: user.name,
     details: `Deleted transaction: ${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}`,
+  });
+
+  // GitHub immutable log
+  logTransaction({
+    action: "DELETED",
+    userId: user.id,
+    userName: user.name,
+    amount: transaction.amount.toString(),
+    currency: transaction.currency,
+    direction: transaction.direction,
+    method: transaction.method,
+    entityId: id,
+    details: `Deleted: ${transaction.description}`,
   });
 
   return NextResponse.json({ success: true });

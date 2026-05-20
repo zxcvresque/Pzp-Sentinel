@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransactionReview } from "@/lib/telegram-log";
+import { logApproval, logTransaction } from "@/lib/github-log";
 import { bot } from "@/lib/bot";
 
 export async function POST(
@@ -43,6 +44,26 @@ export async function POST(
     before: { status: "PENDING" },
     after: { status: "APPROVED" },
     userName: user.name,
+  });
+
+  // GitHub immutable log
+  logApproval({
+    action: "APPROVE",
+    reviewerId: user.id,
+    reviewerName: user.name,
+    entityType: "Transaction",
+    entityId: id,
+  });
+  logTransaction({
+    action: "APPROVED",
+    userId: user.id,
+    userName: user.name,
+    amount: updated.amount.toString(),
+    currency: updated.currency,
+    direction: updated.direction,
+    method: updated.method,
+    entityId: id,
+    details: updated.description,
   });
 
   logTransactionReview({

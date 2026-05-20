@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logApproval, logCredentialAction } from "@/lib/github-log";
 
 export async function POST(
   req: NextRequest,
@@ -28,6 +29,24 @@ export async function POST(
       where: { id },
       data: { status: "REJECTED", reviewedById: user.id },
     });
+
+    // GitHub immutable log
+    logApproval({
+      action: "REJECT",
+      reviewerId: user.id,
+      reviewerName: user.name,
+      entityType: "Credential",
+      entityId: id,
+    });
+    logCredentialAction({
+      action: "REJECTED",
+      userId: user.id,
+      userName: user.name,
+      entityId: id,
+      platform: pending.platform,
+      details: `Rejected: ${pending.label}`,
+    });
+
     return NextResponse.json({ success: true, status: "REJECTED" });
   }
 
@@ -50,6 +69,23 @@ export async function POST(
       data: { status: "APPROVED", reviewedById: user.id },
     });
   }
+
+  // GitHub immutable log
+  logApproval({
+    action: "APPROVE",
+    reviewerId: user.id,
+    reviewerName: user.name,
+    entityType: "Credential",
+    entityId: id,
+  });
+  logCredentialAction({
+    action: "APPROVED",
+    userId: user.id,
+    userName: user.name,
+    entityId: id,
+    platform: pending.platform,
+    details: `Approved: ${pending.label}${pending.parentId ? " (revision)" : ""}`,
+  });
 
   return NextResponse.json({ success: true, status: "APPROVED" });
 }

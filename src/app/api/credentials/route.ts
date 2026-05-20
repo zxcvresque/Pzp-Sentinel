@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logCredentialAction } from "@/lib/github-log";
 
 export async function GET() {
   try {
@@ -92,6 +93,16 @@ export async function POST(req: NextRequest) {
         createdBy: { select: { id: true, name: true } },
       },
     });
+    // GitHub immutable log
+    logCredentialAction({
+      action: "CREATED",
+      userId: user.id,
+      userName: user.name,
+      entityId: credential.id,
+      platform,
+      details: `Admin created: ${label}`,
+    });
+
     return NextResponse.json({ credential }, { status: 201 });
   }
 
@@ -105,5 +116,15 @@ export async function POST(req: NextRequest) {
       parentId: parentId || null,
     },
   });
+  // GitHub immutable log
+  logCredentialAction({
+    action: "PROPOSED",
+    userId: user.id,
+    userName: user.name,
+    entityId: credential.id,
+    platform,
+    details: `Dev proposed: ${label}${parentId ? ` (revision of ${parentId.slice(0, 8)})` : ""}`,
+  });
+
   return NextResponse.json({ credential, message: "Submitted for admin approval" }, { status: 201 });
 }
