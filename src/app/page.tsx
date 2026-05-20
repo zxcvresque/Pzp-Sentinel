@@ -6,14 +6,14 @@ export default function PublicPage() {
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: "url('/login-bg.png')",
-          filter: "brightness(1.3)",
+          filter: "brightness(2.5)",
         }}
       />
       {/* Overlay */}
       <div
         className="absolute inset-0"
         style={{
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.5) 100%)",
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
         }}
       />
 
