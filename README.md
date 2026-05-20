@@ -1,101 +1,127 @@
-# Sentinel — PzP Finance & Developers Hub
+<p align="center">
+  <img src="public/banner.png" alt="Sentinel Banner" width="100%" />
+</p>
 
-Community treasury management and developer collaboration platform for the PzP developer community. Built as a Telegram Mini App.
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
+  <img src="https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=flat-square&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/Telegram-Bot%20API-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/License-Private-gray?style=flat-square" />
+</p>
+
+<p align="center">
+  Community treasury management and developer collaboration platform for the PzP developer community.<br/>
+  Built as a Telegram Mini App.
+</p>
+
+---
 
 ## Features
 
-### Three-Role System
-- **Admin** — Treasury overview, transaction management, subscription tracking, service registry, credential vault, user management, reminders, audit log
-- **Dev** — Kanban project board with task creation, subtasks, colorful flair/tag system, credential access with approval flow
-- **Donor** — Donation history, receipt tracking
+### `ADMIN` Treasury & Operations
+> Full financial oversight, platform management, and team coordination.
 
-### Credentials Vault
-- Admin stores platform credentials (Hetzner, Cloudflare, etc.) with multi-field support
-- Assigns access to specific developers
-- Devs can propose updates or new credentials, requiring admin approval
+- Treasury dashboard with balance, donations, and expense tracking
+- Transaction management with approval workflow
+- Subscription tracking (Hetzner, Cloudflare, OpenAI, etc.)
+- Service registry with dynamic columns and entries
+- Credential vault with multi-field storage and developer assignment
+- User management with role assignment
+- Reminders with role-based targeting and scheduling
+- Audit log for all administrative actions
 
-### Task Management
-- Kanban board with status columns (Backlog, To Do, In Progress, Review, Done)
-- Subtask support with progress tracking
-- Colorful tag/flair system (Backend, Frontend, Bug, Feature, DevOps, UI/UX, Security, Docs)
+### `DEV` Project Board & Credentials
+> Kanban workflow with tags, subtasks, and secure credential access.
+
+- Kanban board with 5 status columns (Backlog, To Do, In Progress, Review, Done)
+- Task creation with priority, assignee, deadline, and parent task
+- Subtask support with progress indicators
+- Colorful tag/flair system: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
 - Group by status or tag, filter by tag
-- Task creation with assignee, priority, deadline, parent task, and tags
+- Credential access with propose/approve workflow
+
+### `DONOR` Contributions
+> Track donations and download receipts.
+
+- Donation history and status tracking
+- Receipt management
 
 ### Telegram Integration
-- Mini App auth via initData HMAC-SHA256 validation
+- Mini App auth via `initData` HMAC-SHA256 validation
 - OTP login fallback for web access
 - Bot with group topic logging for critical events
-- Profile photo sync from Telegram
+- Profile photo sync on login
 
-## Tech Stack
+---
 
-- **Next.js 16** (App Router, Turbopack)
-- **Prisma 7** with PostgreSQL (driver adapters)
-- **jose** for JWT (Edge-compatible)
-- **Telegram Bot API** for notifications and auth
-- **TypeScript** throughout
-
-## Setup
+## Quick Start
 
 ```bash
-# Install dependencies
+# Clone and install
+git clone https://github.com/zxcvresque/Pzp-Sentinel.git
+cd Pzp-Sentinel
 npm install
 
-# Set environment variables
+# Configure environment
 cp .env.example .env
-# Fill in: DATABASE_URL, JWT_SECRET, BOT_TOKEN, GROUP_CHAT_ID
+```
 
-# Push schema to database
+```env
+DATABASE_URL=postgresql://user:pass@localhost:5432/sentinel
+JWT_SECRET=your-secret-key
+BOT_TOKEN=your-telegram-bot-token
+GROUP_CHAT_ID=your-telegram-group-id
+```
+
+```bash
+# Database setup
 npx prisma db push
-
-# Generate Prisma client
 npx prisma generate
-
-# Seed database (users + tags only)
 npx tsx prisma/seed.ts
 
-# Run dev server
+# Run
 npm run dev
 ```
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Secret for signing JWT tokens |
-| `BOT_TOKEN` | Telegram bot token |
-| `GROUP_CHAT_ID` | Telegram group chat ID for topic logging |
+---
 
 ## Project Structure
 
 ```
 prisma/
-  schema.prisma          # Database schema
-  seed.ts                # Seed script (users + tags)
+  schema.prisma              # 12 models, 16 enums
+  seed.ts                    # Users + 8 color-coded tags
 src/
   app/
-    (auth)/login/        # Login page with OTP
+    (auth)/login/            # OTP login with background art
     (dashboard)/
-      admin/             # Admin dashboard pages
-      dev/               # Dev board, tasks, credentials
-      donor/             # Donor dashboard
-      profile/           # User profile page
+      admin/                 # 8 admin pages (treasury, users, credentials, etc.)
+      dev/                   # Kanban board, my tasks, dev credentials
+      donor/                 # Donation dashboard, receipts
+      profile/               # User profile with TG info
     api/
-      auth/              # Auth endpoints (OTP, TG, logout, me)
-      credentials/       # Credential vault CRUD
-      projects/          # Projects and project tasks
-      tags/              # Tag management
-      tasks/             # Task CRUD and my-tasks
-      transactions/      # Treasury transactions
-      subscriptions/     # Subscription tracking
-      services/          # Service registry
-      reminders/         # Reminder management
+      auth/                  # OTP, Telegram Mini App, logout, session
+      credentials/           # Vault CRUD + revision approval
+      projects/              # Projects + task management
+      tags/                  # Tag upsert
+      tasks/                 # Task CRUD, my-tasks
+      transactions/          # Treasury transactions
+      subscriptions/         # Subscription tracking
+      services/              # Service registry
+      reminders/             # Scheduled reminders
   components/
-    Sidebar.tsx          # Navigation sidebar with role switching
-    TopBar.tsx           # Header with notifications and profile
+    Sidebar.tsx              # Nav with role switching
+    TopBar.tsx               # Notifications + profile dropdown
   lib/
-    auth.ts              # JWT, user session, role helpers
-    db.ts                # Prisma client singleton
-  bot-dev.ts             # Telegram bot (dev server)
+    auth.ts                  # JWT (jose), session, role helpers
+    db.ts                    # Prisma singleton
+  bot-dev.ts                 # Telegram bot server
 ```
+
+---
+
+<p align="center">
+  <sub>Built for the PzP developer community</sub>
+</p>
