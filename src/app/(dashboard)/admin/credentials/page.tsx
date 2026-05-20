@@ -1,0 +1,436 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+interface UserRef {
+  id: string;
+  name: string;
+}
+
+interface Revision {
+  id: string;
+  platform: string;
+  label: string;
+  value: string;
+  status: string;
+  createdBy: UserRef;
+  createdAt: string;
+}
+
+interface Credential {
+  id: string;
+  platform: string;
+  label: string;
+  value: string;
+  status: string;
+  assignees: UserRef[];
+  createdBy: UserRef;
+  revisions: Revision[];
+  createdAt: string;
+}
+
+interface DevUser {
+  id: string;
+  name: string;
+}
+
+export default function CredentialsPage() {
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [devs, setDevs] = useState<DevUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+
+  const [platform, setPlatform] = useState("");
+  const [fields, setFields] = useState<{ label: string; value: string }[]>([{ label: "", value: "" }]);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/credentials").then((r) => (r.ok ? r.json() : { credentials: [] })),
+      fetch("/api/users").then((r) => (r.ok ? r.json() : { users: [] })),
+    ]).then(([credData, userData]) => {
+      setCredentials(credData.credentials || []);
+      const allUsers = userData.users || [];
+      setDevs(allUsers.filter((u: { roles: string[] }) => u.roles.includes("DEV")));
+      setLoading(false);
+    });
+  }, []);
+
+  function toggleReveal(id: string) {
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function startEdit(cred: Credential) {
+    setEditId(cred.id);
+    setPlatform(cred.platform);
+    setFields([{ label: cred.label, value: cred.value }]);
+    setAssigneeIds(cred.assignees.map((a) => a.id));
+    setShowForm(true);
+  }
+
+  function resetForm() {
+    setEditId(null);
+    setPlatform("");
+    setFields([{ label: "", value: "" }]);
+    setAssigneeIds([]);
+    setShowForm(false);
+  }
+
+  function updateField(index: number, key: "label" | "value", val: string) {
+    setFields((prev) => prev.map((f, i) => (i === index ? { ...f, [key]: val } : f)));
+  }
+
+  function addField() {
+    setFields((prev) => [...prev, { label: "", value: "" }]);
+  }
+
+  function removeField(index: number) {
+    setFields((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleAssignee(id: string) {
+    setAssigneeIds((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
+    );
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+
+    const validFields = fields.filter((f) => f.label && f.value);
+
+    if (editId) {
+      const body = { platform, label: validFields[0]?.label, value: validFields[0]?.value, assigneeIds };
+      const res = await fetch(`/api/credentials/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCredentials((prev) =>
+          prev.map((c) => (c.id === editId ? { ...c, ...data.credential } : c))
+        );
+      }
+    }
+
+    if (!editId) {
+      for (const field of validFields) {
+        const body = { platform, label: field.label, value: field.value, assigneeIds };
+        await fetch("/api/credentials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+    }
+
+    const freshCreds = await fetch("/api/credentials").then((r) => r.json());
+    setCredentials(freshCreds.credentials || []);
+    resetForm();
+    setSubmitting(false);
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/credentials/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setCredentials((prev) => prev.filter((c) => c.id !== id));
+    }
+  }
+
+  async function handleReview(revisionId: string, action: "approve" | "reject", credId: string) {
+    const res = await fetch(`/api/credentials/${revisionId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (res.ok) {
+      const freshCreds = await fetch("/api/credentials").then((r) => r.json());
+      setCredentials(freshCreds.credentials || []);
+      if (action === "approve") {
+        setRevealed((prev) => {
+          const next = new Set(prev);
+          next.add(credId);
+          return next;
+        });
+      }
+    }
+  }
+
+  const grouped = credentials.reduce<Record<string, Credential[]>>((acc, c) => {
+    (acc[c.platform] ??= []).push(c);
+    return acc;
+  }, {});
+
+  const pendingCount = credentials.reduce((sum, c) => sum + c.revisions.length, 0);
+
+  if (loading) {
+    return (
+      <div>
+        <div className="skeleton h-8 w-48 mb-8" />
+        <div className="skeleton h-64 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-extrabold">
+          Credential <span className="font-display text-lime">Vault</span>
+        </h1>
+        <div className="flex items-center gap-3">
+          {pendingCount > 0 && (
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full bg-amber/10 text-amber">
+              {pendingCount} pending
+            </span>
+          )}
+          <button
+            onClick={() => (showForm ? resetForm() : setShowForm(true))}
+            className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
+          >
+            {showForm ? "Cancel" : "Add Credential"}
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="card p-6 mb-6">
+          <div className="mb-4">
+            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              Platform
+            </label>
+            <input
+              type="text"
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value)}
+              placeholder="e.g. Hetzner, Cloudflare"
+              required
+              className="w-full sm:w-1/3 bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+            />
+          </div>
+
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+                Credentials
+              </label>
+              {!editId && (
+                <button
+                  type="button"
+                  onClick={addField}
+                  className="text-xs text-lime hover:text-lime/80 transition-colors"
+                >
+                  + Add another
+                </button>
+              )}
+            </div>
+            <div className="space-y-3">
+              {fields.map((field, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={field.label}
+                      onChange={(e) => updateField(i, "label", e.target.value)}
+                      placeholder="Label (e.g. API Key, Root Password)"
+                      required
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-lime/30"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={field.value}
+                      onChange={(e) => updateField(i, "value", e.target.value)}
+                      placeholder="Value"
+                      required
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-lime/30"
+                    />
+                  </div>
+                  {fields.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeField(i)}
+                      className="text-text-tertiary hover:text-coral text-sm mt-3 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              Assign to Developers
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {devs.map((dev) => (
+                <button
+                  key={dev.id}
+                  type="button"
+                  onClick={() => toggleAssignee(dev.id)}
+                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors ${
+                    assigneeIds.includes(dev.id)
+                      ? "bg-violet text-bg-void border-violet"
+                      : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
+                  }`}
+                >
+                  {dev.name}
+                </button>
+              ))}
+              {devs.length === 0 && (
+                <span className="text-text-tertiary text-xs">No developers found</span>
+              )}
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={submitting || !platform || !fields.some((f) => f.label && f.value)}
+            className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+          >
+            {submitting ? "Saving..." : editId ? "Update Credential" : "Save Credentials"}
+          </button>
+        </form>
+      )}
+
+      {credentials.length === 0 ? (
+        <div className="card p-8 text-center">
+          <p className="text-text-secondary mb-2">No credentials stored yet.</p>
+          <p className="text-text-tertiary text-sm">
+            Add platform credentials and assign access to developers.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {Object.entries(grouped).map(([platformName, creds]) => (
+            <div key={platformName}>
+              <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+                {platformName}
+              </h2>
+              <div className="space-y-3">
+                {creds.map((cred) => (
+                  <div key={cred.id} className="card p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-semibold">{cred.label}</span>
+                          {cred.revisions.length > 0 && (
+                            <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-amber/10 text-amber">
+                              {cred.revisions.length} pending update{cred.revisions.length > 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <button
+                            onClick={() => toggleReveal(cred.id)}
+                            className="font-mono text-xs px-3 py-1.5 rounded-lg bg-bg-deep border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
+                          >
+                            {revealed.has(cred.id) ? "Hide" : "Reveal"}
+                          </button>
+                          {revealed.has(cred.id) && (
+                            <code className="font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
+                              {cred.value}
+                            </code>
+                          )}
+                        </div>
+                        {cred.assignees.length > 0 && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
+                              Access:
+                            </span>
+                            {cred.assignees.map((a) => (
+                              <span
+                                key={a.id}
+                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-violet/10 text-violet"
+                              >
+                                {a.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => startEdit(cred)}
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(cred.id)}
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    {cred.revisions.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-3">
+                        <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-amber">
+                          Pending Changes
+                        </div>
+                        {cred.revisions.map((rev) => (
+                          <div
+                            key={rev.id}
+                            className="bg-bg-deep rounded-lg p-4 border border-amber/20"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-text-secondary mb-1">
+                                  By {rev.createdBy.name} · {new Date(rev.createdAt).toLocaleString()}
+                                </div>
+                                <div className="text-sm mb-1">
+                                  <span className="text-text-tertiary">Platform:</span>{" "}
+                                  {rev.platform}
+                                </div>
+                                <div className="text-sm mb-1">
+                                  <span className="text-text-tertiary">Label:</span>{" "}
+                                  {rev.label}
+                                </div>
+                                <div className="text-sm">
+                                  <span className="text-text-tertiary">Value:</span>{" "}
+                                  <code className="font-mono text-lime">{rev.value}</code>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 shrink-0">
+                                <button
+                                  onClick={() => handleReview(rev.id, "approve", cred.id)}
+                                  className="px-3 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleReview(rev.id, "reject", cred.id)}
+                                  className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
