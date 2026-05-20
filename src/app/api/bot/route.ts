@@ -19,8 +19,13 @@ bot.command("start", async (ctx) => {
       where: { id: user.id },
       data: { chatId },
     });
-  } else {
-    user = await prisma.user.create({
+  }
+
+  const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
+
+  // Unknown person — not in the database at all
+  if (!user) {
+    const created = await prisma.user.create({
       data: {
         telegramId,
         telegramUser: username,
@@ -33,30 +38,57 @@ bot.command("start", async (ctx) => {
     logAuditEvent({
       action: "BOT_REGISTER",
       entityType: "User",
-      entityId: user.id,
+      entityId: created.id,
       userName: firstName,
       details: `@${username || telegramId} started the bot — awaiting role assignment`,
     });
+
+    await ctx.reply(
+      `Hey ${firstName}! 👋\n\n` +
+      `I'm Sentinel — the bot for PzP's finance & developer hub.\n\n` +
+      `Here's what PzP Sentinel does:\n` +
+      `💰 Tracks community treasury — donations, expenses, subscriptions\n` +
+      `📋 Manages developer tasks & project boards\n` +
+      `🔔 Sends payment reminders & notifications\n` +
+      `📊 Keeps everything transparent for the community\n\n` +
+      `You're not registered yet. An admin will review and assign your access shortly. Sit tight!`,
+    );
+    return;
   }
 
-  const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
-
+  // In database but no roles — waiting for admin approval
   if (user.roles.length === 0) {
     await ctx.reply(
-      "Welcome to PzP Finance! 🏦\n\nYou've been registered. An admin will assign your role shortly.",
+      `Hey ${user.name}! 👋\n\n` +
+      `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
+      `Once approved, you'll be able to open Sentinel from right here.`,
     );
-  } else {
-    await ctx.reply(
-      "Welcome back to PzP Finance! 🏦\n\nOpen the webapp to manage your community treasury.",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Open PzP Finance", web_app: { url: webappUrl } }],
-          ],
-        },
-      }
-    );
+    return;
   }
+
+  // Registered user with roles
+  const roleLabels: Record<string, string> = {
+    ADMIN: "🛡️ Admin — full treasury control",
+    DONOR: "💚 Donor — submit & track donations",
+    DEV: "⚡ Dev — project board & tasks",
+  };
+
+  const yourRoles = user.roles
+    .map((r) => roleLabels[r] || r)
+    .join("\n");
+
+  await ctx.reply(
+    `Welcome back, ${user.name}! 🏦\n\n` +
+    `Your access:\n${yourRoles}\n\n` +
+    `Open Sentinel to get started.`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
+        ],
+      },
+    }
+  );
 });
 
 const handleUpdate = webhookCallback(bot, "std/http");
