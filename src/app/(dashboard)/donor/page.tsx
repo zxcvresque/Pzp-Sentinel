@@ -19,6 +19,8 @@ export default function DonorDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("UPI");
   const [description, setDescription] = useState("");
@@ -33,6 +35,11 @@ export default function DonorDashboard() {
   const totalContributed = transactions
     .filter((t) => t.status === "APPROVED")
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const filteredTransactions =
+    statusFilter === "ALL"
+      ? transactions
+      : transactions.filter((t) => t.status === statusFilter);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -155,16 +162,51 @@ export default function DonorDashboard() {
         </form>
       )}
 
-      {transactions.length === 0 ? (
+      {transactions.length > 0 && (
+        <div className="flex items-center gap-2 mb-4">
+          {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
+                statusFilter === s
+                  ? s === "APPROVED"
+                    ? "bg-mint/20 text-mint border-mint/30"
+                    : s === "PENDING"
+                      ? "bg-amber/20 text-amber border-amber/30"
+                      : s === "REJECTED"
+                        ? "bg-coral/20 text-coral border-coral/30"
+                        : "bg-lime/20 text-lime border-lime/30"
+                  : "bg-bg-deep text-text-secondary border-[var(--border)] hover:text-text-primary"
+              }`}
+            >
+              {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
+              {s !== "ALL" && (
+                <span className="ml-1.5 text-[10px] opacity-60">
+                  {transactions.filter((t) => t.status === s).length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {filteredTransactions.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No donations yet.</p>
-          <p className="text-text-tertiary text-sm">
-            Submit your first donation to support the community.
+          <p className="text-text-secondary mb-2">
+            {statusFilter === "ALL"
+              ? "No donations yet."
+              : `No ${statusFilter.toLowerCase()} donations.`}
           </p>
+          {statusFilter === "ALL" && (
+            <p className="text-text-tertiary text-sm">
+              Submit your first donation to support the community.
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
-          {transactions.map((tx) => (
+          {filteredTransactions.map((tx) => (
             <div
               key={tx.id}
               className="card p-4 flex items-center justify-between"
