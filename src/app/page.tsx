@@ -1,40 +1,46 @@
 export default function PublicPage() {
   return (
-    <div className="min-h-screen text-text-primary flex flex-col relative overflow-hidden">
-      {/* Background image */}
-      <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: "url('/login-bg.png')",
-          filter: "brightness(2.5)",
-        }}
-      />
-      {/* Overlay */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.35) 100%)",
-        }}
+    <div className="min-h-screen flex flex-col relative overflow-hidden">
+      <img
+        src="/login-bg.png"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
       />
 
-      <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto px-6 py-20 w-full relative z-10">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl sm:text-6xl text-lime mb-3 font-extrabold" style={{ letterSpacing: "0.05em" }}>
-            {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
-          </h1>
-          <p className="text-text-secondary text-lg tracking-wide mb-4">
-            PzP Finance &amp; Developers Hub
-          </p>
-          <p className="text-text-tertiary text-sm max-w-md mx-auto">
-            Community treasury and project board for PzP — every rupee tracked, every task visible.
-          </p>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6">
+        <h1
+          className="text-5xl sm:text-7xl font-extrabold text-white select-none mb-4 whitespace-nowrap"
+          style={{ letterSpacing: "0.05em" }}
+        >
+          {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
+        </h1>
+
+        <p className="text-white/35 text-sm tracking-[0.25em] uppercase mb-14">
+          PzP Finance &amp; Developers Hub
+        </p>
 
         <a
           href="/login"
-          className="inline-block bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
+          className="group inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 hover:scale-[1.03] active:scale-[0.97]"
+          style={{
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            color: "rgba(255,255,255,0.85)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)",
+          }}
         >
           Sign in
+          <svg
+            className="w-3.5 h-3.5 opacity-50 transition-all duration-300 group-hover:opacity-80 group-hover:translate-x-0.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+          </svg>
         </a>
       </div>
     </div>

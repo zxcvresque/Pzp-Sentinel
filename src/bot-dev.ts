@@ -18,6 +18,16 @@ bot.command("start", async (ctx) => {
 
   if (!telegramId) return;
 
+  // Deep link: /start myid — reply with the user's Telegram ID
+  const payload = ctx.match?.trim();
+  if (payload === "myid") {
+    await ctx.reply(
+      `Your Telegram ID is:\n\n<code>${telegramId}</code>\n\nCopy it and paste it on the login page.`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
   let user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (user) {
