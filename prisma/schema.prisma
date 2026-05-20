@@ -99,6 +99,7 @@ model User {
   telegramId   String     @unique
   telegramUser String
   name         String
+  photoUrl     String?
   chatId       String?
   roles        Role[]
   status       UserStatus @default(ACTIVE)
@@ -117,6 +118,9 @@ model User {
   tasksCreated         Task[]        @relation("TaskCreatedBy")
   remindersCreated     Reminder[]
   projectMembers       Project[]     @relation("ProjectMembers")
+  credentialsCreated   Credential[]  @relation("CredCreatedBy")
+  credentialsReviewed  Credential[]  @relation("CredReviewedBy")
+  credentialAccess     Credential[]  @relation("CredentialAssignees")
 }
 
 model Transaction {
@@ -180,6 +184,13 @@ model Project {
   createdAt   DateTime   @default(now())
 }
 
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  color String @default("#c8ff00")
+  tasks Task[] @relation("TaskTags")
+}
+
 model Task {
   id          String     @id @default(cuid())
   projectId   String
@@ -192,6 +203,10 @@ model Task {
   priority    Priority   @default(MEDIUM)
   startDate   DateTime?
   deadline    DateTime?
+  parentId    String?
+  parent      Task?      @relation("Subtasks", fields: [parentId], references: [id])
+  subtasks    Task[]     @relation("Subtasks")
+  tags        Tag[]      @relation("TaskTags")
   createdById String
   createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime   @default(now())
@@ -207,6 +222,30 @@ model Reminder {
   channel       Channel      @default(BOTH)
   recipientRoles Role[]
   createdAt     DateTime     @default(now())
+}
+
+enum CredStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
+model Credential {
+  id          String     @id @default(cuid())
+  platform    String
+  label       String
+  value       String
+  assignees   User[]     @relation("CredentialAssignees")
+  status      CredStatus @default(APPROVED)
+  createdById String
+  createdBy   User       @relation("CredCreatedBy", fields: [createdById], references: [id])
+  reviewedById String?
+  reviewedBy   User?     @relation("CredReviewedBy", fields: [reviewedById], references: [id])
+  parentId    String?
+  parent      Credential?  @relation("CredentialRevisions", fields: [parentId], references: [id])
+  revisions   Credential[] @relation("CredentialRevisions")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 model AuditLog {
