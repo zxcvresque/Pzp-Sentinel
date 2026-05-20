@@ -23,19 +23,53 @@ export default function TransactionsPage() {
   const [directionFilter, setDirectionFilter] = useState("ALL");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("UPI");
   const [direction, setDirection] = useState("OUT");
   const [type, setType] = useState("EXPENSE");
   const [description, setDescription] = useState("");
+  const [date, setDate] = useState("");
 
   useEffect(() => {
-    fetch("/api/transactions?limit=100")
-      .then((r) => r.json())
-      .then((data) => setTransactions(data.transactions || []))
-      .finally(() => setLoading(false));
+    fetchTransactions();
   }, []);
+
+  async function fetchTransactions() {
+    setLoading(true);
+    const res = await fetch("/api/transactions?limit=100");
+    const data = await res.json();
+    setTransactions(data.transactions || []);
+    setLoading(false);
+  }
+
+  function resetForm() {
+    setAmount("");
+    setMethod("UPI");
+    setDirection("OUT");
+    setType("EXPENSE");
+    setDescription("");
+    setDate("");
+    setEditingId(null);
+    setShowForm(false);
+  }
+
+  function startEdit(tx: Transaction) {
+    setEditingId(tx.id);
+    setAmount(parseFloat(tx.amount).toString());
+    setMethod(tx.method);
+    setDirection(tx.direction);
+    setType(tx.type);
+    setDescription(tx.description);
+    setDate(tx.date ? new Date(tx.date).toISOString().split("T")[0] : "");
+    setShowForm(true);
+  }
+
+  function startCreate() {
+    if (editingId) resetForm();
+    setShowForm(!showForm);
+  }
 
   async function handleApprove(id: string) {
     await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
@@ -56,20 +90,47 @@ export default function TransactionsPage() {
     );
   }
 
+  async function handleDelete(tx: Transaction) {
+    if (!confirm(`Delete transaction "${tx.description}" for ${tx.currency === "INR" ? "₹" : "$"}${parseFloat(tx.amount).toLocaleString()}?`)) {
+      return;
+    }
+    const res = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+    } else {
+      const data = await res.json();
+      alert(data.error || "Failed to delete transaction");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount, method, direction, type, description }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setTransactions((prev) => [data.transaction, ...prev]);
-      setShowForm(false);
-      setAmount("");
-      setDescription("");
+
+    if (editingId) {
+      const res = await fetch(`/api/transactions/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, method, direction, type, description, date: date || undefined }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTransactions((prev) =>
+          prev.map((t) => (t.id === editingId ? data.transaction : t))
+        );
+        resetForm();
+      }
+    } else {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, method, direction, type, description }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTransactions((prev) => [data.transaction, ...prev]);
+        resetForm();
+      }
     }
     setSubmitting(false);
   }
@@ -97,15 +158,29 @@ export default function TransactionsPage() {
           All <span className="font-display text-lime">Transactions</span>
         </h1>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={startCreate}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
-          {showForm ? "Cancel" : "Log Transaction"}
+          {showForm && !editingId ? "Cancel" : "Log Transaction"}
         </button>
       </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">
+              {editingId ? "Edit Transaction" : "New Transaction"}
+            </h2>
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)] transition-colors"
+              >
+                Cancel Edit
+              </button>
+            )}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -150,7 +225,7 @@ export default function TransactionsPage() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Method
@@ -179,13 +254,28 @@ export default function TransactionsPage() {
                 className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
               />
             </div>
+            {editingId && (
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+            )}
           </div>
           <button
             type="submit"
             disabled={submitting || !amount || !description}
             className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
           >
-            {submitting ? "Logging..." : "Log Transaction"}
+            {submitting
+              ? editingId ? "Saving..." : "Logging..."
+              : editingId ? "Save Changes" : "Log Transaction"}
           </button>
         </form>
       )}
@@ -241,7 +331,7 @@ export default function TransactionsPage() {
               </thead>
               <tbody>
                 {filtered.map((tx) => (
-                  <tr key={tx.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+                  <tr key={tx.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors ${editingId === tx.id ? "bg-[rgba(200,255,0,0.04)]" : ""}`}>
                     <td className="p-4 text-sm">
                       <div>{tx.description}</div>
                       {tx.fromUser && (
@@ -275,22 +365,38 @@ export default function TransactionsPage() {
                       {new Date(tx.date).toLocaleDateString()}
                     </td>
                     <td className="p-4 text-center">
-                      {tx.status === "PENDING" && (
-                        <div className="flex gap-1 justify-center">
+                      <div className="flex gap-1 justify-center flex-wrap">
+                        {tx.status === "PENDING" && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(tx.id)}
+                              className="px-3 py-1 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleReject(tx.id)}
+                              className="px-3 py-1 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => startEdit(tx)}
+                          className="px-3 py-1 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        {tx.status === "PENDING" && (
                           <button
-                            onClick={() => handleApprove(tx.id)}
-                            className="px-3 py-1 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleReject(tx.id)}
+                            onClick={() => handleDelete(tx)}
                             className="px-3 py-1 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
                           >
-                            Reject
+                            Delete
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
