@@ -33,7 +33,8 @@ export default function RemindersPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
   const [frequency, setFrequency] = useState("ONCE");
@@ -48,35 +49,74 @@ export default function RemindersPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  function resetForm() {
+    setMessage("");
+    setFrequency("ONCE");
+    setNextFire("");
+    setChannel("BOTH");
+    setRecipientRoles([]);
+    setEditingId(null);
+  }
+
   function toggleRole(role: string) {
     setRecipientRoles((prev) =>
       prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role],
     );
   }
 
+  function handleEdit(rem: Reminder) {
+    setEditingId(rem.id);
+    setMessage(rem.message);
+    setFrequency(rem.frequency);
+    setNextFire(rem.nextFire.slice(0, 16));
+    setChannel(rem.channel);
+    setRecipientRoles(rem.recipientRoles);
+    setShowForm(true);
+  }
+
+  function handleCancelForm() {
+    setShowForm(false);
+    resetForm();
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
 
-    const res = await fetch("/api/reminders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, frequency, nextFire, channel, recipientRoles }),
-    });
+    const payload = { message, frequency, nextFire, channel, recipientRoles };
+
+    const res = editingId
+      ? await fetch(`/api/reminders/${editingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      : await fetch("/api/reminders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
     if (res.ok) {
       const data = await res.json();
-      setReminders((prev) => [data.reminder, ...prev].sort(
-        (a, b) => new Date(a.nextFire).getTime() - new Date(b.nextFire).getTime(),
-      ));
+      if (editingId) {
+        setReminders((prev) =>
+          prev
+            .map((r) => (r.id === editingId ? data.reminder : r))
+            .sort((a, b) => new Date(a.nextFire).getTime() - new Date(b.nextFire).getTime()),
+        );
+      } else {
+        setReminders((prev) =>
+          [data.reminder, ...prev].sort(
+            (a, b) => new Date(a.nextFire).getTime() - new Date(b.nextFire).getTime(),
+          ),
+        );
+      }
+      const msg = editingId ? "Reminder updated successfully." : "Reminder created successfully.";
       setShowForm(false);
-      setMessage("");
-      setFrequency("ONCE");
-      setNextFire("");
-      setChannel("BOTH");
-      setRecipientRoles([]);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      resetForm();
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(""), 3000);
     }
     setSubmitting(false);
   }
@@ -107,21 +147,42 @@ export default function RemindersPage() {
           Bot <span className="font-display text-lime">Reminders</span>
         </h1>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (showForm) {
+              handleCancelForm();
+            } else {
+              resetForm();
+              setShowForm(true);
+            }
+          }}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
           {showForm ? "Cancel" : "New Reminder"}
         </button>
       </div>
 
-      {success && (
+      {successMsg && (
         <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm">
-          Reminder created successfully.
+          {successMsg}
         </div>
       )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">
+              {editingId ? "Edit Reminder" : "New Reminder"}
+            </h2>
+            {editingId && (
+              <button
+                type="button"
+                onClick={handleCancelForm}
+                className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+              >
+                Cancel edit
+              </button>
+            )}
+          </div>
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Message
@@ -201,7 +262,9 @@ export default function RemindersPage() {
             disabled={submitting || !message || !nextFire}
             className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
           >
-            {submitting ? "Creating..." : "Create Reminder"}
+            {submitting
+              ? (editingId ? "Updating..." : "Creating...")
+              : (editingId ? "Update Reminder" : "Create Reminder")}
           </button>
         </form>
       )}
@@ -243,12 +306,20 @@ export default function RemindersPage() {
                   Next: {new Date(rem.nextFire).toLocaleString()} · by {rem.createdBy.name}
                 </div>
               </div>
-              <button
-                onClick={() => handleDelete(rem.id)}
-                className="px-3 py-1 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors shrink-0"
-              >
-                Delete
-              </button>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => handleEdit(rem)}
+                  className="px-3 py-1 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20 transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(rem.id)}
+                  className="px-3 py-1 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
