@@ -5,10 +5,51 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { logAuditEvent } from "./lib/telegram-log";
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL! });
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL!,
+  max: 5,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 10_000,
+});
+pool.on("error", (err) => {
+  console.error("Bot DB pool error (non-fatal):", err.message);
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const bot = new Bot(process.env.BOT_TOKEN!);
+
+// Check if an error is a transient DB connection failure worth retrying
+function isTransientDbError(err: unknown): boolean {
+  const code = (err as { code?: string }).code;
+  const msg = String(err);
+  return !!(
+    code === "P1017" || code === "P1001" || code === "ECONNRESET" ||
+    code === "ECONNREFUSED" || code === "ETIMEDOUT" ||
+    msg.includes("Connection terminated") || msg.includes("closed the connection") ||
+    msg.includes("ECONNRESET")
+  );
+}
+
+// Retry wrapper — flush dead pool connections between retries
+async function dbRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      if (i > 0) {
+        // Warm up: grab and release a fresh connection to flush dead ones
+        try { const c = await pool.connect(); c.release(); } catch { /* pool will reconnect */ }
+      }
+      return await fn();
+    } catch (err: unknown) {
+      if (i < retries && isTransientDbError(err)) {
+        console.log(`DB retry ${i + 1}/${retries} — ${(err as { code?: string }).code || "connection dropped"}`);
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("dbRetry exhausted");
+}
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -32,19 +73,19 @@ bot.command("start", async (ctx) => {
     return;
   }
 
-  let user = await prisma.user.findUnique({ where: { telegramId } });
+  let user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
   if (user) {
-    await prisma.user.update({
-      where: { id: user.id },
+    await dbRetry(() => prisma.user.update({
+      where: { id: user!.id },
       data: { chatId },
-    });
+    }));
   }
 
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
 
   if (!user) {
-    const created = await prisma.user.create({
+    const created = await dbRetry(() => prisma.user.create({
       data: {
         telegramId,
         telegramUser: username,
@@ -52,7 +93,7 @@ bot.command("start", async (ctx) => {
         chatId,
         roles: [],
       },
-    });
+    }));
 
     logAuditEvent({
       action: "BOT_REGISTER",
@@ -141,19 +182,17 @@ bot.on("my_chat_member", async (ctx) => {
   const newStatus = update.new_chat_member.status; // "kicked" = blocked, "member" = unblocked
 
   try {
-    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
     if (!user) return;
 
     if (newStatus === "kicked") {
-      // User blocked the bot — clear chatId
-      await prisma.user.update({ where: { id: user.id }, data: { chatId: null } });
+      await dbRetry(() => prisma.user.update({ where: { id: user!.id }, data: { chatId: null } }));
       console.log(`Bot blocked by ${user.name} (@${user.telegramUser}) — chatId cleared`);
     } else if (newStatus === "member") {
-      // User unblocked the bot — restore chatId
-      await prisma.user.update({
-        where: { id: user.id },
+      await dbRetry(() => prisma.user.update({
+        where: { id: user!.id },
         data: { chatId: update.chat.id.toString() },
-      });
+      }));
       console.log(`Bot unblocked by ${user.name} (@${user.telegramUser}) — chatId restored`);
     }
   } catch (err) {

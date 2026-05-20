@@ -42,8 +42,12 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetch("/api/users")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data) => setUsers(data.users || []))
+      .catch((err) => console.error("Failed to load users:", err))
       .finally(() => setLoading(false));
   }, []);
 
