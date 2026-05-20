@@ -3,11 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
 import type { Role } from "@/generated/prisma/enums";
 
 interface UserData {
   id: string;
   name: string;
+  telegramUser: string;
+  photoUrl: string | null;
   roles: Role[];
 }
 
@@ -71,9 +74,19 @@ export default function DashboardLayout({
         activeRole={activeRole}
         onRoleSwitch={handleRoleSwitch}
       />
-      <main className="flex-1 p-6 md:p-8 pb-24 md:pb-8 overflow-x-hidden">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col overflow-x-hidden">
+        <header className="sticky top-0 z-40 flex items-center justify-end gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)] bg-bg-void/80 backdrop-blur-md">
+          <TopBar
+            name={user.name}
+            photoUrl={user.photoUrl}
+            telegramUser={user.telegramUser}
+            roles={user.roles}
+          />
+        </header>
+        <main className="flex-1 p-6 md:p-8 pb-24 md:pb-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

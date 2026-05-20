@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Role } from "@/generated/prisma/enums";
@@ -18,6 +19,7 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Subscriptions", href: "/admin/subscriptions", icon: "◇" },
     { label: "Users", href: "/admin/users", icon: "◉" },
     { label: "Reminders", href: "/admin/reminders", icon: "◆" },
+    { label: "Credentials", href: "/admin/credentials", icon: "◍" },
     { label: "Audit Log", href: "/admin/audit", icon: "◌" },
   ],
   DONOR: [
@@ -27,6 +29,7 @@ const navByRole: Record<string, NavItem[]> = {
   DEV: [
     { label: "Board", href: "/dev", icon: "◈" },
     { label: "My Tasks", href: "/dev/tasks", icon: "◎" },
+    { label: "Credentials", href: "/dev/credentials", icon: "◍" },
   ],
 };
 
@@ -40,42 +43,69 @@ export default function Sidebar({
   onRoleSwitch: (role: Role) => void;
 }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
   const items = navByRole[activeRole] || [];
 
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-[220px] flex-shrink-0 bg-bg-deepest border-r border-[var(--border)] sticky top-0 h-screen overflow-y-auto">
-        <div className="p-5 border-b border-[var(--border)]">
-          <Link href="/" className="font-display text-2xl text-lime">
-            PzP
-          </Link>
+      <aside
+        className={`hidden md:flex flex-col flex-shrink-0 bg-bg-deepest border-r border-[var(--border)] sticky top-0 h-screen overflow-y-auto transition-[width] duration-200 ${
+          collapsed ? "w-[56px]" : "w-[220px]"
+        }`}
+      >
+        <div className={`flex items-center border-b border-[var(--border)] ${collapsed ? "justify-center p-3" : "justify-between p-5"}`}>
+          {collapsed ? (
+            <button
+              onClick={() => setCollapsed(false)}
+              className="text-lime font-extrabold text-lg"
+              title="Expand sidebar"
+            >
+              S
+            </button>
+          ) : (
+            <>
+              <Link href="/" className="text-lg text-lime font-extrabold whitespace-nowrap" style={{ letterSpacing: "0.05em" }}>
+                {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
+              </Link>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="text-text-tertiary hover:text-text-primary transition-colors text-xs ml-2"
+                title="Collapse sidebar"
+              >
+                ◂
+              </button>
+            </>
+          )}
         </div>
 
-        <nav className="flex-1 py-3 px-3">
-          <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-text-tertiary px-2 pb-2">
-            {activeRole}
-          </div>
+        <nav className={`flex-1 py-3 ${collapsed ? "px-1" : "px-3"}`}>
+          {!collapsed && (
+            <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-text-tertiary px-2 pb-2">
+              {activeRole}
+            </div>
+          )}
           {items.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                title={collapsed ? item.label : undefined}
+                className={`flex items-center ${collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2"} rounded-lg text-sm transition-colors ${
                   active
                     ? "bg-[var(--lime-dim)] text-lime"
                     : "text-text-secondary hover:bg-[rgba(255,255,255,0.03)] hover:text-text-primary"
                 }`}
               >
-                <span className="text-xs opacity-60">{item.icon}</span>
-                {item.label}
+                <span className={`opacity-60 ${collapsed ? "text-base" : "text-xs"}`}>{item.icon}</span>
+                {!collapsed && item.label}
               </Link>
             );
           })}
         </nav>
 
-        {roles.length > 1 && (
+        {!collapsed && roles.length > 1 && (
           <div className="p-3 border-t border-[var(--border)]">
             <div className="font-mono text-[9px] uppercase tracking-[0.15em] text-text-tertiary px-2 pb-2">
               Switch Role
@@ -95,6 +125,26 @@ export default function Sidebar({
             ))}
           </div>
         )}
+
+        {collapsed && roles.length > 1 && (
+          <div className="py-2 px-1 border-t border-[var(--border)]">
+            {roles.map((role) => (
+              <button
+                key={role}
+                onClick={() => onRoleSwitch(role)}
+                title={`Switch to ${role}`}
+                className={`block w-full text-center font-mono text-[9px] uppercase py-1.5 rounded-lg border mb-1 transition-colors ${
+                  role === activeRole
+                    ? "bg-lime text-bg-void border-lime"
+                    : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
+                }`}
+              >
+                {role.charAt(0)}
+              </button>
+            ))}
+          </div>
+        )}
+
       </aside>
 
       {/* Mobile bottom bar */}

@@ -59,16 +59,48 @@
 body {
   background: var(--bg-void);
   color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-inter), 'Inter', sans-serif;
+  overflow: overlay;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
 }
 
 .font-display {
-  font-family: 'Playfair Display', serif;
+  font-family: var(--font-playfair), 'Playfair Display', serif;
   font-style: italic;
 }
 
 .font-mono {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace;
 }
 
 .glass {
