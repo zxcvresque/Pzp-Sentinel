@@ -10,7 +10,7 @@ export async function GET() {
 
   const approved = await prisma.transaction.findMany({
     where: { status: "APPROVED" },
-    select: { amount: true, direction: true },
+    select: { amount: true, direction: true, type: true, date: true },
   });
 
   const totalDonated = approved
@@ -25,10 +25,46 @@ export async function GET() {
     where: { status: "PENDING" },
   });
 
+  // Monthly breakdown for the last 6 months
+  const now = new Date();
+  const monthlyBreakdown: { month: string; donated: number; spent: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const label = d.toLocaleString("en-US", { month: "short", year: "2-digit" });
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+
+    const monthTxns = approved.filter((t: { date: Date }) => {
+      const td = new Date(t.date);
+      return td >= start && td < end;
+    });
+
+    const donated = monthTxns
+      .filter((t: { direction: string }) => t.direction === "IN")
+      .reduce((s: number, t: { amount: unknown }) => s + Number(t.amount), 0);
+    const spent = monthTxns
+      .filter((t: { direction: string }) => t.direction === "OUT")
+      .reduce((s: number, t: { amount: unknown }) => s + Number(t.amount), 0);
+
+    monthlyBreakdown.push({ month: label, donated, spent });
+  }
+
+  // Expense breakdown by type (OUT direction only)
+  const outgoing = approved.filter(
+    (t: { direction: string }) => t.direction === "OUT",
+  );
+  const expenseByType: Record<string, number> = {};
+  for (const t of outgoing) {
+    const typ = (t as { type: string }).type || "OTHER";
+    expenseByType[typ] = (expenseByType[typ] || 0) + Number(t.amount);
+  }
+
   return NextResponse.json({
     totalBalance: totalDonated - totalSpent,
     totalDonated,
     totalSpent,
     pendingCount,
+    monthlyBreakdown,
+    expenseByType,
   });
 }

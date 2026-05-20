@@ -14,11 +14,19 @@ interface Transaction {
   fromUser?: { name: string } | null;
 }
 
+interface MonthlyData {
+  month: string;
+  donated: number;
+  spent: number;
+}
+
 interface Stats {
   totalBalance: number;
   totalDonated: number;
   totalSpent: number;
   pendingCount: number;
+  monthlyBreakdown: MonthlyData[];
+  expenseByType: Record<string, number>;
 }
 
 export default function AdminDashboard() {
@@ -127,6 +135,153 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Burn Rate + Runway */}
+      {stats && (() => {
+        const breakdown = stats.monthlyBreakdown ?? [];
+        const last3 = breakdown.slice(-3);
+        const burnRate =
+          last3.length > 0
+            ? last3.reduce((s, m) => s + m.spent, 0) / last3.length
+            : 0;
+        const runway =
+          burnRate > 0 ? Math.floor(stats.totalBalance / burnRate) : null;
+
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div className="card p-5">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+                Monthly Burn
+              </div>
+              <div className="text-3xl font-extrabold text-coral">
+                ₹{Math.round(burnRate).toLocaleString("en-IN")}
+              </div>
+              <div className="text-text-tertiary text-xs mt-1">avg last 3 months</div>
+            </div>
+            <div className="card p-5">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+                Runway
+              </div>
+              <div className="text-3xl font-extrabold text-cyan">
+                {runway !== null
+                  ? `${runway} month${runway !== 1 ? "s" : ""}`
+                  : "∞"}
+              </div>
+              <div className="text-text-tertiary text-xs mt-1">at current burn rate</div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Monthly Trend Chart */}
+      {stats?.monthlyBreakdown && stats.monthlyBreakdown.length > 0 && (() => {
+        const data = stats.monthlyBreakdown;
+        const maxVal = Math.max(
+          ...data.map((m) => Math.max(m.donated, m.spent)),
+          1,
+        );
+
+        return (
+          <div className="mb-8">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
+              Monthly Trend
+            </h2>
+            <div className="card p-5">
+              <div className="flex items-end gap-3 justify-between" style={{ height: 160 }}>
+                {data.map((m) => (
+                  <div key={m.month} className="flex-1 flex flex-col items-center gap-1 h-full">
+                    <div className="flex-1 w-full flex items-end justify-center gap-1">
+                      <div
+                        className="w-2/5 rounded-t transition-all"
+                        style={{
+                          height: `${Math.max((m.donated / maxVal) * 100, 2)}%`,
+                          backgroundColor: "var(--mint)",
+                          opacity: m.donated > 0 ? 1 : 0.2,
+                        }}
+                        title={`Donated: ₹${m.donated.toLocaleString("en-IN")}`}
+                      />
+                      <div
+                        className="w-2/5 rounded-t transition-all"
+                        style={{
+                          height: `${Math.max((m.spent / maxVal) * 100, 2)}%`,
+                          backgroundColor: "var(--coral)",
+                          opacity: m.spent > 0 ? 1 : 0.2,
+                        }}
+                        title={`Spent: ₹${m.spent.toLocaleString("en-IN")}`}
+                      />
+                    </div>
+                    <div className="font-mono text-[9px] text-text-tertiary mt-1 whitespace-nowrap">
+                      {m.month}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-4 mt-4 pt-3 border-t border-[var(--border)]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "var(--mint)" }} />
+                  <span className="font-mono text-[10px] text-text-tertiary">Donated</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "var(--coral)" }} />
+                  <span className="font-mono text-[10px] text-text-tertiary">Spent</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Cost Breakdown by Type */}
+      {stats?.expenseByType && Object.keys(stats.expenseByType).length > 0 && (() => {
+        const entries = Object.entries(stats.expenseByType).sort(
+          ([, a], [, b]) => b - a,
+        );
+        const total = entries.reduce((s, [, v]) => s + v, 0);
+        const typeColors: Record<string, string> = {
+          DONATION: "var(--mint)",
+          EXPENSE: "var(--coral)",
+          SUBSCRIPTION: "var(--violet)",
+          OTHER: "var(--amber)",
+        };
+
+        return (
+          <div className="mb-8">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
+              Cost Breakdown
+            </h2>
+            <div className="card p-5 space-y-3">
+              {entries.map(([type, amount]) => {
+                const pct = total > 0 ? (amount / total) * 100 : 0;
+                const color = typeColors[type] || "var(--cyan)";
+                return (
+                  <div key={type}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-text-secondary">
+                        {type}
+                      </span>
+                      <span className="font-mono text-[10px] text-text-tertiary">
+                        ₹{amount.toLocaleString("en-IN")} ({pct.toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div
+                      className="h-2 rounded-full overflow-hidden"
+                      style={{ backgroundColor: "rgba(255,255,255,0.05)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {pending.length > 0 && (
         <div className="mb-8">
