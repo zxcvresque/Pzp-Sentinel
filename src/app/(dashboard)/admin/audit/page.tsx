@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface AuditEntry {
   id: string;
@@ -8,19 +8,137 @@ interface AuditEntry {
   action: string;
   entityType: string;
   entityId: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
   timestamp: string;
+}
+
+function actionColor(action: string) {
+  if (action.includes("APPROVE")) return "bg-mint/10 text-mint";
+  if (action.includes("REJECT")) return "bg-coral/10 text-coral";
+  if (action.includes("CREATE")) return "bg-lime/10 text-lime";
+  if (action.includes("DELETE")) return "bg-coral/10 text-coral";
+  if (action.includes("UPDATE")) return "bg-amber/10 text-amber";
+  return "bg-violet/10 text-violet";
+}
+
+function JsonDiff({
+  before,
+  after,
+}: {
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+}) {
+  if (!before && !after) {
+    return <p className="text-text-tertiary text-xs">No change data recorded.</p>;
+  }
+
+  const allKeys = [
+    ...new Set([
+      ...Object.keys(before || {}),
+      ...Object.keys(after || {}),
+    ]),
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+      <div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+          Before
+        </div>
+        {before ? (
+          <div className="space-y-1">
+            {allKeys.map((key) => {
+              const val = before[key];
+              const changed = JSON.stringify(val) !== JSON.stringify(after?.[key]);
+              return (
+                <div key={key} className={changed ? "text-coral" : "text-text-tertiary"}>
+                  <span className="text-text-secondary">{key}:</span>{" "}
+                  {val === undefined ? <span className="italic">--</span> : JSON.stringify(val)}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-text-tertiary italic">N/A</p>
+        )}
+      </div>
+      <div>
+        <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+          After
+        </div>
+        {after ? (
+          <div className="space-y-1">
+            {allKeys.map((key) => {
+              const val = after[key];
+              const changed = JSON.stringify(val) !== JSON.stringify(before?.[key]);
+              return (
+                <div key={key} className={changed ? "text-mint" : "text-text-tertiary"}>
+                  <span className="text-text-secondary">{key}:</span>{" "}
+                  {val === undefined ? <span className="italic">--</span> : JSON.stringify(val)}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-text-tertiary italic">N/A</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AuditPage() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [userMap, setUserMap] = useState<Record<string, string>>({});
+  const [actions, setActions] = useState<string[]>([]);
+  const [entityTypes, setEntityTypes] = useState<string[]>([]);
 
+  const [filterAction, setFilterAction] = useState("");
+  const [filterEntity, setFilterEntity] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const fetchLogs = useCallback(
+    async (cursor?: string) => {
+      const params = new URLSearchParams();
+      if (filterAction) params.set("action", filterAction);
+      if (filterEntity) params.set("entityType", filterEntity);
+      if (cursor) params.set("cursor", cursor);
+
+      const res = await fetch(`/api/audit?${params.toString()}`);
+      const data = await res.json();
+      return data;
+    },
+    [filterAction, filterEntity],
+  );
+
+  // Initial load and filter changes
   useEffect(() => {
-    fetch("/api/audit")
-      .then((r) => r.json())
-      .then((data) => setLogs(data.logs || []))
-      .finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    setLogs([]);
+    setNextCursor(null);
+    fetchLogs().then((data) => {
+      setLogs(data.logs || []);
+      setNextCursor(data.nextCursor || null);
+      setUserMap((prev) => ({ ...prev, ...(data.userMap || {}) }));
+      if (data.actions) setActions(data.actions);
+      if (data.entityTypes) setEntityTypes(data.entityTypes);
+      setLoading(false);
+    });
+  }, [fetchLogs]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    const data = await fetchLogs(nextCursor);
+    setLogs((prev) => [...prev, ...(data.logs || [])]);
+    setNextCursor(data.nextCursor || null);
+    setUserMap((prev) => ({ ...prev, ...(data.userMap || {}) }));
+    setLoadingMore(false);
+  }
 
   if (loading) {
     return (
@@ -39,36 +157,120 @@ export default function AuditPage() {
         Audit <span className="font-display text-lime">Log</span>
       </h1>
 
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
+            Action
+          </label>
+          <select
+            value={filterAction}
+            onChange={(e) => setFilterAction(e.target.value)}
+            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+          >
+            <option value="">All actions</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
+            Entity
+          </label>
+          <select
+            value={filterEntity}
+            onChange={(e) => setFilterEntity(e.target.value)}
+            className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+          >
+            <option value="">All entities</option>
+            {entityTypes.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        </div>
+        {(filterAction || filterEntity) && (
+          <div className="flex items-end">
+            <button
+              onClick={() => {
+                setFilterAction("");
+                setFilterEntity("");
+              }}
+              className="text-xs text-text-tertiary hover:text-text-secondary transition-colors px-3 py-2"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+      </div>
+
       {logs.length === 0 ? (
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No activity logged yet.</p>
-          <p className="text-text-tertiary text-sm">Actions like approving or rejecting transactions will appear here.</p>
+          <p className="text-text-tertiary text-sm">
+            Actions like approving or rejecting transactions will appear here.
+          </p>
         </div>
       ) : (
         <div className="space-y-1">
-          {logs.map((log) => (
-            <div key={log.id} className="card px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded ${
-                  log.action.includes("APPROVE") ? "bg-mint/10 text-mint"
-                    : log.action.includes("REJECT") ? "bg-coral/10 text-coral"
-                    : log.action.includes("CREATE") ? "bg-lime/10 text-lime"
-                    : "bg-violet/10 text-violet"
-                }`}>
-                  {log.action}
-                </span>
-                <span className="text-sm text-text-secondary">
-                  {log.entityType}
-                </span>
-                <span className="text-text-tertiary text-xs font-mono">
-                  {log.entityId.substring(0, 8)}
-                </span>
+          {logs.map((log) => {
+            const expanded = expandedId === log.id;
+            return (
+              <div key={log.id}>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(expanded ? null : log.id)}
+                  className="card px-4 py-3 flex items-center justify-between w-full text-left hover:border-[var(--lime)]/20 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded shrink-0 ${actionColor(log.action)}`}
+                    >
+                      {log.action}
+                    </span>
+                    <span className="text-sm text-text-secondary truncate">
+                      {log.entityType}
+                    </span>
+                    <span className="text-text-tertiary text-xs font-mono shrink-0">
+                      {log.entityId.substring(0, 8)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <span className="text-text-secondary text-xs">
+                      {userMap[log.userId] || log.userId.substring(0, 8)}
+                    </span>
+                    <span className="text-text-tertiary text-xs">
+                      {new Date(log.timestamp).toLocaleString()}
+                    </span>
+                    <span className="text-text-tertiary text-xs">
+                      {expanded ? "▲" : "▼"}
+                    </span>
+                  </div>
+                </button>
+                {expanded && (
+                  <div className="card px-5 py-4 mt-px border-t-0 rounded-t-none">
+                    <JsonDiff before={log.before} after={log.after} />
+                  </div>
+                )}
               </div>
-              <span className="text-text-tertiary text-xs">
-                {new Date(log.timestamp).toLocaleString()}
-              </span>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+      )}
+
+      {nextCursor && (
+        <div className="mt-6 text-center">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+          >
+            {loadingMore ? "Loading..." : "Load more"}
+          </button>
         </div>
       )}
     </div>
