@@ -244,16 +244,26 @@ export default function Sidebar({
               onClick={() => setCollapsed(false)}
               title="Expand sidebar"
               style={{
-                color: "var(--text-primary)",
-                fontWeight: 800,
-                fontSize: 18,
                 background: "none",
                 border: "none",
                 cursor: "pointer",
                 lineHeight: 1,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              S
+              <img
+                src="/logo-icon.png"
+                alt="Sentinel"
+                style={{
+                  width: 28,
+                  height: 28,
+                  objectFit: "contain",
+                  borderRadius: 6,
+                }}
+              />
             </button>
           ) : (
             <>

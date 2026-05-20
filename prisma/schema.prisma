@@ -100,7 +100,7 @@ model User {
   telegramUser String
   name         String
   photoUrl     String?
-  themeColor   String     @default("#ffffff")
+  themeColor   String     @default("#6FD1D7")
   chatId       String?
   roles        Role[]
   status       UserStatus @default(ACTIVE)

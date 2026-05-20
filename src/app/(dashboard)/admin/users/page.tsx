@@ -29,6 +29,11 @@ export default function UsersPage() {
   const [editState, setEditState] = useState<EditState>({ roles: [], name: "", telegramUser: "" });
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Add user form
   const [name, setName] = useState("");
   const [telegramId, setTelegramId] = useState("");
   const [telegramUser, setTelegramUser] = useState("");
@@ -56,10 +61,53 @@ export default function UsersPage() {
     }));
   }
 
+  // Pick a suggestion to prefill the Add User form
+  function pickSuggestion(u: User) {
+    setName(u.name);
+    setTelegramId(u.telegramId);
+    setTelegramUser(u.telegramUser);
+    setRoles(["DONOR"]);
+    setShowForm(true);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError("");
+
+    // Check if this is an existing user without roles — use PATCH to assign roles instead of POST
+    const existingNoRole = users.find(
+      (u) => u.telegramId === telegramId && u.roles.length === 0
+    );
+
+    if (existingNoRole) {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: existingNoRole.id,
+          roles,
+          name: name || existingNoRole.name,
+          telegramUser: telegramUser || existingNoRole.telegramUser,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers((prev) =>
+          prev.map((u) => (u.id === existingNoRole.id ? { ...u, ...data.user } : u))
+        );
+        setShowForm(false);
+        setName("");
+        setTelegramId("");
+        setTelegramUser("");
+        setRoles(["DONOR"]);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to assign roles");
+      }
+      setSubmitting(false);
+      return;
+    }
 
     const res = await fetch("/api/users", {
       method: "POST",
@@ -134,9 +182,33 @@ export default function UsersPage() {
     setTogglingId(null);
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleteTarget.id }),
+      });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      }
+    } catch {
+      // silent
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
+  }
+
   const pendingUsers = users.filter((u) => u.roles.length === 0);
   const activeUsers = users.filter((u) => u.roles.length > 0 && u.status === "ACTIVE");
   const inactiveUsers = users.filter((u) => u.roles.length > 0 && u.status === "INACTIVE");
+
+  // Suggestions: users who /started the bot but have no roles and bot isn't blocked (chatId exists)
+  const suggestions = users.filter(
+    (u) => u.roles.length === 0 && u.chatId
+  );
 
   if (loading) {
     return (
@@ -150,6 +222,7 @@ export default function UsersPage() {
   function renderUserRow(u: User, dimmed: boolean) {
     const isEditing = editingId === u.id;
     const isToggling = togglingId === u.id;
+    const isInactive = u.status === "INACTIVE";
 
     return (
       <tr
@@ -275,6 +348,21 @@ export default function UsersPage() {
                       ? "Deactivate"
                       : "Activate"}
                 </button>
+                {isInactive && (
+                  <button
+                    onClick={() => setDeleteTarget(u)}
+                    title="Permanently delete"
+                    className="px-2 py-1 rounded-full text-xs text-text-tertiary hover:text-coral hover:bg-coral/10 transition-colors"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                    </svg>
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -310,7 +398,7 @@ export default function UsersPage() {
               <>
                 <div className="text-sm font-semibold">{u.name}</div>
                 <div className="text-text-tertiary text-xs mt-0.5">
-                  @{u.telegramUser || u.telegramId} · started bot {new Date(u.createdAt).toLocaleDateString()}
+                  @{u.telegramUser || u.telegramId} &middot; started bot {new Date(u.createdAt).toLocaleDateString()}
                 </div>
               </>
             )}
@@ -349,12 +437,27 @@ export default function UsersPage() {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => startEditing(u)}
-              className="bg-amber/10 text-amber font-semibold px-4 py-1.5 rounded-full text-xs hover:bg-amber/20 transition-colors"
-            >
-              Assign Role
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => startEditing(u)}
+                className="bg-amber/10 text-amber font-semibold px-4 py-1.5 rounded-full text-xs hover:bg-amber/20 transition-colors"
+              >
+                Assign Role
+              </button>
+              <button
+                onClick={() => setDeleteTarget(u)}
+                title="Delete"
+                className="px-2 py-1.5 rounded-full text-text-tertiary hover:text-coral hover:bg-coral/10 transition-colors"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -363,6 +466,57 @@ export default function UsersPage() {
 
   return (
     <div>
+      {/* Delete confirmation dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <div
+            className="card p-6 max-w-sm w-full mx-4 animate-scale-in"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-coral/10 flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-text-primary">Delete user permanently?</h3>
+                <p className="text-xs text-text-tertiary mt-0.5">This cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="bg-bg-deep rounded-lg p-3 mb-5">
+              <div className="text-sm font-medium">{deleteTarget.name}</div>
+              <div className="text-xs text-text-tertiary mt-0.5">
+                @{deleteTarget.telegramUser || deleteTarget.telegramId}
+                {deleteTarget.roles.length > 0 && ` · ${deleteTarget.roles.join(", ")}`}
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 disabled:opacity-40 transition-colors"
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           Manage <span className="font-display text-lime">Users</span>
@@ -376,82 +530,113 @@ export default function UsersPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="card p-6 mb-6">
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
-              {error}
+        <div className="card p-6 mb-6">
+          {/* Suggestions from bot users without roles */}
+          {suggestions.length > 0 && (
+            <div className="mb-5">
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2.5">
+                Suggestions &mdash; started the bot, no role yet
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => pickSuggestion(u)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${
+                      telegramId === u.telegramId
+                        ? "border-lime/40 bg-lime/8"
+                        : "border-[var(--border)] hover:border-[var(--border-hover)] hover:bg-[rgba(255,255,255,0.02)]"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-mint shrink-0" />
+                    <div>
+                      <div className="text-xs font-medium text-text-primary">{u.name}</div>
+                      <div className="text-[10px] text-text-tertiary">@{u.telegramUser || u.telegramId}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="h-px bg-[var(--border)] mt-4 mb-1" />
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div>
+
+          <form onSubmit={handleSubmit}>
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
+                {error}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Display name"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Telegram ID
+                </label>
+                <input
+                  type="text"
+                  value={telegramId}
+                  onChange={(e) => setTelegramId(e.target.value)}
+                  placeholder="Numeric TG ID"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  TG Username
+                </label>
+                <input
+                  type="text"
+                  value={telegramUser}
+                  onChange={(e) => setTelegramUser(e.target.value)}
+                  placeholder="@username"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+            </div>
+            <div className="mb-4">
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Name
+                Roles
               </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Display name"
-                required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              />
+              <div className="flex gap-2">
+                {["ADMIN", "DONOR", "DEV"].map((role) => (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => toggleRole(role)}
+                    className={`font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors ${
+                      roles.includes(role)
+                        ? "bg-lime text-bg-void border-lime"
+                        : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
+                    }`}
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Telegram ID
-              </label>
-              <input
-                type="text"
-                value={telegramId}
-                onChange={(e) => setTelegramId(e.target.value)}
-                placeholder="Numeric TG ID"
-                required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              />
-            </div>
-            <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                TG Username
-              </label>
-              <input
-                type="text"
-                value={telegramUser}
-                onChange={(e) => setTelegramUser(e.target.value)}
-                placeholder="@username"
-                required
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-              />
-            </div>
-          </div>
-          <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-              Roles
-            </label>
-            <div className="flex gap-2">
-              {["ADMIN", "DONOR", "DEV"].map((role) => (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => toggleRole(role)}
-                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors ${
-                    roles.includes(role)
-                      ? "bg-lime text-bg-void border-lime"
-                      : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
-                  }`}
-                >
-                  {role}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={submitting || !name || !telegramId || !telegramUser || roles.length === 0}
-            className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
-          >
-            {submitting ? "Creating..." : "Create User"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitting || !name || !telegramId || !telegramUser || roles.length === 0}
+              className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+            >
+              {submitting ? "Creating..." : "Create User"}
+            </button>
+          </form>
+        </div>
       )}
 
       {pendingUsers.length > 0 && (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole } from "@/lib/auth";
+import { fetchTelegramPhotoUrl } from "@/lib/bot";
 
 function validateInitData(initData: string, botToken: string): Record<string, string> | null {
   const params = new URLSearchParams(initData);
@@ -56,6 +57,11 @@ export async function POST(req: NextRequest) {
 
   const telegramId = String(tgUser.id);
   const name = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "User";
+
+  // Fetch full-res profile photo from Bot API (falls back to initData thumbnail)
+  const botPhoto = await fetchTelegramPhotoUrl(telegramId);
+  const photoUrl = botPhoto || tgUser.photo_url || null;
+
   let user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (!user) {
@@ -64,7 +70,7 @@ export async function POST(req: NextRequest) {
         telegramId,
         telegramUser: tgUser.username || "",
         name,
-        photoUrl: tgUser.photo_url || null,
+        photoUrl,
         roles: [],
         status: "ACTIVE",
       },
@@ -75,7 +81,7 @@ export async function POST(req: NextRequest) {
       data: {
         telegramUser: tgUser.username || user.telegramUser,
         name,
-        photoUrl: tgUser.photo_url || user.photoUrl,
+        photoUrl: photoUrl || user.photoUrl,
       },
     });
   }

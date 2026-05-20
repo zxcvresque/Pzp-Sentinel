@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole } from "@/lib/auth";
+import { fetchTelegramPhotoUrl } from "@/lib/bot";
 
 export async function POST(req: NextRequest) {
   const { telegramId, otp } = await req.json();
@@ -29,9 +30,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid OTP" }, { status: 401 });
   }
 
+  // Clear OTP and refresh profile photo from Telegram
+  const photoUrl = await fetchTelegramPhotoUrl(user.telegramId);
+
   await prisma.user.update({
     where: { id: user.id },
-    data: { otpCode: null, otpExpiresAt: null },
+    data: {
+      otpCode: null,
+      otpExpiresAt: null,
+      ...(photoUrl ? { photoUrl } : {}),
+    },
   });
 
   const token = await signToken({ userId: user.id, roles: user.roles });

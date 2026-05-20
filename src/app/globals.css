@@ -12,9 +12,9 @@
   --bg-surface: rgba(255,255,255,0.025);
 
   /* Accent palette */
-  --lime: #6366f1;
-  --lime-dim: rgba(99,102,241,0.08);
-  --lime-glow: rgba(99,102,241,0.12);
+  --lime: #6FD1D7;
+  --lime-dim: rgba(111,209,215,0.08);
+  --lime-glow: rgba(111,209,215,0.12);
   --coral: #f87171;
   --coral-dim: rgba(248,113,113,0.08);
   --cyan: #38bdf8;
@@ -38,7 +38,7 @@
   /* Borders */
   --border: rgba(255,255,255,0.07);
   --border-hover: rgba(255,255,255,0.13);
-  --border-active: rgba(99,102,241,0.30);
+  --border-active: rgba(111,209,215,0.30);
 
   /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.5);

@@ -54,7 +54,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
   return (
     <div className="flex items-center gap-3">
       {/* ── Notifications ── */}
-      <div ref={notifRef} className="relative">
+      <div ref={notifRef} className="relative z-50">
         <button
           onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
           className="relative w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] bg-[var(--bg-deep)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] hover:bg-[var(--bg-elevated)] transition-all duration-200"
@@ -91,11 +91,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
         {notifOpen && (
           <div
-            className="absolute right-0 top-full mt-2.5 w-80 rounded-[14px] border border-[var(--border)] shadow-xl z-50 overflow-hidden animate-scale-in"
+            className="absolute right-0 top-full mt-2.5 w-80 rounded-[14px] border border-[var(--border)] shadow-2xl z-50 overflow-hidden animate-scale-in"
             style={{
-              background: "rgba(18,18,24,0.85)",
-              backdropFilter: "blur(40px) saturate(1.6)",
-              WebkitBackdropFilter: "blur(40px) saturate(1.6)",
+              background: "var(--bg-card)",
             }}
           >
             <div className="px-4 py-3 border-b border-[var(--border)]">
@@ -140,7 +138,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
       </div>
 
       {/* ── Profile ── */}
-      <div ref={profileRef} className="relative">
+      <div ref={profileRef} className="relative z-50">
         <button
           onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
           className="group relative w-9 h-9 rounded-full overflow-hidden transition-all duration-200 flex items-center justify-center"
@@ -178,11 +176,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
         {profileOpen && (
           <div
-            className="absolute right-0 top-full mt-2.5 w-64 rounded-[14px] border border-[var(--border)] shadow-xl z-50 overflow-hidden animate-scale-in"
+            className="absolute right-0 top-full mt-2.5 w-64 rounded-[14px] border border-[var(--border)] shadow-2xl z-50 overflow-hidden animate-scale-in"
             style={{
-              background: "rgba(18,18,24,0.85)",
-              backdropFilter: "blur(40px) saturate(1.6)",
-              WebkitBackdropFilter: "blur(40px) saturate(1.6)",
+              background: "var(--bg-card)",
             }}
           >
             {/* User info header */}

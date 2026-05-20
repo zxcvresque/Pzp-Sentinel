@@ -64,7 +64,7 @@ export default function ThemeColorPicker({
   }, [value]);
 
   const isWhite =
-    localColor.toLowerCase() === "#ffffff" ||
+    localColor.toLowerCase() === "#6FD1D7" ||
     localColor.toLowerCase() === "#fff";
 
   const hue = hexToHue(localColor);
@@ -115,7 +115,7 @@ export default function ThemeColorPicker({
   }
 
   function handleReset() {
-    const white = "#ffffff";
+    const white = "#6FD1D7";
     setLocalColor(white);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     onChange(white);

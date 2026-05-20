@@ -141,3 +141,51 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ user: updated });
 }
+
+export async function DELETE(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user || !hasRole(user.roles, "ADMIN")) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
+  const { id } = await req.json();
+  if (!id) {
+    return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+  }
+
+  if (id === user.id) {
+    return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
+  }
+
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (target.status === "ACTIVE") {
+    return NextResponse.json({ error: "Deactivate the user before deleting" }, { status: 400 });
+  }
+
+  await prisma.user.delete({ where: { id } });
+
+  await logAudit({
+    userId: user.id,
+    action: "DELETE_USER",
+    entityType: "User",
+    entityId: id,
+    before: { name: target.name, telegramId: target.telegramId, roles: target.roles },
+    userName: user.name,
+    details: `Permanently deleted ${target.name} (@${target.telegramUser})`,
+  });
+
+  logUserAction({
+    action: "DELETED",
+    adminId: user.id,
+    adminName: user.name,
+    targetUserId: id,
+    targetUserName: target.name,
+    details: `Permanently removed. Was: roles=${target.roles.join(",") || "none"}, tg=@${target.telegramUser}`,
+  });
+
+  return NextResponse.json({ success: true });
+}
