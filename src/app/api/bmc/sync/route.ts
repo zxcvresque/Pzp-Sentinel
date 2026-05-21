@@ -43,15 +43,16 @@ interface BmcExtrasResponse {
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function bmcFetch<T>(path: string, retries = 3): Promise<T> {
+async function bmcFetch<T>(path: string, retries = 5): Promise<T> {
   const token = process.env.BMC_TOKEN;
   if (!token) throw new Error("BMC_TOKEN not configured");
 
   for (let i = 0; i < retries; i++) {
-    if (i > 0) await delay(2000 * i); // backoff: 2s, 4s
+    if (i > 0) await delay(3000 * (i + 1)); // backoff: 6s, 9s, 12s, 15s
 
     const res = await fetch(`${BMC_BASE}${path}`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
     });
 
     if (res.status === 429) {
