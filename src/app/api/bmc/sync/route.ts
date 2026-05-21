@@ -56,7 +56,7 @@ async function bmcFetch<T>(path: string, retries = 5): Promise<T> {
     });
 
     if (res.status === 429) {
-      console.log(`BMC rate limited, retry ${i + 1}/${retries}...`);
+      console.warn(`BMC rate limited, retry ${i + 1}/${retries}...`);
       continue;
     }
 

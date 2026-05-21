@@ -41,7 +41,7 @@ async function dbRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
       return await fn();
     } catch (err: unknown) {
       if (i < retries && isTransientDbError(err)) {
-        console.log(`DB retry ${i + 1}/${retries} — ${(err as { code?: string }).code || "connection dropped"}`);
+        console.warn(`DB retry ${i + 1}/${retries} — ${(err as { code?: string }).code || "connection dropped"}`);
         await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
         continue;
       }
@@ -193,13 +193,13 @@ bot.on("my_chat_member", async (ctx) => {
 
     if (newStatus === "kicked") {
       await dbRetry(() => prisma.user.update({ where: { id: user!.id }, data: { chatId: null } }));
-      console.log(`Bot blocked by ${user.name} (@${user.telegramUser}) — chatId cleared`);
+      console.warn(`Bot blocked by ${user.name} (@${user.telegramUser}) — chatId cleared`);
     } else if (newStatus === "member") {
       await dbRetry(() => prisma.user.update({
         where: { id: user!.id },
         data: { chatId: update.chat.id.toString() },
       }));
-      console.log(`Bot unblocked by ${user.name} (@${user.telegramUser}) — chatId restored`);
+      console.info(`Bot unblocked by ${user.name} (@${user.telegramUser}) — chatId restored`);
     }
   } catch (err) {
     console.error("Failed to handle my_chat_member update:", err);

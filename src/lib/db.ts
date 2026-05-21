@@ -54,7 +54,7 @@ function getPrisma() {
             return await query(args);
           } catch (err: unknown) {
             if (attempt < MAX_RETRIES && isTransientDbError(err)) {
-              console.log(`DB retry ${attempt + 1}/${MAX_RETRIES} — ${(err as { code?: string }).code || "connection dropped"}`);
+              console.warn(`DB retry ${attempt + 1}/${MAX_RETRIES} — ${(err as { code?: string }).code || "connection dropped"}`);
               await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
               continue;
             }
