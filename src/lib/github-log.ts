@@ -59,60 +59,71 @@ export async function githubLog(
     commitMessage ||
     `[${category}] ${entry.action}${entry.entityType ? ` — ${entry.entityType}` : ""}${entry.entityId ? ` ${entry.entityId.slice(0, 8)}` : ""}`;
 
-  try {
-    // Get current file (to get its SHA for updates)
-    let existingContent = "";
-    let sha: string | undefined;
+  const MAX_RETRIES = 4;
 
-    const getRes = await fetch(`${API_BASE}/${filePath}?ref=${BRANCH}`, {
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    });
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      // Get current file (to get its SHA for updates)
+      let existingContent = "";
+      let sha: string | undefined;
 
-    if (getRes.ok) {
-      const data = await getRes.json();
-      sha = data.sha;
-      existingContent = Buffer.from(data.content, "base64").toString("utf-8");
-    } else if (getRes.status !== 404) {
-      console.error("[github-log] Failed to read file:", getRes.status);
-      return false;
-    }
-    // 404 = file doesn't exist yet, we'll create it
+      const getRes = await fetch(`${API_BASE}/${filePath}?ref=${BRANCH}`, {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      });
 
-    // Append new line
-    const updatedContent = existingContent
-      ? existingContent.trimEnd() + "\n" + newLine + "\n"
-      : newLine + "\n";
+      if (getRes.ok) {
+        const data = await getRes.json();
+        sha = data.sha;
+        existingContent = Buffer.from(data.content, "base64").toString("utf-8");
+      } else if (getRes.status !== 404) {
+        console.error("[github-log] Failed to read file:", getRes.status);
+        return false;
+      }
+      // 404 = file doesn't exist yet, we'll create it
 
-    // Commit the update
-    const putRes = await fetch(`${API_BASE}/${filePath}`, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        Accept: "application/vnd.github.v3+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message,
-        content: Buffer.from(updatedContent).toString("base64"),
-        sha,
-        branch: BRANCH,
-      }),
-    });
+      // Append new line
+      const updatedContent = existingContent
+        ? existingContent.trimEnd() + "\n" + newLine + "\n"
+        : newLine + "\n";
 
-    if (!putRes.ok) {
+      // Commit the update
+      const putRes = await fetch(`${API_BASE}/${filePath}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message,
+          content: Buffer.from(updatedContent).toString("base64"),
+          sha,
+          branch: BRANCH,
+        }),
+      });
+
+      if (putRes.ok) return true;
+
+      // 409 = SHA mismatch (concurrent write) — retry with fresh SHA
+      if (putRes.status === 409 && attempt < MAX_RETRIES - 1) {
+        const jitter = Math.random() * 500;
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1) + jitter));
+        continue;
+      }
+
       const err = await putRes.text();
       console.error("[github-log] Commit failed:", putRes.status, err);
       return false;
+    } catch (err) {
+      console.error("[github-log] Error:", err);
+      return false;
     }
-
-    return true;
-  } catch (err) {
-    console.error("[github-log] Error:", err);
-    return false;
   }
+
+  return false;
 }
 
 /**
