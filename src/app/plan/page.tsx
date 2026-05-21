@@ -21,31 +21,31 @@ const FEATURES: Feature[] = [
   // ── Admin Portal ──
   { id: "a1",  title: "Finance logging",           details: "Manual entry with amount, from, method, screenshot proof, date/time, notes. Edit/delete with audit trail",              status: "done",    portal: "ADMIN", phase: 1 },
   { id: "a2",  title: "Balance dashboard",          details: "Burn rate, runway months, donation trends chart, cost breakdown by category",                                          status: "done",    portal: "ADMIN", phase: 1 },
-  { id: "a3",  title: "Subscription manager",       details: "Track ongoing costs with platform, price, frequency, specs. Expiry alerts at 7/3/1 days with color-coded badges",      status: "partial", portal: "ADMIN", phase: 2 },
+  { id: "a3",  title: "Subscription manager",       details: "Track ongoing costs with platform, price, frequency, specs. Expiry alerts at 7/3/1 days with color-coded badges",      status: "done",    portal: "ADMIN", phase: 2 },
   { id: "a4",  title: "Services registry",          details: "Categories with custom columns and entries that admins define",                                                         status: "done",    portal: "ADMIN", phase: 2 },
   { id: "a5",  title: "User & role management",     details: "Create accounts, assign multi-role, deactivate. No self-signup",                                                       status: "done",    portal: "ADMIN", phase: 1 },
   { id: "a6",  title: "Donor approval workflow",    details: "Pending/approved/rejected with reason. Notification to donor on status change",                                         status: "done",    portal: "ADMIN", phase: 1 },
-  { id: "a7",  title: "Reminders",                  details: "Set frequency + message for recurring tasks. Bot notification + in-app delivery",                                       status: "partial", portal: "ADMIN", phase: 2 },
-  { id: "a8",  title: "Top donors leaderboard",     details: "Admin-only view ranked by total contribution with period filters (all-time, year, month)",                              status: "todo",    portal: "ADMIN", phase: 3 },
+  { id: "a7",  title: "Reminders",                  details: "Set frequency + message for recurring tasks. Bot notification + in-app delivery",                                       status: "done",    portal: "ADMIN", phase: 2 },
+  { id: "a8",  title: "Top donors leaderboard",     details: "Admin-only view ranked by total contribution with period filters (all-time, year, month)",                              status: "done",    portal: "ADMIN", phase: 3 },
   { id: "a9",  title: "Audit log",                  details: "Immutable record of every write action: who, what, when, before/after values",                                          status: "done",    portal: "ADMIN", phase: 1 },
-  { id: "a10", title: "Multi-currency",             details: "BMC comes in USD, local in INR. Auto-fetch exchange rate at transaction time. Toggle view",                              status: "todo",    portal: "ADMIN", phase: 2 },
-  { id: "a11", title: "Export CSV/Excel",            details: "Export transactions, monthly auto-generated financial summary PDF",                                                     status: "todo",    portal: "ADMIN", phase: 2 },
+  { id: "a10", title: "Multi-currency",             details: "BMC comes in USD, local in INR. Auto-fetch exchange rate at transaction time. Toggle view",                              status: "done",    portal: "ADMIN", phase: 2 },
+  { id: "a11", title: "Export CSV/Excel",            details: "Export transactions, monthly auto-generated financial summary PDF",                                                     status: "done",    portal: "ADMIN", phase: 2 },
   { id: "a12", title: "Public transparency page",   details: "Read-only, no names. Total donated, spent, current balance, active services",                                           status: "todo",    portal: "ADMIN", phase: 4 },
 
   // ── Donor Portal ──
   { id: "d1",  title: "Donation history",           details: "Full log of contributions with status (pending/approved/rejected)",                                                     status: "done",    portal: "DONOR", phase: 1 },
   { id: "d2",  title: "Submit payment",             details: "Upload proof, enter amount/method, goes to admin approval queue",                                                       status: "done",    portal: "DONOR", phase: 1 },
-  { id: "d3",  title: "BMC integration",            details: "One-time + recurring via Buy Me a Coffee. Webhook auto-logs donations",                                                 status: "todo",    portal: "DONOR", phase: 2 },
+  { id: "d3",  title: "BMC integration",            details: "One-time + recurring via Buy Me a Coffee. API sync auto-logs donations",                                                status: "done",    portal: "DONOR", phase: 2 },
   { id: "d4",  title: "Receipt download",           details: "Per-donation or monthly summary PDF receipts",                                                                          status: "todo",    portal: "DONOR", phase: 4 },
   { id: "d5",  title: "Donor profile",              details: "Basic info, notification preferences, theme color picker",                                                               status: "done",    portal: "DONOR", phase: 1 },
 
   // ── Dev Portal ──
   { id: "e1",  title: "Kanban board",               details: "5 status columns, drag-and-drop cards, assignee, priority, deadline, notes",                                            status: "done",    portal: "DEV",   phase: 1 },
-  { id: "e2",  title: "Gantt chart",                details: "Visual timeline derived from kanban dates. Dependency arrows between tasks",                                             status: "todo",    portal: "DEV",   phase: 3 },
+  { id: "e2",  title: "Gantt chart",                details: "Visual timeline derived from kanban dates. Color-coded by status and priority",                                           status: "done",    portal: "DEV",   phase: 3 },
   { id: "e3",  title: "Git integration",            details: "Link GitHub repos per project. Show commits, PRs, branch status. Webhook-driven",                                       status: "todo",    portal: "DEV",   phase: 3 },
   { id: "e4",  title: "Admin-assigned todos",       details: "Admins create tasks, assign to devs, set deadlines. Devs see filtered list",                                            status: "done",    portal: "DEV",   phase: 1 },
   { id: "e5",  title: "Dev credentials",            details: "Propose/approve workflow for credential access",                                                                         status: "done",    portal: "DEV",   phase: 1 },
-  { id: "e6",  title: "VPS stats",                  details: "Specs, bandwidth, storage usage. Agent on VPS reports to API",                                                           status: "todo",    portal: "DEV",   phase: 4 },
+  { id: "e6",  title: "VPS stats",                  details: "CPU, RAM, disk, bandwidth usage with color-coded bars. Beszel agent integration ready",                                  status: "done",    portal: "DEV",   phase: 4 },
 
   // ── Bot ──
   { id: "b1",  title: "/start + webapp button",     details: "Welcome message with Open PzP Finance webapp button",                                                                   status: "done",    portal: "BOT",   phase: 1 },
@@ -58,7 +58,8 @@ const FEATURES: Feature[] = [
   { id: "i1",  title: "GitHub immutable logs",      details: "Separate repo with JSONL files, each commit = log entry. Full audit trail",                                              status: "done",    portal: "INFRA", phase: 1 },
   { id: "i2",  title: "TG upload failure handling",  details: "Wrap sendPhoto in try/catch. Don't save transaction without valid proof",                                               status: "done",    portal: "INFRA", phase: 1 },
   { id: "i3",  title: "Notification fallback",      details: "If bot DM fails, fall back to in-app notification. Log delivery failure",                                                status: "done",    portal: "INFRA", phase: 1 },
-  { id: "i4",  title: "BMC webhook dedup",          details: "Store BMC event ID, check before insert. Idempotency pattern",                                                          status: "todo",    portal: "INFRA", phase: 2 },
+  { id: "i4",  title: "BMC webhook dedup",          details: "Store BMC event ID, check before insert. Idempotency pattern",                                                          status: "done",    portal: "INFRA", phase: 2 },
+  { id: "i5",  title: "RBAC enforcement",          details: "Strict role checks on all 29 API routes. DEV blocked from finance, DONOR restricted to own data",                       status: "done",    portal: "INFRA", phase: 2 },
 ];
 
 const COLUMNS: { key: Status; label: string; color: string }[] = [
@@ -71,18 +72,18 @@ const PORTALS = ["ALL", "ADMIN", "DONOR", "DEV", "BOT", "INFRA"] as const;
 const PHASES  = [0, 1, 2, 3, 4] as const; // 0 = all
 
 const PORTAL_COLORS: Record<string, string> = {
-  ADMIN: "var(--lime)",
+  ADMIN: "var(--violet)",
   DONOR: "var(--amber)",
   DEV:   "var(--cyan)",
-  BOT:   "var(--violet)",
+  BOT:   "var(--mint)",
   INFRA: "var(--rose)",
 };
 
 const PORTAL_DIM: Record<string, string> = {
-  ADMIN: "var(--lime-dim)",
+  ADMIN: "var(--violet-dim)",
   DONOR: "var(--amber-dim)",
   DEV:   "var(--cyan-dim)",
-  BOT:   "var(--violet-dim)",
+  BOT:   "var(--mint-dim)",
   INFRA: "var(--rose-dim)",
 };
 

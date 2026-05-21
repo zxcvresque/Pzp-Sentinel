@@ -93,6 +93,19 @@ function IconAuditLog(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function IconTrophy(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M5 2h8v5a4 4 0 01-8 0V2z" />
+      <path d="M5 4H3a1 1 0 00-1 1v1a3 3 0 003 3" />
+      <path d="M13 4h2a1 1 0 011 1v1a3 3 0 01-3 3" />
+      <path d="M9 11v2" />
+      <path d="M6 15h6" />
+      <path d="M7 13h4" />
+    </svg>
+  );
+}
+
 function IconChart(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -132,6 +145,33 @@ function IconChecklist(props: React.SVGProps<SVGSVGElement>) {
       <path d="M9.5 10h5.5" />
       <path d="M3 15l1.5 1.5L7.5 13" />
       <path d="M9.5 15h5.5" />
+    </svg>
+  );
+}
+
+function IconGantt(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2 4h8" />
+      <path d="M4 9h10" />
+      <path d="M3 14h6" />
+      <circle cx="10" cy="4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="9" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IconVps(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="2" width="12" height="5" rx="1.5" />
+      <rect x="3" y="11" width="12" height="5" rx="1.5" />
+      <circle cx="6" cy="4.5" r="0.75" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="13.5" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M10 4.5h2" />
+      <path d="M10 13.5h2" />
+      <path d="M9 7v4" />
     </svg>
   );
 }
@@ -181,6 +221,7 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Transactions",  href: "/admin/transactions",   icon: "₹", Icon: IconTransactions },
     { label: "Services",      href: "/admin/services",       icon: "◎", Icon: IconServer },
     { label: "Subscriptions", href: "/admin/subscriptions",  icon: "◇", Icon: IconCreditCard },
+    { label: "Donors",        href: "/admin/donors",         icon: "◆", Icon: IconTrophy },
     { label: "Users",         href: "/admin/users",          icon: "◉", Icon: IconUsers },
     { label: "Reminders",     href: "/admin/reminders",      icon: "◆", Icon: IconBell },
     { label: "Credentials",   href: "/admin/credentials",    icon: "◍", Icon: IconKey },
@@ -193,6 +234,8 @@ const navByRole: Record<string, NavItem[]> = {
   DEV: [
     { label: "Board",       href: "/dev",              icon: "◈", Icon: IconKanban },
     { label: "My Tasks",    href: "/dev/tasks",        icon: "◎", Icon: IconChecklist },
+    { label: "Gantt",       href: "/dev/gantt",        icon: "◇", Icon: IconGantt },
+    { label: "VPS Stats",   href: "/dev/vps",          icon: "◉", Icon: IconVps },
     { label: "Credentials", href: "/dev/credentials",  icon: "◍", Icon: IconKey },
   ],
 };

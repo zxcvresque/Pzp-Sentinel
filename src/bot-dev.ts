@@ -64,7 +64,9 @@ bot.command("start", async (ctx) => {
   if (payload === "myid") {
     try {
       await ctx.reply(
-        `Your Telegram ID is:\n\n<code>${telegramId}</code>\n\nCopy it and paste it on the login page.`,
+        `<blockquote><b>Your Telegram ID</b></blockquote>\n` +
+        `<code>${telegramId}</code>\n\n` +
+        `<i>Copy and paste it on the login page.</i>`,
         { parse_mode: "HTML" },
       );
     } catch (err) {
@@ -105,14 +107,14 @@ bot.command("start", async (ctx) => {
 
     try {
       await ctx.reply(
-        `Hey ${firstName}! 👋\n\n` +
-        `I'm Sentinel — the bot for PzP's finance & developer hub.\n\n` +
-        `Here's what PzP Sentinel does:\n` +
-        `💰 Tracks community treasury — donations, expenses, subscriptions\n` +
-        `📋 Manages developer tasks & project boards\n` +
+        `<blockquote><b>Welcome to Sentinel</b></blockquote>\n` +
+        `<b>Hey ${firstName}!</b>\n\n` +
+        `💰 Tracks community treasury\n` +
+        `📋 Manages developer tasks & boards\n` +
         `🔔 Sends payment reminders & notifications\n` +
-        `📊 Keeps everything transparent for the community\n\n` +
-        `You're not registered yet. An admin will review and assign your access shortly. Sit tight!`,
+        `📊 Keeps everything transparent\n\n` +
+        `<i>You're not registered yet. An admin will review and assign your access shortly.</i>`,
+        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to new user:", err);
@@ -123,8 +125,10 @@ bot.command("start", async (ctx) => {
   if (user.status === "INACTIVE") {
     try {
       await ctx.reply(
-        `Hey ${user.name},\n\n` +
-        `Your account has been deactivated. Contact an admin if you think this is a mistake.`,
+        `<blockquote><b>Account Deactivated</b></blockquote>\n` +
+        `<b>Hey ${user.name},</b>\n` +
+        `<i>Your account has been deactivated. Contact an admin if you think this is a mistake.</i>`,
+        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to deactivated user:", err);
@@ -135,9 +139,10 @@ bot.command("start", async (ctx) => {
   if (user.roles.length === 0) {
     try {
       await ctx.reply(
-        `Hey ${user.name}!\n\n` +
-        `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
-        `Once approved, you'll be able to open Sentinel from right here.`,
+        `<blockquote><b>Pending Approval</b></blockquote>\n` +
+        `<b>Hey ${user.name}!</b>\n` +
+        `<i>You're in the system but don't have access yet. An admin will assign your role shortly.</i>`,
+        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to unassigned user:", err);
@@ -146,9 +151,9 @@ bot.command("start", async (ctx) => {
   }
 
   const roleLabels: Record<string, string> = {
-    ADMIN: "🛡️ Admin — full treasury control",
-    DONOR: "💚 Donor — submit & track donations",
-    DEV: "⚡ Dev — project board & tasks",
+    ADMIN: "🛡️ <b>Admin</b> — full treasury control",
+    DONOR: "💚 <b>Donor</b> — submit & track donations",
+    DEV: "⚡ <b>Dev</b> — project board & tasks",
   };
 
   const yourRoles = user.roles
@@ -157,10 +162,11 @@ bot.command("start", async (ctx) => {
 
   try {
     await ctx.reply(
-      `Welcome back, ${user.name}! 🏦\n\n` +
-      `Your access:\n${yourRoles}\n\n` +
-      `Open Sentinel to get started.`,
+      `<b><i>Welcome back, ${user.name}!</i></b>\n\n` +
+      `<blockquote><b>Your Access</b></blockquote>\n` +
+      `${yourRoles}`,
       {
+        parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
@@ -203,12 +209,10 @@ bot.on("my_chat_member", async (ctx) => {
 bot.command("help", async (ctx) => {
   try {
     await ctx.reply(
-      `📖 <b>Sentinel Commands</b>\n\n` +
-      `/start — Register or open the Sentinel web app\n` +
-      `/start myid — Get your Telegram ID for login\n` +
-      `/help — Show this help message\n\n` +
-      `📸 <b>Screenshot Upload</b>\n` +
-      `Send a photo to this chat and it will be forwarded to the PzP group for storage. You'll receive the file ID for reference.`,
+      `<blockquote><b>Sentinel Commands</b></blockquote>\n` +
+      `<b>/start</b> — register or open the web app\n` +
+      `<b>/start myid</b> — get your Telegram ID\n` +
+      `<b>/help</b> — show this message`,
       { parse_mode: "HTML" },
     );
   } catch (err) {
@@ -216,43 +220,6 @@ bot.command("help", async (ctx) => {
   }
 });
 
-bot.on("message:photo", async (ctx) => {
-  const photos = ctx.message.photo;
-  const largest = photos[photos.length - 1];
-  const fileId = largest.file_id;
-  const caption = ctx.message.caption || `Screenshot from @${ctx.from?.username || ctx.from?.id}`;
-
-  const groupId = process.env.TG_GROUP_ID;
-  const threadId = process.env.TG_TOPIC_SCREENSHOTS;
-
-  if (groupId && threadId) {
-    try {
-      await bot.api.sendPhoto(groupId, fileId, {
-        caption,
-        message_thread_id: Number(threadId),
-      });
-    } catch (err) {
-      console.error("Failed to forward photo to group:", err);
-      try {
-        await ctx.reply("Failed to forward the screenshot to the group. Please try again.");
-      } catch (replyErr) {
-        console.error("Failed to send error reply:", replyErr);
-      }
-      return;
-    }
-  } else {
-    console.warn("TG_GROUP_ID or TG_TOPIC_SCREENSHOTS not set — skipping photo forward");
-  }
-
-  try {
-    await ctx.reply(
-      `✅ Screenshot received!\n\n<code>${fileId}</code>`,
-      { parse_mode: "HTML" },
-    );
-  } catch (err) {
-    console.error("Failed to reply with file_id:", err);
-  }
-});
 
 bot.catch((err) => {
   console.error("Bot error:", err);

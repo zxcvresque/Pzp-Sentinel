@@ -278,12 +278,29 @@ export default function TransactionsPage() {
         <h1 className="text-3xl font-extrabold">
           All <span className="font-display text-lime">Transactions</span>
         </h1>
-        <button
-          onClick={startCreate}
-          className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
-        >
-          {showForm && !editingId ? "Cancel" : "Log Transaction"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const params = new URLSearchParams();
+              if (statusFilter !== "ALL") params.set("status", statusFilter);
+              if (directionFilter !== "ALL") params.set("direction", directionFilter);
+              const qs = params.toString();
+              window.open(`/api/transactions/export${qs ? `?${qs}` : ""}`, "_blank");
+            }}
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2.5 rounded-full border border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary transition-colors flex items-center gap-1.5"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 10.667v2.666A1.333 1.333 0 0 1 12.667 14.667H3.333A1.333 1.333 0 0 1 2 13.333v-2.666M11.333 5.333 8 2 4.667 5.333M8 2v8.667" transform="scale(1,-1) translate(0,-16)" />
+            </svg>
+            Export CSV
+          </button>
+          <button
+            onClick={startCreate}
+            className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
+          >
+            {showForm && !editingId ? "Cancel" : "Log Transaction"}
+          </button>
+        </div>
       </div>
 
       {showForm && (

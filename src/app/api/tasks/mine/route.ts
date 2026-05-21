@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, hasRole } from "@/lib/auth";
 
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Only users with DEV role (or ADMIN) can access their tasks
+  if (!hasRole(user.roles, "DEV") && !hasRole(user.roles, "ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const tasks = await prisma.task.findMany({
     where: { assigneeId: user.id, parentId: null },

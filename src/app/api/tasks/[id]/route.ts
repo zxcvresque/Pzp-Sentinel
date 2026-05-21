@@ -21,8 +21,22 @@ export async function PATCH(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
+  const isAdmin = hasRole(user.roles, "ADMIN");
+
   const body = await req.json();
   const { status, assigneeId, priority, title, description, deadline, startDate, tagIds, parentId } = body;
+
+  // DEV can only update status on tasks assigned to them
+  if (!isAdmin) {
+    if (task.assigneeId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: you can only update tasks assigned to you" }, { status: 403 });
+    }
+    // DEV can only change status, nothing else
+    const nonStatusFields = [assigneeId, priority, title, description, deadline, startDate, tagIds, parentId];
+    if (nonStatusFields.some((f) => f !== undefined)) {
+      return NextResponse.json({ error: "Forbidden: DEV role can only update task status" }, { status: 403 });
+    }
+  }
 
   const data: Record<string, unknown> = {};
   if (status !== undefined) data.status = status;

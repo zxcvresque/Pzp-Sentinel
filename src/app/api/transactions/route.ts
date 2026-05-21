@@ -10,6 +10,14 @@ export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const isAdmin = hasRole(user.roles, "ADMIN");
+  const isDonor = hasRole(user.roles, "DONOR");
+
+  // DEV role cannot access financial data
+  if (!isAdmin && !isDonor) {
+    return NextResponse.json({ error: "Forbidden: insufficient role for financial data" }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
   const page = parseInt(searchParams.get("page") || "1");
   const limit = parseInt(searchParams.get("limit") || "20");
@@ -19,7 +27,8 @@ export async function GET(req: NextRequest) {
 
   const where: Prisma.TransactionWhereInput = {};
 
-  if (!hasRole(user.roles, "ADMIN")) {
+  // ADMIN sees all, DONOR sees only their own transactions
+  if (!isAdmin) {
     where.fromUserId = user.id;
   }
 
@@ -47,6 +56,14 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const isAdmin = hasRole(user.roles, "ADMIN");
+  const isDonor = hasRole(user.roles, "DONOR");
+
+  // DEV role cannot create transactions (no access to financial operations)
+  if (!isAdmin && !isDonor) {
+    return NextResponse.json({ error: "Forbidden: DEV role cannot create transactions" }, { status: 403 });
+  }
+
   const body = await req.json();
   const { amount, currency, method, direction, type, description, proofFileId, fromUserId } = body;
 
@@ -54,11 +71,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
   }
 
-  if (parseFloat(amount) <= 0) {
-    return NextResponse.json({ error: "Amount must be positive" }, { status: 400 });
+  const parsedAmount = parseFloat(amount);
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 });
   }
 
-  const isAdmin = hasRole(user.roles, "ADMIN");
+  // DONOR can only create direction=IN (donations)
+  if (isDonor && !isAdmin && direction && direction !== "IN") {
+    return NextResponse.json({ error: "Forbidden: donors can only create incoming donations" }, { status: 403 });
+  }
+
+  // Validate IDs if provided
+  if (fromUserId !== undefined && fromUserId !== null && (typeof fromUserId !== "string" || fromUserId.trim() === "")) {
+    return NextResponse.json({ error: "fromUserId must be a non-empty string" }, { status: 400 });
+  }
+
   const txStatus = isAdmin && direction === "OUT" ? "APPROVED" : "PENDING";
 
   const transaction = await prisma.transaction.create({

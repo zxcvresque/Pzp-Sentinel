@@ -31,12 +31,33 @@ interface Stats {
   runwayMonths: number | null;
   activeSubs: number;
   monthlySubs: number;
+  displayCurrency?: string;
+  exchangeRate?: number | null;
+}
+
+interface BmcStats {
+  totalSupporters: number;
+  totalEarned: number;
+  totalTransactions: number;
+  recent: {
+    id: string;
+    amount: string;
+    currency: string;
+    description: string;
+    date: string;
+  }[];
 }
 
 export default function AdminDashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currency, setCurrency] = useState<"INR" | "USD">("INR");
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [currencyLoading, setCurrencyLoading] = useState(false);
+  const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
+  const [bmcSyncing, setBmcSyncing] = useState(false);
+  const [bmcResult, setBmcResult] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -48,14 +69,36 @@ export default function AdminDashboard() {
         if (!r.ok) throw new Error(`Stats: ${r.status}`);
         return r.json();
       }),
+      fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ])
-      .then(([txData, statsData]) => {
+      .then(([txData, statsData, bmcData]) => {
         setTransactions(txData.transactions || []);
         setStats(statsData);
+        if (bmcData) setBmcStats(bmcData);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function toggleCurrency() {
+    const next = currency === "INR" ? "USD" : "INR";
+    setCurrencyLoading(true);
+    try {
+      const res = await fetch(`/api/transactions/stats?currency=${next}`);
+      if (!res.ok) throw new Error("Failed to fetch stats");
+      const data = await res.json();
+      setStats(data);
+      setCurrency(next);
+      if (data.exchangeRate) setExchangeRate(data.exchangeRate);
+    } catch {
+      // stay on current currency
+    } finally {
+      setCurrencyLoading(false);
+    }
+  }
+
+  const sym = currency === "INR" ? "₹" : "$";
+  const locale = currency === "INR" ? "en-IN" : "en-US";
 
   async function handleApprove(id: string) {
     await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
@@ -74,6 +117,34 @@ export default function AdminDashboard() {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, status: "REJECTED" } : t))
     );
+  }
+
+  async function handleBmcSync() {
+    setBmcSyncing(true);
+    setBmcResult(null);
+    try {
+      const res = await fetch("/api/bmc/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setBmcResult(`Error: ${data.error || "Sync failed"}`);
+        return;
+      }
+      setBmcResult(
+        `Synced ${data.synced} new, skipped ${data.skipped} existing` +
+        (data.errors?.length ? ` (${data.errors.length} errors)` : ""),
+      );
+      // Refresh BMC stats and transactions
+      const [bmcRes, txRes] = await Promise.all([
+        fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      if (bmcRes) setBmcStats(bmcRes);
+      if (txRes) setTransactions(txRes.transactions || []);
+    } catch {
+      setBmcResult("Network error during sync");
+    } finally {
+      setBmcSyncing(false);
+    }
   }
 
   if (loading) {
@@ -105,10 +176,31 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <div className="mb-8">
+      <div className="flex items-center justify-between mb-8">
         <h1 className="text-3xl font-extrabold">
           Treasury <span className="font-display text-lime">Overview</span>
         </h1>
+        <div className="flex items-center gap-3">
+          {currency === "USD" && exchangeRate && (
+            <span className="font-mono text-[10px] text-text-tertiary">
+              1 USD = {sym === "$" ? "₹" : "$"}{exchangeRate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+            </span>
+          )}
+          <button
+            onClick={toggleCurrency}
+            disabled={currencyLoading}
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5"
+            style={{
+              borderColor: currency === "USD" ? "var(--mint)" : "var(--border)",
+              background: currency === "USD" ? "rgba(111,209,215,0.08)" : "transparent",
+              color: currency === "USD" ? "var(--mint)" : "var(--text-secondary)",
+              opacity: currencyLoading ? 0.5 : 1,
+            }}
+          >
+            <span style={{ fontSize: 12 }}>{currency === "INR" ? "₹" : "$"}</span>
+            {currency}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -118,7 +210,7 @@ export default function AdminDashboard() {
             Total Balance
           </div>
           <div className="text-3xl font-extrabold text-mint">
-            ₹{(stats?.totalBalance ?? 0).toLocaleString("en-IN")}
+            {sym}{(stats?.totalBalance ?? 0).toLocaleString(locale)}
           </div>
           {stats && stats.totalDonated > 0 && (
             <div
@@ -148,7 +240,7 @@ export default function AdminDashboard() {
             Total Donated
           </div>
           <div className="text-3xl font-extrabold">
-            ₹{(stats?.totalDonated ?? 0).toLocaleString("en-IN")}
+            {sym}{(stats?.totalDonated ?? 0).toLocaleString(locale)}
           </div>
         </div>
 
@@ -158,7 +250,7 @@ export default function AdminDashboard() {
             Total Spent
           </div>
           <div className="text-3xl font-extrabold text-coral">
-            ₹{(stats?.totalSpent ?? 0).toLocaleString("en-IN")}
+            {sym}{(stats?.totalSpent ?? 0).toLocaleString(locale)}
           </div>
         </div>
 
@@ -169,7 +261,7 @@ export default function AdminDashboard() {
           </div>
           <div className="flex items-baseline gap-2">
             <div className="text-3xl font-extrabold text-coral">
-              ₹{Math.round(stats?.burnRate ?? 0).toLocaleString("en-IN")}
+              {sym}{Math.round(stats?.burnRate ?? 0).toLocaleString(locale)}
             </div>
             <span className="text-text-tertiary text-xs">/mo</span>
           </div>
@@ -208,7 +300,7 @@ export default function AdminDashboard() {
             style={{ backgroundColor: "rgba(167,139,250,0.08)" }}
           >
             <span className="font-mono text-xs font-semibold" style={{ color: "var(--violet)" }}>
-              ₹{Math.round(stats?.monthlySubs ?? 0).toLocaleString("en-IN")}
+              {sym}{Math.round(stats?.monthlySubs ?? 0).toLocaleString(locale)}
             </span>
             <span className="text-text-tertiary text-[10px] font-mono">/month</span>
           </div>
@@ -265,7 +357,7 @@ export default function AdminDashboard() {
                           style={{ color: m.donated - m.spent >= 0 ? "var(--mint)" : "var(--coral)" }}
                         >
                           {m.donated - m.spent >= 0 ? "+" : ""}
-                          ₹{(m.donated - m.spent).toLocaleString("en-IN")}
+                          {sym}{(m.donated - m.spent).toLocaleString(locale)}
                         </span>
                       </span>
                     </div>
@@ -292,7 +384,7 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <span className="font-mono text-[10px] text-text-tertiary w-20 text-right shrink-0">
-                      ₹{m.donated.toLocaleString("en-IN")}
+                      {sym}{m.donated.toLocaleString(locale)}
                     </span>
                   </div>
                   {/* Spent bar */}
@@ -317,7 +409,7 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <span className="font-mono text-[10px] text-text-tertiary w-20 text-right shrink-0">
-                      ₹{m.spent.toLocaleString("en-IN")}
+                      {sym}{m.spent.toLocaleString(locale)}
                     </span>
                   </div>
                 </div>
@@ -366,7 +458,7 @@ export default function AdminDashboard() {
                         {type}
                       </span>
                       <span className="font-mono text-[10px] text-text-tertiary">
-                        ₹{amount.toLocaleString("en-IN")} ({pct.toFixed(1)}%)
+                        {sym}{amount.toLocaleString(locale)} ({pct.toFixed(1)}%)
                       </span>
                     </div>
                     <div
@@ -422,6 +514,125 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Buy Me a Coffee */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
+            Buy Me a Coffee
+          </h2>
+          <button
+            onClick={handleBmcSync}
+            disabled={bmcSyncing}
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-1.5 rounded-full border transition-colors flex items-center gap-2"
+            style={{
+              borderColor: "var(--amber)",
+              background: "rgba(251,191,36,0.08)",
+              color: "var(--amber)",
+              opacity: bmcSyncing ? 0.5 : 1,
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={bmcSyncing ? { animation: "spin 1s linear infinite" } : undefined}
+            >
+              <path d="M1.5 8a6.5 6.5 0 0112.3-2.9M14.5 8a6.5 6.5 0 01-12.3 2.9" />
+              <path d="M14.5 2v3h-3" />
+              <path d="M1.5 14v-3h3" />
+            </svg>
+            {bmcSyncing ? "Syncing..." : "Sync BMC"}
+          </button>
+        </div>
+
+        {bmcResult && (
+          <div
+            className="mb-3 p-3 rounded-lg text-sm font-mono text-[11px]"
+            style={{
+              background: bmcResult.startsWith("Error")
+                ? "rgba(248,113,113,0.08)"
+                : "rgba(251,191,36,0.08)",
+              border: `1px solid ${bmcResult.startsWith("Error") ? "rgba(248,113,113,0.2)" : "rgba(251,191,36,0.2)"}`,
+              color: bmcResult.startsWith("Error") ? "var(--coral)" : "var(--amber)",
+            }}
+          >
+            {bmcResult}
+          </div>
+        )}
+
+        <div className="card p-5">
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+                Supporters
+              </div>
+              <div className="text-2xl font-extrabold" style={{ color: "var(--amber)" }}>
+                {bmcStats?.totalSupporters ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+                Total Earned
+              </div>
+              <div className="text-2xl font-extrabold text-mint">
+                ${bmcStats?.totalEarned?.toLocaleString("en-US") ?? "0"}
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+                Transactions
+              </div>
+              <div className="text-2xl font-extrabold text-text-primary">
+                {bmcStats?.totalTransactions ?? 0}
+              </div>
+            </div>
+          </div>
+
+          {bmcStats?.recent && bmcStats.recent.length > 0 && (
+            <>
+              <div className="border-t border-[var(--border)] pt-3 mt-1">
+                <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+                  Recent BMC Donations
+                </div>
+                <div className="space-y-2">
+                  {bmcStats.recent.slice(0, 5).map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between py-1.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-text-primary truncate">
+                          {tx.description}
+                        </div>
+                        <div className="text-text-tertiary text-[10px] font-mono mt-0.5">
+                          {new Date(tx.date).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="text-mint font-semibold text-sm ml-3 shrink-0">
+                        +${parseFloat(tx.amount).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {(!bmcStats || bmcStats.totalTransactions === 0) && (
+            <div className="text-center py-4">
+              <p className="text-text-tertiary text-sm">
+                No BMC donations synced yet. Click Sync to import from Buy Me a Coffee.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div>
         <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">

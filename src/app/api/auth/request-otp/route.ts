@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
   try {
     await bot.api.sendMessage(
       user.chatId,
-      `🔐 Your Sentinel login code:\n\n<code>${otp}</code>\n\nExpires in 5 minutes. Do not share this code.`,
+      `<blockquote><b>Login Code</b></blockquote>\n` +
+      `<code>${otp}</code>\n\n` +
+      `<i>Expires in 5 minutes. Do not share this code.</i>`,
       { parse_mode: "HTML" }
     );
   } catch {

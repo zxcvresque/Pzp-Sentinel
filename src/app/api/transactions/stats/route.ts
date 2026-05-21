@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user || !hasRole(user.roles, "ADMIN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
@@ -88,16 +88,51 @@ export async function GET() {
     return sum + price; // MONTHLY
   }, 0);
 
+  // Currency conversion support
+  const searchParams = request.nextUrl.searchParams;
+  const displayCurrency = searchParams.get("currency") === "USD" ? "USD" : "INR";
+
+  let exchangeRate: number | null = null;
+
+  if (displayCurrency === "USD") {
+    try {
+      const rateRes = await fetch(
+        new URL("/api/exchange-rate", request.nextUrl.origin).toString(),
+      );
+      if (rateRes.ok) {
+        const rateData = await rateRes.json();
+        exchangeRate = rateData.rate; // USD -> INR rate
+      }
+    } catch {
+      // Fall back to INR if exchange rate unavailable
+    }
+  }
+
+  const convert = (inrAmount: number) => {
+    if (displayCurrency === "USD" && exchangeRate) {
+      return Math.round((inrAmount / exchangeRate) * 100) / 100;
+    }
+    return inrAmount;
+  };
+
   return NextResponse.json({
-    totalBalance: totalDonated - totalSpent,
-    totalDonated,
-    totalSpent,
+    totalBalance: convert(totalDonated - totalSpent),
+    totalDonated: convert(totalDonated),
+    totalSpent: convert(totalSpent),
     pendingCount,
-    monthlyBreakdown,
-    expenseByType,
-    burnRate: Math.round(burnRate * 100) / 100,
+    monthlyBreakdown: monthlyBreakdown.map((m) => ({
+      ...m,
+      donated: convert(m.donated),
+      spent: convert(m.spent),
+    })),
+    expenseByType: Object.fromEntries(
+      Object.entries(expenseByType).map(([k, v]) => [k, convert(v)]),
+    ),
+    burnRate: Math.round(convert(burnRate) * 100) / 100,
     runwayMonths,
     activeSubs,
-    monthlySubs: Math.round(monthlySubs * 100) / 100,
+    monthlySubs: Math.round(convert(monthlySubs) * 100) / 100,
+    displayCurrency,
+    exchangeRate,
   });
 }

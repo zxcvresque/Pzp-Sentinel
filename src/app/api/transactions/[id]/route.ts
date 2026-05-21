@@ -18,6 +18,14 @@ export async function PATCH(
   const body = await req.json();
   const { amount, direction, type, method, description, date } = body;
 
+  // Validate amount if provided
+  if (amount !== undefined) {
+    const parsedAmount = parseFloat(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 });
+    }
+  }
+
   const transaction = await prisma.transaction.findUnique({ where: { id } });
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });

@@ -6,6 +6,11 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Only ADMIN and DEV can read tags
+  if (!hasRole(user.roles, "ADMIN") && !hasRole(user.roles, "DEV")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const tags = await prisma.tag.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json({ tags });
 }
@@ -13,7 +18,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!hasRole(user.roles, "ADMIN") && !hasRole(user.roles, "DEV")) {
+  // Only ADMIN can create tags
+  if (!hasRole(user.roles, "ADMIN")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
