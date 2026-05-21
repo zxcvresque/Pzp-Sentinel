@@ -30,13 +30,11 @@ const FEATURES: Feature[] = [
   { id: "a9",  title: "Audit log",                  details: "Immutable record of every write action: who, what, when, before/after values",                                          status: "done",    portal: "ADMIN", phase: 1 },
   { id: "a10", title: "Multi-currency",             details: "BMC comes in USD, local in INR. Auto-fetch exchange rate at transaction time. Toggle view",                              status: "done",    portal: "ADMIN", phase: 2 },
   { id: "a11", title: "Export CSV/Excel",            details: "Export transactions, monthly auto-generated financial summary PDF",                                                     status: "done",    portal: "ADMIN", phase: 2 },
-  { id: "a12", title: "Public transparency page",   details: "Read-only, no names. Total donated, spent, current balance, active services",                                           status: "todo",    portal: "ADMIN", phase: 4 },
 
   // ── Donor Portal ──
   { id: "d1",  title: "Donation history",           details: "Full log of contributions with status (pending/approved/rejected)",                                                     status: "done",    portal: "DONOR", phase: 1 },
   { id: "d2",  title: "Submit payment",             details: "Upload proof, enter amount/method, goes to admin approval queue",                                                       status: "done",    portal: "DONOR", phase: 1 },
   { id: "d3",  title: "BMC integration",            details: "One-time + recurring via Buy Me a Coffee. API sync auto-logs donations",                                                status: "done",    portal: "DONOR", phase: 2 },
-  { id: "d4",  title: "Receipt download",           details: "Per-donation or monthly summary PDF receipts",                                                                          status: "todo",    portal: "DONOR", phase: 4 },
   { id: "d5",  title: "Donor profile",              details: "Basic info, notification preferences, theme color picker",                                                               status: "done",    portal: "DONOR", phase: 1 },
 
   // ── Dev Portal ──

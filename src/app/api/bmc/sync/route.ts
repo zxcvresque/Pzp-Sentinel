@@ -41,20 +41,33 @@ interface BmcExtrasResponse {
   last_page: number;
 }
 
-async function bmcFetch<T>(path: string): Promise<T> {
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function bmcFetch<T>(path: string, retries = 3): Promise<T> {
   const token = process.env.BMC_TOKEN;
   if (!token) throw new Error("BMC_TOKEN not configured");
 
-  const res = await fetch(`${BMC_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  for (let i = 0; i < retries; i++) {
+    if (i > 0) await delay(2000 * i); // backoff: 2s, 4s
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`BMC API ${res.status}: ${text.slice(0, 200)}`);
+    const res = await fetch(`${BMC_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res.status === 429) {
+      console.log(`BMC rate limited, retry ${i + 1}/${retries}...`);
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`BMC API ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    return res.json() as Promise<T>;
   }
 
-  return res.json() as Promise<T>;
+  throw new Error("BMC API rate limited after retries");
 }
 
 async function fetchAllSupporters(): Promise<BmcSupporter[]> {
@@ -66,6 +79,7 @@ async function fetchAllSupporters(): Promise<BmcSupporter[]> {
     all.push(...(res.data || []));
     if (page >= res.last_page) break;
     page++;
+    await delay(500); // pace between pages
   }
 
   return all;
@@ -80,6 +94,7 @@ async function fetchAllExtras(): Promise<BmcExtra[]> {
     all.push(...(res.data || []));
     if (page >= res.last_page) break;
     page++;
+    await delay(500); // pace between pages
   }
 
   return all;
@@ -97,11 +112,10 @@ export async function POST() {
   }
 
   try {
-    // Fetch supporters and extras in parallel
-    const [supporters, extras] = await Promise.all([
-      fetchAllSupporters(),
-      fetchAllExtras(),
-    ]);
+    // Fetch sequentially to avoid BMC rate limits
+    const supporters = await fetchAllSupporters();
+    await delay(1000); // breathing room between endpoints
+    const extras = await fetchAllExtras();
 
     let synced = 0;
     let skipped = 0;
