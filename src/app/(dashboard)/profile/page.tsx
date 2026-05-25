@@ -14,7 +14,17 @@ interface UserProfile {
   chatId: string | null;
   roles: string[];
   createdAt: string | null;
+  dmPreferences: string[];
 }
+
+const DM_CATEGORIES = [
+  { label: "Transactions", types: ["TX_APPROVED", "TX_REJECTED"], desc: "Donation approvals & rejections" },
+  { label: "Tasks", types: ["TASK_ASSIGNED"], desc: "Task assignments" },
+  { label: "Credentials", types: ["CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED"], desc: "Shared credentials & reviews" },
+  { label: "System", types: ["SYSTEM", "USER_REGISTERED"], desc: "BMC donations, sync, admin alerts" },
+  { label: "Roles", types: ["ROLE_ASSIGNED"], desc: "Role changes" },
+  { label: "Reminders", types: ["REMINDER"], desc: "Payment & task reminders" },
+] as const;
 
 export default function ProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -26,7 +36,8 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [botDm, setBotDm] = useState(false);
+  const [dmPrefs, setDmPrefs] = useState<string[]>([]);
+  const [dmSaving, setDmSaving] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null); // null = synced with user.themeColor
 
   useEffect(() => {
@@ -38,7 +49,7 @@ export default function ProfilePage() {
       .then((data) => {
         const u = data?.user || null;
         setUser(u);
-        if (u?.chatId) setBotDm(true);
+        if (u?.dmPreferences) setDmPrefs(u.dmPreferences);
       })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
@@ -358,30 +369,87 @@ export default function ProfilePage() {
 
         {/* ── Col 3: Notifications ── */}
         <div className="card p-5">
-          <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
+          <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Notifications
           </div>
+          <div className="text-[10px] text-text-tertiary mb-4">
+            {user.chatId ? (
+              <>Linked via <span className="text-text-secondary">@TheSentinelRobot</span></>
+            ) : (
+              <>Not linked — start <span className="text-text-secondary">@TheSentinelRobot</span></>
+            )}
+          </div>
 
-          <div className="flex items-center justify-between py-3">
-            <div className="pr-3">
-              <div className="text-xs text-text-primary font-medium">Bot DM</div>
-              <div className="text-[10px] text-text-tertiary mt-0.5">
-                {botDm ? "Linked — notifications via Telegram" : "Start the bot to receive DMs"}
-              </div>
-            </div>
-            <div
-              className={`relative w-9 h-5 rounded-full shrink-0 ${
-                botDm ? "bg-lime/30" : "bg-bg-elevated border border-[var(--border)]"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
-                  botDm
-                    ? "translate-x-4 bg-lime shadow-[0_0_6px_rgba(99,102,241,0.3)]"
-                    : "translate-x-0 bg-text-tertiary"
-                }`}
-              />
-            </div>
+          <div className="space-y-0 divide-y divide-[var(--border)]">
+            {DM_CATEGORIES.map((cat) => {
+              const isOn = cat.types.every((t) => dmPrefs.includes(t));
+              const disabled = !user.chatId;
+
+              async function toggle() {
+                if (disabled) return;
+                const newPrefs = isOn
+                  ? dmPrefs.filter((p) => !(cat.types as readonly string[]).includes(p))
+                  : [...dmPrefs, ...cat.types.filter((t) => !dmPrefs.includes(t))];
+                setDmPrefs(newPrefs);
+                setDmSaving(true);
+                try {
+                  await fetch("/api/auth/me", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ dmPreferences: newPrefs }),
+                  });
+                } catch {
+                  // silently revert on failure
+                  setDmPrefs(dmPrefs);
+                } finally {
+                  setDmSaving(false);
+                }
+              }
+
+              return (
+                <div key={cat.label} className="flex items-center justify-between py-2.5">
+                  <div className="pr-3 min-w-0">
+                    <div className={`text-xs font-medium ${disabled ? "text-text-tertiary" : "text-text-primary"}`}>
+                      {cat.label}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-0.5 truncate">
+                      {cat.desc}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isOn}
+                    disabled={disabled}
+                    onClick={toggle}
+                    className={`relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200 ${
+                      disabled
+                        ? "opacity-40 cursor-not-allowed bg-bg-elevated border border-[var(--border)]"
+                        : isOn
+                          ? "bg-lime/30 cursor-pointer"
+                          : "bg-bg-elevated border border-[var(--border)] cursor-pointer"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
+                        isOn
+                          ? "translate-x-4 bg-lime"
+                          : "translate-x-0 bg-text-tertiary"
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Saving indicator */}
+          <div className="h-4 mt-2">
+            {dmSaving && (
+              <span className="font-mono text-[9px] uppercase tracking-wider text-text-tertiary">
+                saving...
+              </span>
+            )}
           </div>
         </div>
       </div>

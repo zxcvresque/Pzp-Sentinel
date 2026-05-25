@@ -104,6 +104,7 @@ model User {
   chatId       String?
   roles        Role[]
   status       UserStatus @default(ACTIVE)
+  dmPreferences String[] @default(["TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
   createdById  String?
   createdBy    User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
   createdUsers User[]     @relation("CreatedByAdmin")

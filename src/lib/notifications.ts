@@ -50,11 +50,11 @@ export async function notify(data: {
   try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { chatId: true },
+      select: { chatId: true, dmPreferences: true },
     });
 
     const dmBot = getBot();
-    if (user?.chatId && dmBot) {
+    if (user?.chatId && dmBot && user.dmPreferences.includes(type)) {
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       await dmBot.api.sendMessage(user.chatId, tgText, { parse_mode: "HTML" });
     }
