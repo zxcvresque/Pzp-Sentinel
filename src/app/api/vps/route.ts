@@ -22,6 +22,9 @@ export async function GET() {
     name: s.name,
     provider: s.provider,
     ip: s.ip,
+    platform: s.platform,
+    notes: s.notes,
+    ...(isAdmin ? { password: s.password } : {}),
     specs: s.specs,
     approved: s.approved,
     addedById: s.addedById,
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { name, provider, ip } = await req.json();
+  const { name, provider, ip, platform, password, notes } = await req.json();
   if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
 
   const isAdmin = hasRole(user.roles, "ADMIN");
@@ -61,6 +64,9 @@ export async function POST(req: NextRequest) {
       name,
       provider: provider || "",
       ip: ip || "",
+      platform: platform || "",
+      password: password || "",
+      notes: notes || "",
       token,
       approved: isAdmin,
       addedById: user.id,

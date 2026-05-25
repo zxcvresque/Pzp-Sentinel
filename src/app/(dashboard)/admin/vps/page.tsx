@@ -11,6 +11,9 @@ interface Server {
   name: string;
   provider: string;
   ip: string;
+  platform: string;
+  password?: string;
+  notes: string;
   approved: boolean;
   addedById: string;
   specs: Record<string, string>;
@@ -145,6 +148,8 @@ function ApprovedServerCard({
   server: Server;
   onDelete: (id: string) => void;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const [copiedPw, setCopiedPw] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
 
@@ -209,18 +214,76 @@ function ApprovedServerCard({
         </div>
       </div>
 
-      {/* IP Address */}
-      <div
-        className="rounded-lg px-3 py-2"
-        style={{ background: "var(--bg-deep)" }}
-      >
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-          IP Address
-        </span>
-        <span className="font-mono text-sm text-[var(--text-primary)]">
-          {server.ip || "—"}
-        </span>
+      {/* IP Address + Platform */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            IP Address
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {server.ip || "—"}
+          </span>
+        </div>
+        {server.platform && (
+          <div
+            className="rounded-lg px-3 py-2"
+            style={{ background: "var(--bg-deep)" }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+              Platform
+            </span>
+            <span className="font-mono text-sm text-[var(--text-primary)]">
+              {server.platform}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Password (admin only, show/copy) */}
+      {server.password && (
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            Password
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm text-[var(--text-primary)] flex-1 break-all">
+              {showPassword ? server.password : "••••••••••••"}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors shrink-0"
+              style={{
+                color: "var(--text-secondary)",
+                background: "var(--bg-card)",
+              }}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(server.password!);
+                setCopiedPw(true);
+                setTimeout(() => setCopiedPw(false), 2000);
+              }}
+              className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors shrink-0"
+              style={{
+                color: copiedPw ? "var(--mint)" : "var(--text-secondary)",
+                background: "var(--bg-card)",
+              }}
+            >
+              {copiedPw ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Specs */}
       {specEntries.length > 0 && (
@@ -318,6 +381,13 @@ function ApprovedServerCard({
           </span>
         </div>
       </div>
+
+      {/* Notes */}
+      {server.notes && (
+        <div className="text-xs text-[var(--text-tertiary)] leading-relaxed">
+          {server.notes}
+        </div>
+      )}
     </div>
   );
 }
@@ -374,18 +444,40 @@ function PendingServerCard({
         </span>
       </div>
 
-      {/* IP Address */}
-      <div
-        className="rounded-lg px-3 py-2"
-        style={{ background: "var(--bg-deep)" }}
-      >
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-          IP Address
-        </span>
-        <span className="font-mono text-sm text-[var(--text-primary)]">
-          {server.ip || "—"}
-        </span>
+      {/* IP Address + Platform */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            IP Address
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {server.ip || "—"}
+          </span>
+        </div>
+        {server.platform && (
+          <div
+            className="rounded-lg px-3 py-2"
+            style={{ background: "var(--bg-deep)" }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+              Platform
+            </span>
+            <span className="font-mono text-sm text-[var(--text-primary)]">
+              {server.platform}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Notes */}
+      {server.notes && (
+        <div className="text-xs text-[var(--text-tertiary)] leading-relaxed">
+          {server.notes}
+        </div>
+      )}
 
       {/* Requested by */}
       <div
@@ -443,6 +535,9 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
   const [ip, setIp] = useState("");
+  const [platform, setPlatform] = useState("");
+  const [password, setPassword] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -457,7 +552,14 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       const res = await fetch("/api/vps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), provider: provider.trim(), ip: ip.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          provider: provider.trim(),
+          ip: ip.trim(),
+          platform: platform.trim(),
+          password: password.trim(),
+          notes: notes.trim(),
+        }),
       });
 
       if (!res.ok) {
@@ -469,6 +571,9 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       setName("");
       setProvider("");
       setIp("");
+      setPlatform("");
+      setPassword("");
+      setNotes("");
       setOpen(false);
       onCreated(data.server?.token ?? data.token);
     } catch (err: any) {
@@ -516,7 +621,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input
           type="text"
           placeholder="Name *"
@@ -527,9 +632,16 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
         />
         <input
           type="text"
-          placeholder="Provider"
+          placeholder="Provider (e.g. Oracle, Hetzner)"
           value={provider}
           onChange={(e) => setProvider(e.target.value)}
+          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+        />
+        <input
+          type="text"
+          placeholder="Platform (e.g. Ubuntu 22.04)"
+          value={platform}
+          onChange={(e) => setPlatform(e.target.value)}
           className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
         />
         <input
@@ -540,6 +652,20 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
         />
       </div>
+      <input
+        type="password"
+        placeholder="Password (SSH)"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+      />
+      <textarea
+        placeholder="Notes"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        rows={2}
+        className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)] resize-none"
+      />
 
       {error && (
         <p className="text-xs text-[var(--coral)]">{error}</p>

@@ -311,6 +311,9 @@ model VpsServer {
   token       String   @unique
   provider    String   @default("")
   ip          String   @default("")
+  platform    String   @default("")
+  password    String   @default("")
+  notes       String   @default("")
   specs       Json     @default("{}")
   cpuUsage    Float    @default(0)
   ramUsage    Float    @default(0)

@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { logTransactionReview } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
+import { getAppreciation } from "@/lib/appreciation";
 
 export async function POST(
   req: NextRequest,
@@ -75,19 +76,37 @@ export async function POST(
     reviewerName: user.name,
   });
 
+  // Compute donor's average for appreciation message
+  let appreciation = "";
+  if (updated.fromUserId) {
+    const donorTxns = await prisma.transaction.findMany({
+      where: {
+        fromUserId: updated.fromUserId,
+        status: "APPROVED",
+        direction: "IN",
+        id: { not: id }, // exclude this one
+      },
+      select: { amount: true },
+    });
+    const avg = donorTxns.length > 0
+      ? donorTxns.reduce((s, t) => s + Number(t.amount), 0) / donorTxns.length
+      : null;
+    appreciation = getAppreciation(Number(updated.amount), avg);
+  }
+
   // In-app notification + Telegram DM for the donor
   if (updated.fromUserId) {
     notify({
       userId: updated.fromUserId,
       type: "TX_APPROVED",
       title: "Donation Approved",
-      message: `Your donation of ${updated.currency} ${updated.amount} has been approved.`,
+      message: `Your donation of ${updated.currency} ${updated.amount} has been approved. ${appreciation}`,
       entityId: id,
       priority: "NORMAL",
       telegramMessage: formatTgMessage(
         "✅ Transaction Approved",
-        `Your donation of ${updated.currency} ${updated.amount} has been approved`,
-        `Reviewed by ${user.name}`,
+        `${updated.currency} ${updated.amount} approved`,
+        appreciation,
       ),
     }).catch(() => {});
   }

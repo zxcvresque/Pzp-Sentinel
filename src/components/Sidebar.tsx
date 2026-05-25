@@ -229,8 +229,7 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Audit Log",     href: "/admin/audit",          icon: "◌", Icon: IconAuditLog },
   ],
   DONOR: [
-    { label: "Dashboard", href: "/donor",          icon: "◈", Icon: IconChart },
-    { label: "Receipts",  href: "/donor/receipts",  icon: "◇", Icon: IconDocument },
+    { label: "My Donations", href: "/donor", icon: "◈", Icon: IconChart },
   ],
   DEV: [
     { label: "Board",       href: "/dev",              icon: "◈", Icon: IconKanban },

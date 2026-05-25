@@ -11,6 +11,8 @@ interface Server {
   name: string;
   provider: string;
   ip: string;
+  platform: string;
+  notes: string;
   specs: Record<string, string>;
   status: "online" | "offline";
   uptime: number; // seconds
@@ -183,17 +185,32 @@ function ServerCard({ server }: { server: Server }) {
         </span>
       </div>
 
-      {/* IP Address */}
-      <div
-        className="rounded-lg px-3 py-2"
-        style={{ background: "var(--bg-deep)" }}
-      >
-        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-          IP Address
-        </span>
-        <span className="font-mono text-sm text-[var(--text-primary)]">
-          {server.ip || "—"}
-        </span>
+      {/* IP Address + Platform */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            IP Address
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {server.ip || "—"}
+          </span>
+        </div>
+        {server.platform && (
+          <div
+            className="rounded-lg px-3 py-2"
+            style={{ background: "var(--bg-deep)" }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+              Platform
+            </span>
+            <span className="font-mono text-sm text-[var(--text-primary)]">
+              {server.platform}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Specs — dynamic from JSON */}
@@ -292,6 +309,13 @@ function ServerCard({ server }: { server: Server }) {
           </span>
         </div>
       </div>
+
+      {/* Notes */}
+      {server.notes && (
+        <div className="text-xs text-[var(--text-tertiary)] leading-relaxed">
+          {server.notes}
+        </div>
+      )}
     </div>
   );
 }
@@ -305,6 +329,9 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
   const [ip, setIp] = useState("");
+  const [platform, setPlatform] = useState("");
+  const [password, setPassword] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -321,7 +348,14 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
       const res = await fetch("/api/vps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), provider: provider.trim(), ip: ip.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          provider: provider.trim(),
+          ip: ip.trim(),
+          platform: platform.trim(),
+          password: password.trim(),
+          notes: notes.trim(),
+        }),
       });
 
       if (!res.ok) {
@@ -332,6 +366,9 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
       setName("");
       setProvider("");
       setIp("");
+      setPlatform("");
+      setPassword("");
+      setNotes("");
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -396,7 +433,7 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
               type="text"
               placeholder="Name *"
@@ -407,9 +444,16 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
             />
             <input
               type="text"
-              placeholder="Provider"
+              placeholder="Provider (e.g. Oracle, Hetzner)"
               value={provider}
               onChange={(e) => setProvider(e.target.value)}
+              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+            />
+            <input
+              type="text"
+              placeholder="Platform (e.g. Ubuntu 22.04)"
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value)}
               className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
             />
             <input
@@ -420,6 +464,20 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
               className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
             />
           </div>
+          <input
+            type="password"
+            placeholder="Password (SSH)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+          />
+          <textarea
+            placeholder="Notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)] resize-none"
+          />
 
           {error && (
             <p className="text-xs text-[var(--coral)]">{error}</p>

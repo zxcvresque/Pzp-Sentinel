@@ -48,9 +48,6 @@ export default function DonorDashboard() {
     (t) => t.status === "PENDING"
   ).length;
   const approvedCount = approved.length;
-  const rejectedCount = transactions.filter(
-    (t) => t.status === "REJECTED"
-  ).length;
 
   const filteredTransactions =
     statusFilter === "ALL"
@@ -119,10 +116,10 @@ export default function DonorDashboard() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-extrabold">
-            Your <span className="font-display text-lime">Donations</span>
+            My <span className="font-display text-lime">Donations</span>
           </h1>
           <p className="text-text-secondary text-sm mt-1">
-            Track and submit your contributions
+            Your contributions at a glance
           </p>
         </div>
         <button
@@ -132,12 +129,12 @@ export default function DonorDashboard() {
           }}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
-          {showForm ? "Cancel" : "Submit Payment"}
+          {showForm ? "Cancel" : "New Donation"}
         </button>
       </div>
 
       {/* Stats summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-3 gap-3 mb-6">
         <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Total Contributed
@@ -158,12 +155,6 @@ export default function DonorDashboard() {
             Approved
           </div>
           <div className="text-xl font-bold text-mint">{approvedCount}</div>
-        </div>
-        <div className="stat-card" style={{ "--accent": "var(--coral)" } as React.CSSProperties}>
-          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
-            Rejected
-          </div>
-          <div className="text-xl font-bold text-coral">{rejectedCount}</div>
         </div>
       </div>
 
