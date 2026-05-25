@@ -192,7 +192,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-20 md:pb-0">
         <div className="skeleton h-48 rounded-xl" />
         <div className="skeleton h-48 rounded-xl" />
         <div className="skeleton h-48 rounded-xl" />
@@ -224,7 +224,7 @@ export default function ProfilePage() {
     : null;
 
   return (
-    <div>
+    <div className="pb-20 md:pb-0">
       <h1 className="text-2xl font-extrabold mb-4">
         <span className="font-display text-lime">Profile</span>
       </h1>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
       {/* Single-screen grid: 3 columns on desktop */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ── Col 1: Identity ── */}
-        <div className="card p-5">
+        <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[var(--border)] bg-bg-deep flex items-center justify-center shrink-0">
               {user.photoUrl ? (
@@ -251,7 +251,7 @@ export default function ProfilePage() {
             <div className="min-w-0 flex-1">
               {editing ? (
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1 sm:gap-1.5">
                     <input
                       ref={inputRef}
                       type="text"
@@ -260,19 +260,19 @@ export default function ProfilePage() {
                       onKeyDown={handleKeyDown}
                       disabled={saving}
                       maxLength={100}
-                      className="bg-bg-elevated border border-[var(--border-hover)] rounded-md px-2 py-1 text-sm font-bold text-text-primary outline-none focus:border-[var(--border-active)] w-full transition-colors"
+                      className="bg-bg-elevated border border-[var(--border-hover)] rounded-md px-2 py-1 text-sm font-bold text-text-primary outline-none focus:border-[var(--border-active)] min-w-0 flex-1 transition-colors"
                     />
                     <button
                       onClick={saveName}
                       disabled={saving}
-                      className="shrink-0 px-2 py-1 rounded-md bg-lime/10 text-lime text-[10px] font-mono uppercase tracking-wider hover:bg-lime/20 transition-colors disabled:opacity-50"
+                      className="shrink-0 px-1.5 sm:px-2 py-1 rounded-md bg-lime/10 text-lime text-[10px] font-mono uppercase tracking-wider hover:bg-lime/20 transition-colors disabled:opacity-50"
                     >
                       {saving ? "..." : "Save"}
                     </button>
                     <button
                       onClick={cancelEditing}
                       disabled={saving}
-                      className="shrink-0 px-2 py-1 rounded-md bg-bg-elevated text-text-secondary text-[10px] font-mono uppercase tracking-wider hover:bg-bg-hover transition-colors disabled:opacity-50"
+                      className="shrink-0 px-1.5 sm:px-2 py-1 rounded-md bg-bg-elevated text-text-secondary text-[10px] font-mono uppercase tracking-wider hover:bg-bg-hover transition-colors disabled:opacity-50"
                     >
                       Esc
                     </button>
@@ -347,7 +347,7 @@ export default function ProfilePage() {
         </div>
 
         {/* ── Col 2: Theme ── */}
-        <div className="card p-5 flex flex-col">
+        <div className="card p-4 sm:p-5 flex flex-col">
           <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
             Accent Colour
           </div>
@@ -356,7 +356,7 @@ export default function ProfilePage() {
           </div>
 
           {/* Saved colour presets */}
-          <div className="flex items-center gap-3 mt-4 mb-2">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-4 mb-2">
             <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary shrink-0">
               Saved
             </span>
@@ -407,12 +407,12 @@ export default function ProfilePage() {
           </div>
 
           {/* Hex input + save status */}
-          <div className="mt-4 flex items-center gap-2">
+          <div className="mt-4 flex items-center gap-1.5 sm:gap-2">
             <div
               className="w-5 h-5 rounded-full border border-[var(--border)] shrink-0"
               style={{ background: user.themeColor || "#6FD1D7" }}
             />
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-0">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-text-tertiary pointer-events-none">
                 #
               </span>
@@ -442,7 +442,7 @@ export default function ProfilePage() {
                 className="w-full bg-bg-elevated border border-[var(--border)] rounded-md pl-5 pr-2 py-1 font-mono text-[11px] text-text-primary uppercase tracking-wider outline-none focus:border-[var(--border-active)] transition-colors"
               />
             </div>
-            <span className="font-mono text-[9px] tracking-wider shrink-0 text-right max-w-[120px] truncate" title={themeError || undefined}>
+            <span className="font-mono text-[9px] tracking-wider shrink-0 text-right max-w-[80px] sm:max-w-[120px] truncate" title={themeError || undefined}>
               {themeSaved === "saving" && <span className="text-text-tertiary uppercase">saving</span>}
               {themeSaved === "saved" && <span className="text-mint uppercase">saved</span>}
               {themeSaved === "error" && <span className="text-coral">{themeError || "failed"}</span>}
@@ -451,7 +451,7 @@ export default function ProfilePage() {
         </div>
 
         {/* ── Col 3: Notifications ── */}
-        <div className="card p-5">
+        <div className="card p-4 sm:p-5">
           <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Notifications
           </div>
@@ -495,7 +495,7 @@ export default function ProfilePage() {
                     <div className={`text-xs font-medium ${disabled ? "text-text-tertiary" : "text-text-primary"}`}>
                       {cat.label}
                     </div>
-                    <div className="text-[10px] text-text-tertiary mt-0.5 truncate">
+                    <div className="text-[10px] text-text-tertiary mt-0.5 break-words">
                       {cat.desc}
                     </div>
                   </div>

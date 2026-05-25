@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface TopBarProps {
   name: string;
@@ -36,7 +37,28 @@ function timeAgo(date: string): string {
   return `${months}mo`;
 }
 
+function getNotificationHref(notif: Notification, roles: string[]): string | null {
+  const isAdmin = roles.includes("ADMIN");
+  switch (notif.type) {
+    case "TX_APPROVED":
+    case "TX_REJECTED":
+      return isAdmin ? "/admin/transactions" : "/donor/receipts";
+    case "TASK_ASSIGNED":
+      return "/dev/tasks";
+    case "CREDENTIAL_ASSIGNED":
+    case "CREDENTIAL_REVIEWED":
+      return isAdmin ? "/admin/credentials" : "/dev/credentials";
+    case "USER_REGISTERED":
+      return "/admin/users";
+    case "ROLE_ASSIGNED":
+      return "/profile";
+    default:
+      return null;
+  }
+}
+
 export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarProps) {
+  const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -232,8 +254,13 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     key={notif.id}
                     onClick={() => {
                       if (!notif.read) markRead([notif.id]);
+                      const href = getNotificationHref(notif, roles);
+                      if (href) {
+                        setNotifOpen(false);
+                        router.push(href);
+                      }
                     }}
-                    className="w-full text-left px-4 py-3 flex gap-3 border-b border-[var(--border)] last:border-b-0 transition-colors duration-150"
+                    className="w-full text-left px-4 py-3 flex gap-3 border-b border-[var(--border)] last:border-b-0 transition-colors duration-150 cursor-pointer"
                     style={{
                       background: notif.read ? "transparent" : "var(--bg-elevated)",
                     }}

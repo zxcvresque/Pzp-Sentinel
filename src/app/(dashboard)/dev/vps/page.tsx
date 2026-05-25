@@ -149,7 +149,7 @@ function ServerCard({ server }: { server: Server }) {
   const specEntries = Object.entries(server.specs ?? {});
 
   return (
-    <div className="card p-5 flex flex-col gap-4">
+    <div className="card p-4 sm:p-6 flex flex-col gap-4">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -215,12 +215,7 @@ function ServerCard({ server }: { server: Server }) {
 
       {/* Specs — dynamic from JSON */}
       {specEntries.length > 0 && (
-        <div
-          className="grid gap-2"
-          style={{
-            gridTemplateColumns: `repeat(${Math.min(specEntries.length, 3)}, 1fr)`,
-          }}
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {specEntries.map(([label, value]) => (
             <div
               key={label}
@@ -230,7 +225,7 @@ function ServerCard({ server }: { server: Server }) {
               <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
                 {label}
               </span>
-              <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium">
+              <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium break-all">
                 {value}
               </span>
             </div>
@@ -408,7 +403,7 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
       </button>
 
       {open && (
-        <form onSubmit={handleSubmit} className="card p-5 flex flex-col gap-4 col-span-full">
+        <form onSubmit={handleSubmit} className="card p-4 sm:p-6 flex flex-col gap-4 col-span-full">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
               Request Server
@@ -557,7 +552,7 @@ export default function VpsPage() {
         <h1 className="text-3xl font-extrabold mb-6">
           VPS <span className="font-display text-lime">Stats</span>
         </h1>
-        <div className="card p-8 text-center">
+        <div className="card p-4 sm:p-6 text-center">
           <p className="text-coral mb-2">Failed to load server data</p>
           <p className="text-text-tertiary text-sm">{error}</p>
         </div>
@@ -570,13 +565,13 @@ export default function VpsPage() {
   const offlineCount = servers.length - onlineCount;
 
   return (
-    <div>
+    <div className="pb-20 md:pb-0">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-3xl font-extrabold">
           VPS <span className="font-display text-lime">Stats</span>
         </h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
           {servers.length > 0 && (
             <>
               <span className="font-mono text-xs text-[var(--text-secondary)]">
@@ -607,7 +602,7 @@ export default function VpsPage() {
       </div>
 
       {servers.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div className="card p-4 sm:p-6 text-center">
           <p className="text-text-secondary mb-2">No servers available.</p>
           <p className="text-text-tertiary text-sm">
             Request a server to get started.

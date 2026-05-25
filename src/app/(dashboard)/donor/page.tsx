@@ -155,11 +155,11 @@ export default function DonorDashboard() {
   }
 
   return (
-    <div>
+    <div className="pb-20 md:pb-0">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold">
+          <h1 className="text-2xl sm:text-3xl font-extrabold">
             My <span className="font-display text-lime">Donations</span>
           </h1>
           <p className="text-text-secondary text-sm mt-1">
@@ -171,14 +171,14 @@ export default function DonorDashboard() {
             setShowForm(!showForm);
             setFormError("");
           }}
-          className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
+          className="bg-lime text-bg-void font-semibold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm whitespace-nowrap hover:bg-lime/90 transition-colors shrink-0"
         >
           {showForm ? "Cancel" : "New Donation"}
         </button>
       </div>
 
       {/* Stats summary */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Total Contributed
@@ -211,7 +211,7 @@ export default function DonorDashboard() {
 
       {/* Submission form */}
       {showForm && (
-        <div className="glass-card p-6 mb-6 animate-scale-in">
+        <div className="glass-card p-4 sm:p-6 mb-6 animate-scale-in">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
             New Donation
           </div>
@@ -335,7 +335,7 @@ export default function DonorDashboard() {
 
       {/* Filter tabs */}
       {transactions.length > 0 && (
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
             <button
               key={s}
@@ -382,7 +382,7 @@ export default function DonorDashboard() {
           {filteredTransactions.map((tx) => (
             <div
               key={tx.id}
-              className="card p-4 flex items-center justify-between"
+              className="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0"
             >
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">
@@ -395,7 +395,7 @@ export default function DonorDashboard() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0 ml-3">
+              <div className="flex items-center gap-3 shrink-0 sm:ml-3">
                 <span className="text-mint font-semibold">
                   {currencySymbol(tx.currency)}
                   {parseFloat(tx.amount).toLocaleString()}

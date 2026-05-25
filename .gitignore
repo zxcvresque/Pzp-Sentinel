@@ -28,6 +28,10 @@
 *.pem
 sentinel-secrets.html
 
+# uploads (user-generated content)
+/public/uploads/receipts/*
+!/public/uploads/receipts/.gitkeep
+
 # debug
 npm-debug.log*
 yarn-debug.log*

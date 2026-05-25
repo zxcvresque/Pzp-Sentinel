@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 
 interface Transaction {
@@ -590,18 +591,18 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Transaction detail modal */}
-      {selectedTx && (
+      {/* Transaction detail modal — portalled to body */}
+      {selectedTx && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in p-4 sm:p-6"
           onClick={() => setSelectedTx(null)}
         >
           <div
-            className="relative bg-bg-card border border-[var(--border)] rounded-2xl w-full max-w-lg my-8 mx-4 shadow-lg"
+            className="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl w-full max-w-lg max-h-[90vh] max-h-[90dvh] flex flex-col shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header row: amount + close */}
-            <div className="bg-bg-card border-b border-[var(--border)] px-5 py-3 flex items-center justify-between rounded-t-2xl">
+            {/* Sticky header */}
+            <div className="bg-[var(--bg-card)] border-b border-[var(--border)] px-5 py-3 flex items-center justify-between rounded-t-2xl flex-shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className={`text-xl font-bold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
                   {selectedTx.direction === "IN" ? "+" : "-"}
@@ -617,47 +618,48 @@ export default function TransactionsPage() {
               </div>
               <button
                 onClick={() => setSelectedTx(null)}
-                className="w-7 h-7 rounded-full bg-bg-deep hover:bg-bg-elevated flex items-center justify-center transition-colors text-text-secondary hover:text-text-primary flex-shrink-0 ml-2"
+                className="w-8 h-8 rounded-full bg-[var(--bg-deep)] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors text-[var(--text-secondary)] hover:text-[var(--text-primary)] flex-shrink-0 ml-2 text-lg"
               >
                 &times;
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-4">
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 overscroll-contain px-5 py-4 space-y-4">
               {/* Description */}
-              <div className="text-sm text-text-secondary">{selectedTx.description}</div>
+              <div className="text-sm text-[var(--text-secondary)]">{selectedTx.description}</div>
 
               {/* Compact details: 2x2 grid */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Direction</div>
+                <div className="bg-[var(--bg-deepest)] rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Direction</div>
                   <div className={`text-xs font-semibold mt-0.5 ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
                     {selectedTx.direction === "IN" ? "Incoming" : "Outgoing"}
                   </div>
                 </div>
-                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Method</div>
+                <div className="bg-[var(--bg-deepest)] rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Method</div>
                   <div className="text-xs font-semibold text-violet mt-0.5">{selectedTx.method}</div>
                 </div>
-                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Type</div>
-                  <div className="text-xs font-semibold text-text-primary mt-0.5">{selectedTx.type}</div>
+                <div className="bg-[var(--bg-deepest)] rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Type</div>
+                  <div className="text-xs font-semibold text-[var(--text-primary)] mt-0.5">{selectedTx.type}</div>
                 </div>
-                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Date</div>
-                  <div className="text-xs font-semibold text-text-primary mt-0.5">{formatDate(selectedTx.date)}</div>
+                <div className="bg-[var(--bg-deepest)] rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Date</div>
+                  <div className="text-xs font-semibold text-[var(--text-primary)] mt-0.5">{formatDate(selectedTx.date)}</div>
                 </div>
               </div>
 
-              {/* People — inline rows, not big cards */}
+              {/* People */}
               <div className="space-y-2">
                 {selectedTx.fromUser && (
                   <div className="flex items-center gap-2.5">
                     <div className="w-6 h-6 rounded-full bg-amber/15 text-amber flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                       {selectedTx.fromUser.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">Donor</span>
-                    <span className="text-sm text-text-primary">{selectedTx.fromUser.name}</span>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">Donor</span>
+                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.fromUser.name}</span>
                   </div>
                 )}
                 {selectedTx.createdBy && (
@@ -665,8 +667,8 @@ export default function TransactionsPage() {
                     <div className="w-6 h-6 rounded-full bg-violet/15 text-violet flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                       {selectedTx.createdBy.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">By</span>
-                    <span className="text-sm text-text-primary">{selectedTx.createdBy.name}</span>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">By</span>
+                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.createdBy.name}</span>
                   </div>
                 )}
                 {selectedTx.reviewedBy && (
@@ -676,29 +678,29 @@ export default function TransactionsPage() {
                     }`}>
                       {selectedTx.reviewedBy.name.charAt(0).toUpperCase()}
                     </div>
-                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">
                       {selectedTx.status === "APPROVED" ? "Approved" : "Rejected"}
                     </span>
-                    <span className="text-sm text-text-primary">{selectedTx.reviewedBy.name}</span>
+                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.reviewedBy.name}</span>
                   </div>
                 )}
               </div>
 
               {/* Review note */}
               {selectedTx.reviewNote && (
-                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Review Note</div>
-                  <div className="text-xs text-text-secondary italic">{selectedTx.reviewNote}</div>
+                <div className="bg-[var(--bg-deepest)] rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] mb-1">Review Note</div>
+                  <div className="text-xs text-[var(--text-secondary)] italic">{selectedTx.reviewNote}</div>
                 </div>
               )}
 
-              {/* Attachments / receipt photos */}
+              {/* Receipt photos */}
               {selectedTx.attachments && selectedTx.attachments.length > 0 && (
                 <div>
-                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] mb-2">
                     Receipt Photos ({selectedTx.attachments.length})
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {selectedTx.attachments.map((url, i) => (
                       <button
                         key={i}
@@ -716,63 +718,66 @@ export default function TransactionsPage() {
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-[var(--border)]">
-                {selectedTx.status === "PENDING" && (
-                  <>
-                    <button
-                      onClick={() => { handleApprove(selectedTx.id); setSelectedTx(null); }}
-                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => { handleReject(selectedTx.id); setSelectedTx(null); }}
-                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => { startEdit(selectedTx); setSelectedTx(null); }}
-                  className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
-                >
-                  Edit
-                </button>
-                {selectedTx.status === "PENDING" && (
+            {/* Sticky footer actions */}
+            <div className="border-t border-[var(--border)] px-5 py-3 flex flex-wrap gap-2 rounded-b-2xl flex-shrink-0 bg-[var(--bg-card)]">
+              {selectedTx.status === "PENDING" && (
+                <>
                   <button
-                    onClick={() => { handleDelete(selectedTx); setSelectedTx(null); }}
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors ml-auto"
+                    onClick={() => { handleApprove(selectedTx.id); setSelectedTx(null); }}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
                   >
-                    Delete
+                    Approve
                   </button>
-                )}
-              </div>
+                  <button
+                    onClick={() => { handleReject(selectedTx.id); setSelectedTx(null); }}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => { startEdit(selectedTx); setSelectedTx(null); }}
+                className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+              >
+                Edit
+              </button>
+              {selectedTx.status === "PENDING" && (
+                <button
+                  onClick={() => { handleDelete(selectedTx); setSelectedTx(null); }}
+                  className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors ml-auto"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Image lightbox */}
-      {lightboxImg && (
+      {/* Image lightbox — portalled to body */}
+      {lightboxImg && createPortal(
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in cursor-zoom-out"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in p-4"
           onClick={() => setLightboxImg(null)}
         >
-          <img
-            src={lightboxImg}
-            alt="Receipt"
-            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
-          />
           <button
             onClick={() => setLightboxImg(null)}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-lg"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-xl z-10"
           >
             &times;
           </button>
-        </div>
+          <img
+            src={lightboxImg}
+            alt="Receipt"
+            className="max-w-full max-h-[90vh] max-h-[90dvh] object-contain rounded-lg select-none"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body
       )}
     </div>
   );

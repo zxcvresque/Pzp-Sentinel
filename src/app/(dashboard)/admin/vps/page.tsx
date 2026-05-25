@@ -159,7 +159,7 @@ function ApprovedServerCard({
   const specEntries = Object.entries(server.specs ?? {});
 
   return (
-    <div className="card p-5 flex flex-col gap-4">
+    <div className="card p-4 sm:p-6 flex flex-col gap-4">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -287,12 +287,7 @@ function ApprovedServerCard({
 
       {/* Specs */}
       {specEntries.length > 0 && (
-        <div
-          className="grid gap-2"
-          style={{
-            gridTemplateColumns: `repeat(${Math.min(specEntries.length, 3)}, 1fr)`,
-          }}
-        >
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {specEntries.map(([label, value]) => (
             <div
               key={label}
@@ -302,7 +297,7 @@ function ApprovedServerCard({
               <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
                 {label}
               </span>
-              <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium">
+              <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium break-all">
                 {value}
               </span>
             </div>
@@ -411,7 +406,7 @@ function PendingServerCard({
 
   return (
     <div
-      className="card p-5 flex flex-col gap-4"
+      className="card p-4 sm:p-6 flex flex-col gap-4"
       style={{ border: "1px solid rgba(251,191,36,0.25)" }}
     >
       {/* Header row */}
@@ -493,7 +488,7 @@ function PendingServerCard({
       </div>
 
       {/* Approve / Reject buttons */}
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex items-center gap-2 pt-1 flex-wrap">
         <button
           onClick={() => onApprove(server.id)}
           disabled={isProcessing}
@@ -609,7 +604,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       </button>
 
       {open && (
-        <form onSubmit={handleSubmit} className="card p-5 flex flex-col gap-4 col-span-full">
+        <form onSubmit={handleSubmit} className="card p-4 sm:p-6 flex flex-col gap-4 col-span-full">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
               New Server
@@ -718,7 +713,7 @@ function TokenDisplay({
 
   return (
     <div
-      className="card p-4 flex flex-col gap-2"
+      className="card p-4 sm:p-6 flex flex-col gap-2"
       style={{ border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.3)" }}
     >
       <div className="flex items-center justify-between">
@@ -739,8 +734,8 @@ function TokenDisplay({
           </svg>
         </button>
       </div>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 font-mono text-xs text-[var(--lime)] bg-[var(--bg-deep)] px-3 py-2 rounded-lg overflow-x-auto select-all">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <code className="flex-1 font-mono text-xs text-[var(--lime)] bg-[var(--bg-deep)] px-3 py-2 rounded-lg break-all select-all">
           {token}
         </code>
         <button
@@ -864,7 +859,7 @@ export default function AdminVpsPage() {
         <h1 className="text-3xl font-extrabold mb-6">
           VPS <span className="font-display text-lime">Stats</span>
         </h1>
-        <div className="card p-8 text-center">
+        <div className="card p-4 sm:p-6 text-center">
           <p className="text-coral mb-2">Failed to load server data</p>
           <p className="text-text-tertiary text-sm">{error}</p>
         </div>
@@ -878,14 +873,14 @@ export default function AdminVpsPage() {
   const offlineCount = approvedServers.filter((s) => s.status === "offline").length;
 
   return (
-    <div>
+    <div className="pb-20 md:pb-0">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-3xl font-extrabold">
           VPS <span className="font-display text-lime">Stats</span>
           <span className="text-sm font-normal text-[var(--text-tertiary)] ml-3">Admin</span>
         </h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
           {approvedServers.length > 0 && (
             <>
               <span className="font-mono text-xs text-[var(--text-secondary)]">
@@ -960,7 +955,7 @@ export default function AdminVpsPage() {
 
       {/* Approved servers section */}
       {approvedServers.length === 0 && pendingServers.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div className="card p-4 sm:p-6 text-center">
           <p className="text-text-secondary mb-2">No servers registered.</p>
           <p className="text-text-tertiary text-sm">
             Use the button above to add a server.
