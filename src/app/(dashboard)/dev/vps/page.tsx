@@ -1,35 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-
-interface ServerMetrics {
-  cpuUsage: number;
-  ramUsage: number;
-  diskUsage: number;
-  bandwidthUsed: string;
-  bandwidthLimit: string;
-}
-
-interface ServerSpecs {
-  cpu: string;
-  ram: string;
-  storage: string;
-}
 
 interface Server {
   id: string;
   name: string;
   provider: string;
   ip: string;
-  specs: ServerSpecs;
-  status: string;
-  uptime: string;
-  metrics: ServerMetrics;
-  lastChecked: string;
+  specs: Record<string, string>;
+  status: "online" | "offline";
+  uptime: number; // seconds
+  loadAvg: string; // e.g. "0.52, 0.38, 0.25"
+  metrics: {
+    cpuUsage: number;
+    ramUsage: number;
+    ramTotal: number;
+    diskUsage: number;
+    diskTotal: number;
+    netIn: number;
+    netOut: number;
+  };
+  lastSeen: string; // ISO timestamp
 }
 
 /* ------------------------------------------------------------------ */
@@ -40,12 +35,6 @@ function usageColor(pct: number): string {
   if (pct > 80) return "var(--coral)";
   if (pct >= 50) return "var(--amber)";
   return "var(--mint)";
-}
-
-function usageBg(pct: number): string {
-  if (pct > 80) return "rgba(248,113,113,0.10)";
-  if (pct >= 50) return "rgba(251,191,36,0.10)";
-  return "rgba(52,211,153,0.10)";
 }
 
 function formatTimestamp(iso: string): string {
@@ -59,13 +48,37 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+function formatUptime(seconds: number): string {
+  if (seconds <= 0) return "0m";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
+
+function formatGB(gb: number): string {
+  return gb >= 100 ? gb.toFixed(0) : gb.toFixed(1);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Usage bar component                                                */
 /* ------------------------------------------------------------------ */
 
-function UsageBar({ label, pct }: { label: string; pct: number }) {
-  const color = usageColor(pct);
-  const bg = usageBg(pct);
+function UsageBar({
+  label,
+  pct,
+  detail,
+}: {
+  label: string;
+  pct: number;
+  detail?: string;
+}) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  const color = usageColor(clamped);
 
   return (
     <div className="space-y-1.5">
@@ -73,11 +86,13 @@ function UsageBar({ label, pct }: { label: string; pct: number }) {
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
           {label}
         </span>
-        <span
-          className="font-mono text-[11px] font-semibold"
-          style={{ color }}
-        >
-          {pct}%
+        <span className="font-mono text-[11px] font-semibold" style={{ color }}>
+          {Math.round(clamped)}%
+          {detail && (
+            <span className="font-normal text-[var(--text-tertiary)] ml-1.5">
+              {detail}
+            </span>
+          )}
         </span>
       </div>
       <div
@@ -87,9 +102,9 @@ function UsageBar({ label, pct }: { label: string; pct: number }) {
         <div
           className="h-full rounded-full transition-all duration-700 ease-out"
           style={{
-            width: `${pct}%`,
+            width: `${clamped}%`,
             background: color,
-            boxShadow: pct > 80 ? `0 0 8px ${color}40` : undefined,
+            boxShadow: clamped > 80 ? `0 0 8px ${color}40` : undefined,
           }}
         />
       </div>
@@ -122,8 +137,22 @@ function UsageBar({ label, pct }: { label: string; pct: number }) {
 /*  Server card component                                              */
 /* ------------------------------------------------------------------ */
 
-function ServerCard({ server }: { server: Server }) {
+function ServerCard({
+  server,
+  isAdmin,
+  onDelete,
+}: {
+  server: Server;
+  isAdmin: boolean;
+  onDelete: (id: string) => void;
+}) {
   const isOnline = server.status === "online";
+  const m = server.metrics;
+
+  const ramPct = m.ramTotal > 0 ? (m.ramUsage / m.ramTotal) * 100 : 0;
+  const diskPct = m.diskTotal > 0 ? (m.diskUsage / m.diskTotal) * 100 : 0;
+
+  const specEntries = Object.entries(server.specs ?? {});
 
   return (
     <div className="card p-5 flex flex-col gap-4">
@@ -149,17 +178,39 @@ function ServerCard({ server }: { server: Server }) {
             </span>
           </div>
         </div>
-        <span
-          className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded shrink-0"
-          style={{
-            color: isOnline ? "var(--mint)" : "var(--coral)",
-            background: isOnline
-              ? "rgba(52,211,153,0.08)"
-              : "rgba(248,113,113,0.08)",
-          }}
-        >
-          {server.status}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded"
+            style={{
+              color: isOnline ? "var(--mint)" : "var(--coral)",
+              background: isOnline
+                ? "rgba(52,211,153,0.08)"
+                : "rgba(248,113,113,0.08)",
+            }}
+          >
+            {server.status}
+          </span>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                if (window.confirm(`Delete server "${server.name}"?`)) {
+                  onDelete(server.id);
+                }
+              }}
+              className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--coral)] hover:bg-[rgba(248,113,113,0.08)] transition-colors"
+              title="Delete server"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M2 2l8 8M10 2l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* IP Address */}
@@ -171,61 +222,85 @@ function ServerCard({ server }: { server: Server }) {
           IP Address
         </span>
         <span className="font-mono text-sm text-[var(--text-primary)]">
-          {server.ip}
+          {server.ip || "—"}
         </span>
       </div>
 
-      {/* Specs */}
-      <div className="grid grid-cols-3 gap-2">
-        {(
-          [
-            ["CPU", server.specs.cpu],
-            ["RAM", server.specs.ram],
-            ["Disk", server.specs.storage],
-          ] as const
-        ).map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg px-3 py-2 text-center"
-            style={{ background: "var(--bg-deep)" }}
-          >
-            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-              {label}
-            </span>
-            <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium">
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* Specs — dynamic from JSON */}
+      {specEntries.length > 0 && (
+        <div
+          className="grid gap-2"
+          style={{
+            gridTemplateColumns: `repeat(${Math.min(specEntries.length, 3)}, 1fr)`,
+          }}
+        >
+          {specEntries.map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-lg px-3 py-2 text-center"
+              style={{ background: "var(--bg-deep)" }}
+            >
+              <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+                {label}
+              </span>
+              <span className="font-mono text-[11px] text-[var(--text-secondary)] font-medium">
+                {value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Usage bars */}
       <div className="space-y-3">
-        <UsageBar label="CPU" pct={server.metrics.cpuUsage} />
-        <UsageBar label="RAM" pct={server.metrics.ramUsage} />
-        <UsageBar label="Disk" pct={server.metrics.diskUsage} />
+        <UsageBar label="CPU" pct={m.cpuUsage} />
+        <UsageBar
+          label="RAM"
+          pct={ramPct}
+          detail={`${formatGB(m.ramUsage)} / ${formatGB(m.ramTotal)} GB`}
+        />
+        <UsageBar
+          label="Disk"
+          pct={diskPct}
+          detail={`${formatGB(m.diskUsage)} / ${formatGB(m.diskTotal)} GB`}
+        />
       </div>
 
-      {/* Bandwidth */}
+      {/* Network I/O */}
       <div
         className="flex items-center justify-between rounded-lg px-3 py-2.5"
         style={{ background: "var(--bg-deep)" }}
       >
         <div>
           <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-            Bandwidth
+            Network I/O
           </span>
-          <span className="text-sm text-[var(--text-primary)]">
-            {server.metrics.bandwidthUsed}
-          </span>
-          <span className="text-xs text-[var(--text-tertiary)]">
-            {" "}
-            / {server.metrics.bandwidthLimit}
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            <span className="text-[var(--text-secondary)]">{"↓"}</span>{" "}
+            {formatGB(m.netIn)} GB
+            <span className="text-[var(--text-tertiary)] mx-2">|</span>
+            <span className="text-[var(--text-secondary)]">{"↑"}</span>{" "}
+            {formatGB(m.netOut)} GB
           </span>
         </div>
       </div>
 
-      {/* Footer: uptime + last checked */}
+      {/* Load Average */}
+      {server.loadAvg && (
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            Load Avg
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {server.loadAvg}
+          </span>
+        </div>
+      )}
+
+      {/* Footer: uptime + last seen */}
       <div
         className="flex items-center justify-between pt-2"
         style={{ borderTop: "1px solid var(--border)" }}
@@ -235,17 +310,205 @@ function ServerCard({ server }: { server: Server }) {
             Uptime
           </span>
           <span className="font-mono text-xs text-[var(--text-secondary)]">
-            {server.uptime}
+            {formatUptime(server.uptime)}
           </span>
         </div>
         <div className="text-right">
           <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block">
-            Last Checked
+            Last Seen
           </span>
           <span className="font-mono text-[11px] text-[var(--text-tertiary)]">
-            {formatTimestamp(server.lastChecked)}
+            {formatTimestamp(server.lastSeen)}
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Add Server form (admin-only)                                       */
+/* ------------------------------------------------------------------ */
+
+function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState("");
+  const [ip, setIp] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/vps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), provider: provider.trim(), ip: ip.trim() }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create server");
+      }
+
+      const data = await res.json();
+      setName("");
+      setProvider("");
+      setIp("");
+      setOpen(false);
+      onCreated(data.server?.token ?? data.token);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="font-mono text-xs px-3 py-1.5 rounded transition-colors"
+        style={{
+          color: "var(--lime)",
+          background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
+          border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
+        }}
+      >
+        + Add Server
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="card p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+          New Server
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M2 2l8 8M10 2l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <input
+          type="text"
+          placeholder="Name *"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+        />
+        <input
+          type="text"
+          placeholder="Provider"
+          value={provider}
+          onChange={(e) => setProvider(e.target.value)}
+          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+        />
+        <input
+          type="text"
+          placeholder="IP Address"
+          value={ip}
+          onChange={(e) => setIp(e.target.value)}
+          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+        />
+      </div>
+
+      {error && (
+        <p className="text-xs text-[var(--coral)]">{error}</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting || !name.trim()}
+        className="font-mono text-xs px-4 py-2 rounded-lg transition-colors self-start disabled:opacity-40"
+        style={{
+          color: "var(--bg-deep)",
+          background: "var(--lime)",
+        }}
+      >
+        {submitting ? "Creating..." : "Create Server"}
+      </button>
+    </form>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Token display (shown after creating a server)                      */
+/* ------------------------------------------------------------------ */
+
+function TokenDisplay({
+  token,
+  onDismiss,
+}: {
+  token: string;
+  onDismiss: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(token).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div
+      className="card p-4 flex flex-col gap-2"
+      style={{ border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.3)" }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+          Agent Token (copy now — shown once)
+        </span>
+        <button
+          onClick={onDismiss}
+          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M2 2l8 8M10 2l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 font-mono text-xs text-[var(--lime)] bg-[var(--bg-deep)] px-3 py-2 rounded-lg overflow-x-auto select-all">
+          {token}
+        </code>
+        <button
+          onClick={handleCopy}
+          className="font-mono text-[10px] uppercase px-3 py-2 rounded-lg shrink-0 transition-colors"
+          style={{
+            color: copied ? "var(--mint)" : "var(--text-secondary)",
+            background: "var(--bg-deep)",
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
       </div>
     </div>
   );
@@ -259,17 +522,61 @@ export default function VpsPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [newToken, setNewToken] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/vps")
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch VPS data");
-        return r.json();
-      })
-      .then((data) => setServers(data.servers || []))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+  const fetchServers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/vps");
+      if (!res.ok) throw new Error("Failed to fetch VPS data");
+      const data = await res.json();
+      setServers(data.servers || []);
+      setError(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  /* Check admin role on mount */
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.user?.roles?.includes("ADMIN")) {
+          setIsAdmin(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  /* Fetch servers + 30s polling */
+  useEffect(() => {
+    fetchServers();
+    const interval = setInterval(() => fetchServers(), 30000);
+    return () => clearInterval(interval);
+  }, [fetchServers]);
+
+  async function handleDelete(id: string) {
+    try {
+      const res = await fetch("/api/vps", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      setServers((prev) => prev.filter((s) => s.id !== id));
+    } catch {
+      // Refresh to sync state
+      fetchServers();
+    }
+  }
+
+  function handleCreated(token: string) {
+    setNewToken(token);
+    fetchServers();
+  }
 
   if (loading) {
     return (
@@ -284,7 +591,7 @@ export default function VpsPage() {
     );
   }
 
-  if (error) {
+  if (error && servers.length === 0) {
     return (
       <div>
         <h1 className="text-3xl font-extrabold mb-6">
@@ -310,37 +617,56 @@ export default function VpsPage() {
           VPS <span className="font-display text-lime">Stats</span>
         </h1>
         <div className="flex items-center gap-4">
-          <span className="font-mono text-xs text-[var(--text-secondary)]">
-            <span className="text-mint font-semibold">{onlineCount}</span>{" "}
-            online
-          </span>
-          {offlineCount > 0 && (
+          {servers.length > 0 && (
             <>
-              <span className="opacity-20 text-[var(--text-tertiary)]">|</span>
               <span className="font-mono text-xs text-[var(--text-secondary)]">
-                <span className="text-coral font-semibold">{offlineCount}</span>{" "}
-                offline
+                <span className="text-mint font-semibold">{onlineCount}</span>{" "}
+                online
+              </span>
+              {offlineCount > 0 && (
+                <>
+                  <span className="opacity-20 text-[var(--text-tertiary)]">|</span>
+                  <span className="font-mono text-xs text-[var(--text-secondary)]">
+                    <span className="text-coral font-semibold">{offlineCount}</span>{" "}
+                    offline
+                  </span>
+                </>
+              )}
+              <span className="opacity-20 text-[var(--text-tertiary)]">|</span>
+              <span className="font-mono text-xs text-[var(--text-tertiary)]">
+                {servers.length} server{servers.length !== 1 ? "s" : ""}
               </span>
             </>
           )}
-          <span className="opacity-20 text-[var(--text-tertiary)]">|</span>
-          <span className="font-mono text-xs text-[var(--text-tertiary)]">
-            {servers.length} server{servers.length !== 1 ? "s" : ""}
-          </span>
+          {isAdmin && (
+            <AddServerForm onCreated={handleCreated} />
+          )}
         </div>
       </div>
 
+      {/* Token display (shown once after creating) */}
+      {newToken && (
+        <div className="mb-5">
+          <TokenDisplay token={newToken} onDismiss={() => setNewToken(null)} />
+        </div>
+      )}
+
       {servers.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No servers configured.</p>
+          <p className="text-text-secondary mb-2">No servers registered.</p>
           <p className="text-text-tertiary text-sm">
-            VPS agent data will appear here once connected.
+            Add one from the admin panel.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {servers.map((server) => (
-            <ServerCard key={server.id} server={server} />
+            <ServerCard
+              key={server.id}
+              server={server}
+              isAdmin={isAdmin}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}

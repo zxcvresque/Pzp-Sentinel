@@ -303,3 +303,24 @@ model LoginToken {
   expiresAt  DateTime
   createdAt  DateTime         @default(now())
 }
+
+model VpsServer {
+  id          String   @id @default(cuid())
+  name        String
+  token       String   @unique
+  provider    String   @default("")
+  ip          String   @default("")
+  specs       Json     @default("{}")
+  cpuUsage    Float    @default(0)
+  ramUsage    Float    @default(0)
+  ramTotal    Float    @default(0)
+  diskUsage   Float    @default(0)
+  diskTotal   Float    @default(0)
+  netIn       Float    @default(0)
+  netOut      Float    @default(0)
+  uptime      Int      @default(0)
+  loadAvg     String   @default("")
+  status      String   @default("offline")
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
