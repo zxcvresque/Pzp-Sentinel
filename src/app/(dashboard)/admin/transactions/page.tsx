@@ -593,134 +593,123 @@ export default function TransactionsPage() {
       {/* Transaction detail modal */}
       {selectedTx && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm animate-fade-in"
           onClick={() => setSelectedTx(null)}
         >
           <div
-            className="relative bg-bg-card border border-[var(--border)] rounded-2xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto shadow-lg"
+            className="relative bg-bg-card border border-[var(--border)] rounded-2xl w-full max-w-lg my-8 mx-4 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="sticky top-0 z-10 bg-bg-card border-b border-[var(--border)] px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <div className="flex items-center gap-3">
+            {/* Header row: amount + close */}
+            <div className="bg-bg-card border-b border-[var(--border)] px-5 py-3 flex items-center justify-between rounded-t-2xl">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className={`text-xl font-bold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
+                  {selectedTx.direction === "IN" ? "+" : "-"}
+                  {selectedTx.currency === "INR" ? "₹" : "$"}
+                  {parseFloat(selectedTx.amount).toLocaleString()}
+                </span>
                 <span className={`status-tag ${
                   selectedTx.status === "APPROVED" ? "status-approved" : selectedTx.status === "PENDING" ? "status-pending" : "status-rejected"
                 }`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-current" />
                   {selectedTx.status}
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--bg-deep)] text-text-secondary">
-                  {selectedTx.type}
-                </span>
               </div>
               <button
                 onClick={() => setSelectedTx(null)}
-                className="w-8 h-8 rounded-full bg-bg-deep hover:bg-[var(--border)] flex items-center justify-center transition-colors text-text-secondary hover:text-text-primary"
+                className="w-7 h-7 rounded-full bg-bg-deep hover:bg-bg-elevated flex items-center justify-center transition-colors text-text-secondary hover:text-text-primary flex-shrink-0 ml-2"
               >
                 &times;
               </button>
             </div>
 
-            <div className="p-6">
-              {/* Amount */}
-              <div className="mb-6">
-                <div className={`text-3xl font-bold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
-                  {selectedTx.direction === "IN" ? "+" : "-"}
-                  {selectedTx.currency === "INR" ? "₹" : "$"}
-                  {parseFloat(selectedTx.amount).toLocaleString()}
-                </div>
-                <div className="text-text-secondary text-sm mt-1">{selectedTx.description}</div>
-              </div>
+            <div className="px-5 py-4 space-y-4">
+              {/* Description */}
+              <div className="text-sm text-text-secondary">{selectedTx.description}</div>
 
-              {/* Details grid */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-bg-deepest rounded-xl p-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Direction</div>
-                  <div className={`text-sm font-semibold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
+              {/* Compact details: 2x2 grid */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Direction</div>
+                  <div className={`text-xs font-semibold mt-0.5 ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
                     {selectedTx.direction === "IN" ? "Incoming" : "Outgoing"}
                   </div>
                 </div>
-                <div className="bg-bg-deepest rounded-xl p-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Method</div>
-                  <div className="text-sm font-semibold text-violet">{selectedTx.method}</div>
+                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Method</div>
+                  <div className="text-xs font-semibold text-violet mt-0.5">{selectedTx.method}</div>
                 </div>
-                <div className="bg-bg-deepest rounded-xl p-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Currency</div>
-                  <div className="text-sm font-semibold text-text-primary">{selectedTx.currency}</div>
+                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Type</div>
+                  <div className="text-xs font-semibold text-text-primary mt-0.5">{selectedTx.type}</div>
                 </div>
-                <div className="bg-bg-deepest rounded-xl p-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Date</div>
-                  <div className="text-sm font-semibold text-text-primary">{formatDate(selectedTx.date)}</div>
+                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary">Date</div>
+                  <div className="text-xs font-semibold text-text-primary mt-0.5">{formatDate(selectedTx.date)}</div>
                 </div>
               </div>
 
-              {/* People */}
-              <div className="space-y-3 mb-6">
+              {/* People — inline rows, not big cards */}
+              <div className="space-y-2">
                 {selectedTx.fromUser && (
-                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
-                    <div className="w-8 h-8 rounded-full bg-amber/15 text-amber flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-full bg-amber/15 text-amber flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                       {selectedTx.fromUser.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Donor</div>
-                      <div className="text-sm font-medium text-text-primary">{selectedTx.fromUser.name}</div>
-                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">Donor</span>
+                    <span className="text-sm text-text-primary">{selectedTx.fromUser.name}</span>
                   </div>
                 )}
                 {selectedTx.createdBy && (
-                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
-                    <div className="w-8 h-8 rounded-full bg-violet/15 text-violet flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-full bg-violet/15 text-violet flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                       {selectedTx.createdBy.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Created by</div>
-                      <div className="text-sm font-medium text-text-primary">{selectedTx.createdBy.name}</div>
-                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">By</span>
+                    <span className="text-sm text-text-primary">{selectedTx.createdBy.name}</span>
                   </div>
                 )}
                 {selectedTx.reviewedBy && (
-                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
                       selectedTx.status === "APPROVED" ? "bg-mint/15 text-mint" : "bg-coral/15 text-coral"
                     }`}>
                       {selectedTx.reviewedBy.name.charAt(0).toUpperCase()}
                     </div>
-                    <div>
-                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
-                        {selectedTx.status === "APPROVED" ? "Approved by" : "Rejected by"}
-                      </div>
-                      <div className="text-sm font-medium text-text-primary">{selectedTx.reviewedBy.name}</div>
-                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary w-16 flex-shrink-0">
+                      {selectedTx.status === "APPROVED" ? "Approved" : "Rejected"}
+                    </span>
+                    <span className="text-sm text-text-primary">{selectedTx.reviewedBy.name}</span>
                   </div>
                 )}
               </div>
 
               {/* Review note */}
               {selectedTx.reviewNote && (
-                <div className="mb-6 bg-bg-deepest rounded-xl p-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Review Note</div>
-                  <div className="text-sm text-text-secondary italic">{selectedTx.reviewNote}</div>
+                <div className="bg-bg-deepest rounded-lg px-3 py-2.5">
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Review Note</div>
+                  <div className="text-xs text-text-secondary italic">{selectedTx.reviewNote}</div>
                 </div>
               )}
 
               {/* Attachments / receipt photos */}
               {selectedTx.attachments && selectedTx.attachments.length > 0 && (
-                <div className="mb-6">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+                <div>
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
                     Receipt Photos ({selectedTx.attachments.length})
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
                     {selectedTx.attachments.map((url, i) => (
                       <button
                         key={i}
                         type="button"
                         onClick={() => setLightboxImg(url)}
-                        className="block rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-all hover:shadow-lg group"
+                        className="block rounded-lg overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-all group aspect-square"
                       >
                         <img
                           src={url}
                           alt={`Receipt ${i + 1}`}
-                          className="w-full h-40 object-cover group-hover:scale-[1.02] transition-transform"
+                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
                         />
                       </button>
                     ))}
@@ -729,18 +718,18 @@ export default function TransactionsPage() {
               )}
 
               {/* Actions */}
-              <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-[var(--border)]">
                 {selectedTx.status === "PENDING" && (
                   <>
                     <button
                       onClick={() => { handleApprove(selectedTx.id); setSelectedTx(null); }}
-                      className="px-4 py-2 rounded-full text-sm font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
                     >
                       Approve
                     </button>
                     <button
                       onClick={() => { handleReject(selectedTx.id); setSelectedTx(null); }}
-                      className="px-4 py-2 rounded-full text-sm font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
                     >
                       Reject
                     </button>
@@ -748,14 +737,14 @@ export default function TransactionsPage() {
                 )}
                 <button
                   onClick={() => { startEdit(selectedTx); setSelectedTx(null); }}
-                  className="px-4 py-2 rounded-full text-sm font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+                  className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
                 >
                   Edit
                 </button>
                 {selectedTx.status === "PENDING" && (
                   <button
                     onClick={() => { handleDelete(selectedTx); setSelectedTx(null); }}
-                    className="px-4 py-2 rounded-full text-sm font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors ml-auto"
+                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors ml-auto"
                   >
                     Delete
                   </button>
@@ -775,11 +764,11 @@ export default function TransactionsPage() {
           <img
             src={lightboxImg}
             alt="Receipt"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
           />
           <button
             onClick={() => setLightboxImg(null)}
-            className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-xl"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-lg"
           >
             &times;
           </button>
