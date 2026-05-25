@@ -17,6 +17,7 @@ export async function GET() {
       telegramUser: user.telegramUser,
       photoUrl: user.photoUrl,
       themeColor: user.themeColor,
+      savedColors: user.savedColors,
       chatId: user.chatId,
       roles: user.roles,
       dmPreferences: user.dmPreferences,

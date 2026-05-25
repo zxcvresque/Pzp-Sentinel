@@ -11,7 +11,7 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json();
 
-    const data: Record<string, string> = {};
+    const data: Record<string, unknown> = {};
 
     if (body.name !== undefined) {
       const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -35,6 +35,19 @@ export async function PATCH(req: NextRequest) {
       data.themeColor = themeColor;
     }
 
+    if (body.savedColors !== undefined) {
+      if (!Array.isArray(body.savedColors) || body.savedColors.length > 3) {
+        return NextResponse.json(
+          { error: "savedColors must be an array of up to 3 hex colors" },
+          { status: 400 },
+        );
+      }
+      const colors = body.savedColors.filter(
+        (c: unknown) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c)
+      );
+      data.savedColors = colors;
+    }
+
     if (Object.keys(data).length === 0) {
       return NextResponse.json(
         { error: "No valid fields to update" },
@@ -55,6 +68,7 @@ export async function PATCH(req: NextRequest) {
         telegramUser: updated.telegramUser,
         photoUrl: updated.photoUrl,
         themeColor: updated.themeColor,
+        savedColors: updated.savedColors,
         chatId: updated.chatId,
         roles: updated.roles,
         createdAt: updated.createdAt.toISOString(),

@@ -101,6 +101,7 @@ model User {
   name         String
   photoUrl     String?
   themeColor   String     @default("#6FD1D7")
+  savedColors  String[]   @default([])
   chatId       String?
   roles        Role[]
   status       UserStatus @default(ACTIVE)

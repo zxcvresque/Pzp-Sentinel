@@ -15,6 +15,7 @@ interface UserProfile {
   roles: string[];
   createdAt: string | null;
   dmPreferences: string[];
+  savedColors: string[];
 }
 
 const DM_CATEGORIES = [
@@ -36,6 +37,7 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [savedColors, setSavedColors] = useState<string[]>([]);
   const [dmPrefs, setDmPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null); // null = synced with user.themeColor
@@ -49,6 +51,7 @@ export default function ProfilePage() {
       .then((data) => {
         const u = data?.user || null;
         setUser(u);
+        setSavedColors(u?.savedColors || []);
         if (u?.dmPreferences) setDmPrefs(u.dmPreferences);
       })
       .catch(() => setUser(null))
@@ -151,6 +154,41 @@ export default function ProfilePage() {
     },
     [user],
   );
+
+  async function saveColorToSlot(index: number) {
+    if (!user) return;
+    const currentColor = user.themeColor || "#6FD1D7";
+    const newSaved = [...savedColors];
+    newSaved[index] = currentColor;
+    // Fill gaps if saving to slot 2 but slot 0 is empty
+    while (newSaved.length <= index) newSaved.push(currentColor);
+    const trimmed = newSaved.slice(0, 3);
+    setSavedColors(trimmed);
+    try {
+      await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savedColors: trimmed }),
+      });
+    } catch {
+      // revert on failure
+      setSavedColors(savedColors);
+    }
+  }
+
+  async function removeColorFromSlot(index: number) {
+    const newSaved = savedColors.filter((_, idx) => idx !== index);
+    setSavedColors(newSaved);
+    try {
+      await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ savedColors: newSaved }),
+      });
+    } catch {
+      setSavedColors(savedColors);
+    }
+  }
 
   if (loading) {
     return (
@@ -316,6 +354,51 @@ export default function ProfilePage() {
           <div className="text-xs text-text-secondary mb-3">
             Pick a colour that applies across the entire app. Resets to white by default.
           </div>
+
+          {/* Saved colour presets */}
+          <div className="flex items-center gap-3 mt-4 mb-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary shrink-0">
+              Saved
+            </span>
+            <div className="flex items-center gap-2">
+              {[0, 1, 2].map((i) => {
+                const color = savedColors[i];
+                const isActive = color && user.themeColor === color;
+
+                if (color) {
+                  // Filled slot — click to apply, double-click to remove
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => handleThemeChange(color)}
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        removeColorFromSlot(i);
+                      }}
+                      title={`Apply ${color}`}
+                      className={`w-7 h-7 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
+                        isActive ? "border-white/40 ring-1 ring-white/20" : "border-[var(--border)] hover:border-[var(--border-hover)]"
+                      }`}
+                      style={{ background: color }}
+                    />
+                  );
+                }
+
+                // Empty slot — click to save current color
+                return (
+                  <button
+                    key={i}
+                    onClick={() => saveColorToSlot(i)}
+                    title="Save current colour"
+                    className="w-7 h-7 rounded-full border-2 border-dashed border-[var(--border)] hover:border-[var(--border-hover)] transition-colors flex items-center justify-center group"
+                  >
+                    <span className="text-text-tertiary text-[10px] group-hover:text-text-secondary">+</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="mt-auto">
             <ThemeColorPicker
               value={user.themeColor || "#6FD1D7"}
