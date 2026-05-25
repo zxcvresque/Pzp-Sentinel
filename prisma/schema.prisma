@@ -322,6 +322,8 @@ model VpsServer {
   uptime      Int      @default(0)
   loadAvg     String   @default("")
   status      String   @default("offline")
+  approved    Boolean  @default(false)
+  addedById   String?
   lastSeen    DateTime @default(now())
   createdAt   DateTime @default(now())
 }

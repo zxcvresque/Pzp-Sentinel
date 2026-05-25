@@ -137,15 +137,7 @@ function UsageBar({
 /*  Server card component                                              */
 /* ------------------------------------------------------------------ */
 
-function ServerCard({
-  server,
-  isAdmin,
-  onDelete,
-}: {
-  server: Server;
-  isAdmin: boolean;
-  onDelete: (id: string) => void;
-}) {
+function ServerCard({ server }: { server: Server }) {
   const isOnline = server.status === "online";
   const m = server.metrics;
 
@@ -178,39 +170,17 @@ function ServerCard({
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span
-            className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded"
-            style={{
-              color: isOnline ? "var(--mint)" : "var(--coral)",
-              background: isOnline
-                ? "rgba(52,211,153,0.08)"
-                : "rgba(248,113,113,0.08)",
-            }}
-          >
-            {server.status}
-          </span>
-          {isAdmin && (
-            <button
-              onClick={() => {
-                if (window.confirm(`Delete server "${server.name}"?`)) {
-                  onDelete(server.id);
-                }
-              }}
-              className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--coral)] hover:bg-[rgba(248,113,113,0.08)] transition-colors"
-              title="Delete server"
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M2 2l8 8M10 2l-8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          )}
-        </div>
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded shrink-0"
+          style={{
+            color: isOnline ? "var(--mint)" : "var(--coral)",
+            background: isOnline
+              ? "rgba(52,211,153,0.08)"
+              : "rgba(248,113,113,0.08)",
+          }}
+        >
+          {server.status}
+        </span>
       </div>
 
       {/* IP Address */}
@@ -327,16 +297,17 @@ function ServerCard({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Add Server form (admin-only)                                       */
+/*  Request Server form                                                */
 /* ------------------------------------------------------------------ */
 
-function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
+function RequestServerForm({ onRequested }: { onRequested: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [provider, setProvider] = useState("");
   const [ip, setIp] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -344,6 +315,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
 
     setSubmitting(true);
     setError("");
+    setSuccess(false);
 
     try {
       const res = await fetch("/api/vps", {
@@ -354,15 +326,18 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create server");
+        throw new Error(data.error || "Failed to submit request");
       }
 
-      const data = await res.json();
       setName("");
       setProvider("");
       setIp("");
-      setOpen(false);
-      onCreated(data.server?.token ?? data.token);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setOpen(false);
+      }, 3000);
+      onRequested();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -381,7 +356,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
         }}
       >
-        + Add Server
+        + Request Server
       </button>
     );
   }
@@ -390,11 +365,11 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
     <form onSubmit={handleSubmit} className="card p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between mb-1">
         <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          New Server
+          Request Server
         </span>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={() => { setOpen(false); setSuccess(false); setError(""); }}
           className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
@@ -408,122 +383,73 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <input
-          type="text"
-          placeholder="Name *"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-        />
-        <input
-          type="text"
-          placeholder="Provider"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value)}
-          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-        />
-        <input
-          type="text"
-          placeholder="IP Address"
-          value={ip}
-          onChange={(e) => setIp(e.target.value)}
-          className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-        />
-      </div>
+      {success ? (
+        <div
+          className="rounded-lg px-4 py-3 font-mono text-xs"
+          style={{
+            color: "var(--lime)",
+            background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
+            border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
+          }}
+        >
+          Request submitted — pending admin approval
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input
+              type="text"
+              placeholder="Name *"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+            />
+            <input
+              type="text"
+              placeholder="Provider"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+            />
+            <input
+              type="text"
+              placeholder="IP Address"
+              value={ip}
+              onChange={(e) => setIp(e.target.value)}
+              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
+            />
+          </div>
 
-      {error && (
-        <p className="text-xs text-[var(--coral)]">{error}</p>
+          {error && (
+            <p className="text-xs text-[var(--coral)]">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || !name.trim()}
+            className="font-mono text-xs px-4 py-2 rounded-lg transition-colors self-start disabled:opacity-40"
+            style={{
+              color: "var(--bg-deep)",
+              background: "var(--lime)",
+            }}
+          >
+            {submitting ? "Submitting..." : "Submit Request"}
+          </button>
+        </>
       )}
-
-      <button
-        type="submit"
-        disabled={submitting || !name.trim()}
-        className="font-mono text-xs px-4 py-2 rounded-lg transition-colors self-start disabled:opacity-40"
-        style={{
-          color: "var(--bg-deep)",
-          background: "var(--lime)",
-        }}
-      >
-        {submitting ? "Creating..." : "Create Server"}
-      </button>
     </form>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/*  Token display (shown after creating a server)                      */
-/* ------------------------------------------------------------------ */
-
-function TokenDisplay({
-  token,
-  onDismiss,
-}: {
-  token: string;
-  onDismiss: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  function handleCopy() {
-    navigator.clipboard.writeText(token).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  return (
-    <div
-      className="card p-4 flex flex-col gap-2"
-      style={{ border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.3)" }}
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          Agent Token (copy now — shown once)
-        </span>
-        <button
-          onClick={onDismiss}
-          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M2 2l8 8M10 2l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 font-mono text-xs text-[var(--lime)] bg-[var(--bg-deep)] px-3 py-2 rounded-lg overflow-x-auto select-all">
-          {token}
-        </code>
-        <button
-          onClick={handleCopy}
-          className="font-mono text-[10px] uppercase px-3 py-2 rounded-lg shrink-0 transition-colors"
-          style={{
-            color: copied ? "var(--mint)" : "var(--text-secondary)",
-            background: "var(--bg-deep)",
-          }}
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Main VPS page                                                      */
+/*  Main VPS page (Dev view)                                           */
 /* ------------------------------------------------------------------ */
 
 export default function VpsPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [newToken, setNewToken] = useState<string | null>(null);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -539,44 +465,12 @@ export default function VpsPage() {
     }
   }, []);
 
-  /* Check admin role on mount */
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.user?.roles?.includes("ADMIN")) {
-          setIsAdmin(true);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
   /* Fetch servers + 30s polling */
   useEffect(() => {
     fetchServers();
     const interval = setInterval(() => fetchServers(), 30000);
     return () => clearInterval(interval);
   }, [fetchServers]);
-
-  async function handleDelete(id: string) {
-    try {
-      const res = await fetch("/api/vps", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      if (!res.ok) throw new Error("Delete failed");
-      setServers((prev) => prev.filter((s) => s.id !== id));
-    } catch {
-      // Refresh to sync state
-      fetchServers();
-    }
-  }
-
-  function handleCreated(token: string) {
-    setNewToken(token);
-    fetchServers();
-  }
 
   if (loading) {
     return (
@@ -638,35 +532,21 @@ export default function VpsPage() {
               </span>
             </>
           )}
-          {isAdmin && (
-            <AddServerForm onCreated={handleCreated} />
-          )}
+          <RequestServerForm onRequested={fetchServers} />
         </div>
       </div>
 
-      {/* Token display (shown once after creating) */}
-      {newToken && (
-        <div className="mb-5">
-          <TokenDisplay token={newToken} onDismiss={() => setNewToken(null)} />
-        </div>
-      )}
-
       {servers.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No servers registered.</p>
+          <p className="text-text-secondary mb-2">No servers available.</p>
           <p className="text-text-tertiary text-sm">
-            Add one from the admin panel.
+            Request a server to get started.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {servers.map((server) => (
-            <ServerCard
-              key={server.id}
-              server={server}
-              isAdmin={isAdmin}
-              onDelete={handleDelete}
-            />
+            <ServerCard key={server.id} server={server} />
           ))}
         </div>
       )}

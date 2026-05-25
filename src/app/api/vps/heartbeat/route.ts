@@ -13,6 +13,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown server" }, { status: 403 });
   }
 
+  if (!server.approved) {
+    return NextResponse.json({ error: "Server not approved" }, { status: 403 });
+  }
+
   const body = await req.json();
 
   await prisma.vpsServer.update({

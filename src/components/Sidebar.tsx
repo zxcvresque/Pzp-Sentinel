@@ -225,6 +225,7 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Users",         href: "/admin/users",          icon: "◉", Icon: IconUsers },
     { label: "Reminders",     href: "/admin/reminders",      icon: "◆", Icon: IconBell },
     { label: "Credentials",   href: "/admin/credentials",    icon: "◍", Icon: IconKey },
+    { label: "VPS Stats",     href: "/admin/vps",            icon: "◉", Icon: IconVps },
     { label: "Audit Log",     href: "/admin/audit",          icon: "◌", Icon: IconAuditLog },
   ],
   DONOR: [
