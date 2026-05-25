@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
             message: `$${amount} from ${name}${note}`,
             entityId: tx.id,
             telegramMessage: formatTgMessage(
-              "New Donation",
+              "☕ New Donation",
               `$${amount.toFixed(2)} from ${name}`,
               note || undefined,
             ),
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
             message: `$${existing.amount} support refunded`,
             entityId: existing.id,
             telegramMessage: formatTgMessage(
-              "Refund",
+              "🔄 Refund",
               `$${existing.amount} support refunded`,
             ),
           });
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
           message: `$${amount} — ${title} from ${name}`,
           entityId: tx.id,
           telegramMessage: formatTgMessage(
-            "New Extra Purchase",
+            "🎁 New Extra Purchase",
             `$${amount.toFixed(2)} — ${title}`,
             `From ${name}${note}`,
           ),
@@ -259,7 +259,7 @@ export async function POST(req: NextRequest) {
 
           await notifyAdmins({
             type: "SYSTEM",
-            title: "BMC Extra Refund",
+            title: "🔄 BMC Extra Refund",
             message: `$${existing.amount} extra refunded`,
             entityId: existing.id,
           });
@@ -311,7 +311,7 @@ export async function POST(req: NextRequest) {
           message: `$${amount}/mo from ${name}`,
           entityId: tx.id,
           telegramMessage: formatTgMessage(
-            isMembership ? "New Membership" : "New Monthly Support",
+            isMembership ? "🤝 New Membership" : "💛 New Monthly Support",
             `$${amount.toFixed(2)}/mo from ${name}`,
           ),
         });
@@ -328,7 +328,7 @@ export async function POST(req: NextRequest) {
           title: "BMC Cancellation",
           message: `${name} cancelled their recurring support`,
           telegramMessage: formatTgMessage(
-            "Cancellation",
+            "👋 Cancellation",
             `${name} cancelled recurring support`,
           ),
         });
@@ -369,6 +369,10 @@ export async function POST(req: NextRequest) {
           title: "New BMC Commission",
           message: `$${amount} from ${name}`,
           entityId: tx.id,
+          telegramMessage: formatTgMessage(
+            "🎨 New Commission",
+            `$${amount.toFixed(2)} from ${name}`,
+          ),
         });
 
         return NextResponse.json({ status: "created", id: tx.id });
@@ -409,6 +413,10 @@ export async function POST(req: NextRequest) {
           title: "BMC Wishlist Payment",
           message: `$${amount} — ${item} from ${name}`,
           entityId: tx.id,
+          telegramMessage: formatTgMessage(
+            "⭐ Wishlist Payment",
+            `$${amount.toFixed(2)} — ${item} from ${name}`,
+          ),
         });
 
         return NextResponse.json({ status: "created", id: tx.id });

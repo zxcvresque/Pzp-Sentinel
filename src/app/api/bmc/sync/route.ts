@@ -213,7 +213,7 @@ export async function POST() {
         title: "BMC Sync Complete",
         message: `${synced} new donation${synced > 1 ? "s" : ""} imported from Buy Me a Coffee`,
         telegramMessage: formatTgMessage(
-          "BMC Sync",
+          "🔄 BMC Sync",
           `${synced} new donation${synced > 1 ? "s" : ""} imported`,
           `Skipped ${skipped} existing | By: ${user.name}`,
         ),

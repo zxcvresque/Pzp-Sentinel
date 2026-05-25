@@ -85,7 +85,7 @@ export async function POST(
       entityId: id,
       priority: "NORMAL",
       telegramMessage: formatTgMessage(
-        "Transaction Approved",
+        "✅ Transaction Approved",
         `Your donation of ${updated.currency} ${updated.amount} has been approved`,
         `Reviewed by ${user.name}`,
       ),

@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     message: `${newUser.name} (@${newUser.telegramUser}) has been registered with roles: ${newUser.roles.join(", ")}. Added by ${user.name}.`,
     priority: "HIGH",
     telegramMessage: formatTgMessage(
-      "New User Registered",
+      "🆕 New User Registered",
       `${newUser.name} (@${newUser.telegramUser})`,
       `Roles: ${newUser.roles.join(", ")} -- Added by ${user.name}`,
     ),
@@ -162,7 +162,7 @@ export async function PATCH(req: NextRequest) {
       message: `Your roles have been updated to ${updated.roles.join(", ")}. Changed by ${user.name}.`,
       priority: "HIGH",
       telegramMessage: formatTgMessage(
-        "Role Updated",
+        "🛡️ Role Updated",
         `Your roles have been updated to ${updated.roles.join(", ")}`,
         `Changed by ${user.name}`,
       ),

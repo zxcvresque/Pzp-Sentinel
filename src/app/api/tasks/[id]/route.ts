@@ -70,7 +70,7 @@ export async function PATCH(
       entityId: id,
       priority: "NORMAL",
       telegramMessage: formatTgMessage(
-        "Task Assigned",
+        "📋 Task Assigned",
         updated.title,
         `Assigned by ${user.name}`,
       ),

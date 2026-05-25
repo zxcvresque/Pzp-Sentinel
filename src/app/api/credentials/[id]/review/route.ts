@@ -57,7 +57,7 @@ export async function POST(
       entityId: id,
       priority: "HIGH",
       telegramMessage: formatTgMessage(
-        "Credential Rejected",
+        "❌ Credential Rejected",
         `${pending.platform} -- ${pending.label}`,
         `Rejected by ${user.name}`,
       ),
@@ -112,7 +112,7 @@ export async function POST(
     entityId: id,
     priority: "NORMAL",
     telegramMessage: formatTgMessage(
-      "Credential Approved",
+      "✅ Credential Approved",
       `${pending.platform} -- ${pending.label}`,
       `Approved by ${user.name}`,
     ),

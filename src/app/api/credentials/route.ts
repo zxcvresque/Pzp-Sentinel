@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
           entityId: credential.id,
           priority: "NORMAL",
           telegramMessage: formatTgMessage(
-            "Credential Shared",
+            "🔐 Credential Shared",
             `${platform} -- ${label}`,
             `Shared by ${user.name}`,
           ),

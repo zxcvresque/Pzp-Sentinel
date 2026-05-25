@@ -27,7 +27,6 @@ export default function ProfilePage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [botDm, setBotDm] = useState(false);
-  const [emailDigest, setEmailDigest] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null); // null = synced with user.themeColor
 
   useEffect(() => {
@@ -36,7 +35,11 @@ export default function ProfilePage() {
         if (!r.ok) throw new Error("Failed to load profile");
         return r.json();
       })
-      .then((data) => setUser(data?.user || null))
+      .then((data) => {
+        const u = data?.user || null;
+        setUser(u);
+        if (u?.chatId) setBotDm(true);
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);
@@ -355,62 +358,29 @@ export default function ProfilePage() {
 
         {/* ── Col 3: Notifications ── */}
         <div className="card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
-              Notifications
-            </div>
-            <span className="font-mono text-[8px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full bg-amber/10 text-amber border border-amber/20">
-              Soon
-            </span>
+          <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
+            Notifications
           </div>
 
-          <div className="space-y-0">
-            <div className="flex items-center justify-between py-3 border-b border-[var(--border)]">
-              <div className="pr-3">
-                <div className="text-xs text-text-primary font-medium">Bot DM</div>
-                <div className="text-[10px] text-text-tertiary mt-0.5">
-                  Transaction updates via Telegram
-                </div>
+          <div className="flex items-center justify-between py-3">
+            <div className="pr-3">
+              <div className="text-xs text-text-primary font-medium">Bot DM</div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">
+                {botDm ? "Linked — notifications via Telegram" : "Start the bot to receive DMs"}
               </div>
-              <button
-                onClick={() => setBotDm(!botDm)}
-                aria-label="Toggle bot DM notifications"
-                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                  botDm ? "bg-lime/30" : "bg-bg-elevated border border-[var(--border)]"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
-                    botDm
-                      ? "translate-x-4 bg-lime shadow-[0_0_6px_rgba(99,102,241,0.3)]"
-                      : "translate-x-0 bg-text-tertiary"
-                  }`}
-                />
-              </button>
             </div>
-
-            <div className="flex items-center justify-between py-3">
-              <div className="pr-3">
-                <div className="text-xs text-text-primary font-medium">Email digest</div>
-                <div className="text-[10px] text-text-tertiary mt-0.5">
-                  Weekly summary of activity
-                </div>
-              </div>
-              <button
-                onClick={() => setEmailDigest(!emailDigest)}
-                aria-label="Toggle email digest"
-                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${
-                  emailDigest ? "bg-lime/30" : "bg-bg-elevated border border-[var(--border)]"
+            <div
+              className={`relative w-9 h-5 rounded-full shrink-0 ${
+                botDm ? "bg-lime/30" : "bg-bg-elevated border border-[var(--border)]"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
+                  botDm
+                    ? "translate-x-4 bg-lime shadow-[0_0_6px_rgba(99,102,241,0.3)]"
+                    : "translate-x-0 bg-text-tertiary"
                 }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
-                    emailDigest
-                      ? "translate-x-4 bg-lime shadow-[0_0_6px_rgba(99,102,241,0.3)]"
-                      : "translate-x-0 bg-text-tertiary"
-                  }`}
-                />
-              </button>
+              />
             </div>
           </div>
         </div>

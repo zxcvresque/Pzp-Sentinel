@@ -64,7 +64,7 @@ bot.command("start", async (ctx) => {
   if (payload === "myid") {
     try {
       await ctx.reply(
-        `<blockquote><b>Your Telegram ID</b></blockquote>\n` +
+        `<blockquote><b>🆔 Your Telegram ID</b></blockquote>\n` +
         `<code>${telegramId}</code>\n\n` +
         `<i>Copy and paste it on the login page.</i>`,
         { parse_mode: "HTML" },
@@ -81,7 +81,7 @@ bot.command("start", async (ctx) => {
     if (!nonce || nonce.length < 16) {
       try {
         await ctx.reply(
-          `<i>Invalid login link. Please try again from the website.</i>`,
+          `❌ <i>Invalid login link. Please try again from the website.</i>`,
           { parse_mode: "HTML" },
         );
       } catch (err) {
@@ -97,7 +97,7 @@ bot.command("start", async (ctx) => {
 
       if (!loginToken || loginToken.status !== "PENDING") {
         await ctx.reply(
-          `<i>This login link has already been used or expired. Please request a new one.</i>`,
+          `⏳ <i>This login link has already been used or expired. Please request a new one.</i>`,
           { parse_mode: "HTML" },
         );
         return;
@@ -105,7 +105,7 @@ bot.command("start", async (ctx) => {
 
       if (loginToken.expiresAt < new Date()) {
         await ctx.reply(
-          `<i>This login link has expired. Please request a new one from the website.</i>`,
+          `⏳ <i>This login link has expired. Please request a new one from the website.</i>`,
           { parse_mode: "HTML" },
         );
         return;
@@ -158,7 +158,7 @@ bot.command("start", async (ctx) => {
 
       // Send confirmation with inline button
       await ctx.reply(
-        `<blockquote><b>Login Verified</b></blockquote>\n` +
+        `<blockquote><b>✅ Login Verified</b></blockquote>\n` +
         `<b>${authUser.name}</b>, you've been signed in on the web.\n\n` +
         `<i>You can close this chat and return to Sentinel.</i>`,
         { parse_mode: "HTML" },
@@ -175,7 +175,7 @@ bot.command("start", async (ctx) => {
       console.error("Failed to process auth deep link:", err);
       try {
         await ctx.reply(
-          `<i>Something went wrong verifying your login. Please try again.</i>`,
+          `❌ <i>Something went wrong verifying your login. Please try again.</i>`,
           { parse_mode: "HTML" },
         );
       } catch { /* swallow */ }
@@ -215,7 +215,7 @@ bot.command("start", async (ctx) => {
 
     try {
       await ctx.reply(
-        `<blockquote><b>Welcome to Sentinel</b></blockquote>\n` +
+        `<blockquote><b>🎉 Welcome to Sentinel</b></blockquote>\n` +
         `<b>Hey ${firstName}!</b>\n\n` +
         `💰 Tracks community treasury\n` +
         `📋 Manages developer tasks & boards\n` +
@@ -233,7 +233,7 @@ bot.command("start", async (ctx) => {
   if (user.status === "INACTIVE") {
     try {
       await ctx.reply(
-        `<blockquote><b>Account Deactivated</b></blockquote>\n` +
+        `<blockquote><b>🚫 Account Deactivated</b></blockquote>\n` +
         `<b>Hey ${user.name},</b>\n` +
         `<i>Your account has been deactivated. Contact an admin if you think this is a mistake.</i>`,
         { parse_mode: "HTML" },
@@ -247,7 +247,7 @@ bot.command("start", async (ctx) => {
   if (user.roles.length === 0) {
     try {
       await ctx.reply(
-        `<blockquote><b>Pending Approval</b></blockquote>\n` +
+        `<blockquote><b>⏳ Pending Approval</b></blockquote>\n` +
         `<b>Hey ${user.name}!</b>\n` +
         `<i>You're in the system but don't have access yet. An admin will assign your role shortly.</i>`,
         { parse_mode: "HTML" },
@@ -270,7 +270,7 @@ bot.command("start", async (ctx) => {
 
   try {
     await ctx.reply(
-      `<b><i>Welcome back, ${user.name}!</i></b>\n\n` +
+      `<b><i>👋 Welcome back, ${user.name}!</i></b>\n\n` +
       `<blockquote><b>Your Access</b></blockquote>\n` +
       `${yourRoles}`,
       {
@@ -317,7 +317,7 @@ bot.on("my_chat_member", async (ctx) => {
 bot.command("help", async (ctx) => {
   try {
     await ctx.reply(
-      `<blockquote><b>Sentinel Commands</b></blockquote>\n` +
+      `<blockquote><b>📖 Sentinel Commands</b></blockquote>\n` +
       `<b>/start</b> — register or open the web app\n` +
       `<b>/start myid</b> — get your Telegram ID\n` +
       `<b>/help</b> — show this message`,

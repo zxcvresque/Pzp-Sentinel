@@ -70,7 +70,7 @@ export async function PATCH(
         entityId: id,
         priority: "NORMAL",
         telegramMessage: formatTgMessage(
-          "Credential Shared",
+          "🔐 Credential Shared",
           `${credential.platform} -- ${credential.label}`,
           `Shared by ${user.name}`,
         ),

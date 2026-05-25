@@ -99,7 +99,7 @@ export async function POST(
       entityId: id,
       priority: "HIGH",
       telegramMessage: formatTgMessage(
-        "Transaction Rejected",
+        "❌ Transaction Rejected",
         `Your donation of ${updated.currency} ${updated.amount} was rejected`,
         tgDetails,
       ),
