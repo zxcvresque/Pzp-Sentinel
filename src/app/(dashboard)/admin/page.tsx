@@ -59,13 +59,15 @@ export default function AdminDashboard() {
   const [bmcSyncing, setBmcSyncing] = useState(false);
   const [bmcResult, setBmcResult] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Fetch dashboard data — called on mount and every 30s for live updates
+  const fetchDashboard = (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     Promise.all([
       fetch("/api/transactions?limit=10").then((r) => {
         if (!r.ok) throw new Error(`Transactions: ${r.status}`);
         return r.json();
       }),
-      fetch("/api/transactions/stats").then((r) => {
+      fetch("/api/transactions/stats" + (currency !== "INR" ? `?currency=${currency}` : "")).then((r) => {
         if (!r.ok) throw new Error(`Stats: ${r.status}`);
         return r.json();
       }),
@@ -77,7 +79,15 @@ export default function AdminDashboard() {
         if (bmcData) setBmcStats(bmcData);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!isBackground) setLoading(false); });
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+    // Poll every 30s for live webhook updates
+    const interval = setInterval(() => fetchDashboard(true), 30000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function toggleCurrency() {
@@ -133,13 +143,8 @@ export default function AdminDashboard() {
         `Synced ${data.synced} new, skipped ${data.skipped} existing` +
         (data.errors?.length ? ` (${data.errors.length} errors)` : ""),
       );
-      // Refresh BMC stats and transactions
-      const [bmcRes, txRes] = await Promise.all([
-        fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      ]);
-      if (bmcRes) setBmcStats(bmcRes);
-      if (txRes) setTransactions(txRes.transactions || []);
+      // Refresh dashboard data
+      fetchDashboard(true);
     } catch {
       setBmcResult("Network error during sync");
     } finally {

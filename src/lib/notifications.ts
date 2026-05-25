@@ -1,6 +1,16 @@
 import { prisma } from "@/lib/db";
-import { bot } from "@/lib/bot";
+import { Bot } from "grammy";
 import type { NotifType } from "@/generated/prisma/enums";
+
+// Lazy bot instance for sending DMs — avoids module-level throw
+let _bot: Bot | null = null;
+function getBot(): Bot | null {
+  if (_bot) return _bot;
+  const token = process.env.BOT_TOKEN;
+  if (!token) return null;
+  _bot = new Bot(token);
+  return _bot;
+}
 
 export type { NotifType };
 
@@ -43,9 +53,10 @@ export async function notify(data: {
       select: { chatId: true },
     });
 
-    if (user?.chatId) {
+    const dmBot = getBot();
+    if (user?.chatId && dmBot) {
       const tgText = telegramMessage ?? formatTgMessage(title, message);
-      await bot.api.sendMessage(user.chatId, tgText, { parse_mode: "HTML" });
+      await dmBot.api.sendMessage(user.chatId, tgText, { parse_mode: "HTML" });
     }
   } catch (err: unknown) {
     // If the bot was blocked by the user (403), clear their chatId so the UI shows "Not linked"

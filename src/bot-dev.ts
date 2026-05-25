@@ -75,6 +75,114 @@ bot.command("start", async (ctx) => {
     return;
   }
 
+  // Deep link: /start auth_{nonce} — verify login from web
+  if (payload && payload.startsWith("auth_")) {
+    const nonce = payload.slice(5); // strip "auth_"
+    if (!nonce || nonce.length < 16) {
+      try {
+        await ctx.reply(
+          `<i>Invalid login link. Please try again from the website.</i>`,
+          { parse_mode: "HTML" },
+        );
+      } catch (err) {
+        console.error("Failed to reply for invalid nonce:", err);
+      }
+      return;
+    }
+
+    try {
+      const loginToken = await dbRetry(() =>
+        prisma.loginToken.findUnique({ where: { nonce } }),
+      );
+
+      if (!loginToken || loginToken.status !== "PENDING") {
+        await ctx.reply(
+          `<i>This login link has already been used or expired. Please request a new one.</i>`,
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
+      if (loginToken.expiresAt < new Date()) {
+        await ctx.reply(
+          `<i>This login link has expired. Please request a new one from the website.</i>`,
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
+      // Ensure user exists in DB, create if needed
+      let authUser = await dbRetry(() =>
+        prisma.user.findUnique({ where: { telegramId } }),
+      );
+
+      if (!authUser) {
+        authUser = await dbRetry(() =>
+          prisma.user.create({
+            data: {
+              telegramId,
+              telegramUser: username,
+              name: firstName,
+              chatId,
+              roles: [],
+            },
+          }),
+        );
+
+        logAuditEvent({
+          action: "BOT_REGISTER",
+          entityType: "User",
+          entityId: authUser.id,
+          userName: firstName,
+          details: `@${username || telegramId} registered via web login`,
+        });
+      } else {
+        // Update chatId if missing
+        if (!authUser.chatId || authUser.chatId !== chatId) {
+          await dbRetry(() =>
+            prisma.user.update({
+              where: { id: authUser!.id },
+              data: { chatId },
+            }),
+          );
+        }
+      }
+
+      // Mark token as verified
+      await dbRetry(() =>
+        prisma.loginToken.update({
+          where: { nonce },
+          data: { telegramId, status: "VERIFIED" },
+        }),
+      );
+
+      // Send confirmation with inline button
+      await ctx.reply(
+        `<blockquote><b>Login Verified</b></blockquote>\n` +
+        `<b>${authUser.name}</b>, you've been signed in on the web.\n\n` +
+        `<i>You can close this chat and return to Sentinel.</i>`,
+        { parse_mode: "HTML" },
+      );
+
+      logAuditEvent({
+        action: "WEB_LOGIN",
+        entityType: "User",
+        entityId: authUser.id,
+        userName: authUser.name,
+        details: `@${authUser.telegramUser || telegramId} verified web login via bot`,
+      });
+    } catch (err) {
+      console.error("Failed to process auth deep link:", err);
+      try {
+        await ctx.reply(
+          `<i>Something went wrong verifying your login. Please try again.</i>`,
+          { parse_mode: "HTML" },
+        );
+      } catch { /* swallow */ }
+    }
+    return;
+  }
+
   let user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
   if (user) {

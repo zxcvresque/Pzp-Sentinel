@@ -287,3 +287,18 @@ model Notification {
   priority  String    @default("NORMAL")
   createdAt DateTime  @default(now())
 }
+
+enum LoginTokenStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+}
+
+model LoginToken {
+  id         String           @id @default(cuid())
+  nonce      String           @unique
+  telegramId String?
+  status     LoginTokenStatus @default(PENDING)
+  expiresAt  DateTime
+  createdAt  DateTime         @default(now())
+}
