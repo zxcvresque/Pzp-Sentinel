@@ -597,11 +597,11 @@ export default function TransactionsPage() {
           onClick={() => setSelectedTx(null)}
         >
           <div
-            className="relative bg-bg-surface border border-[var(--border)] rounded-2xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto"
+            className="relative bg-bg-card border border-[var(--border)] rounded-2xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="sticky top-0 z-10 bg-bg-surface border-b border-[var(--border)] px-6 py-4 flex items-center justify-between rounded-t-2xl">
+            <div className="sticky top-0 z-10 bg-bg-card border-b border-[var(--border)] px-6 py-4 flex items-center justify-between rounded-t-2xl">
               <div className="flex items-center gap-3">
                 <span className={`status-tag ${
                   selectedTx.status === "APPROVED" ? "status-approved" : selectedTx.status === "PENDING" ? "status-pending" : "status-rejected"
@@ -634,21 +634,21 @@ export default function TransactionsPage() {
 
               {/* Details grid */}
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-bg-deep rounded-xl p-4">
+                <div className="bg-bg-deepest rounded-xl p-4">
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Direction</div>
                   <div className={`text-sm font-semibold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
                     {selectedTx.direction === "IN" ? "Incoming" : "Outgoing"}
                   </div>
                 </div>
-                <div className="bg-bg-deep rounded-xl p-4">
+                <div className="bg-bg-deepest rounded-xl p-4">
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Method</div>
                   <div className="text-sm font-semibold text-violet">{selectedTx.method}</div>
                 </div>
-                <div className="bg-bg-deep rounded-xl p-4">
+                <div className="bg-bg-deepest rounded-xl p-4">
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Currency</div>
                   <div className="text-sm font-semibold text-text-primary">{selectedTx.currency}</div>
                 </div>
-                <div className="bg-bg-deep rounded-xl p-4">
+                <div className="bg-bg-deepest rounded-xl p-4">
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Date</div>
                   <div className="text-sm font-semibold text-text-primary">{formatDate(selectedTx.date)}</div>
                 </div>
@@ -657,7 +657,7 @@ export default function TransactionsPage() {
               {/* People */}
               <div className="space-y-3 mb-6">
                 {selectedTx.fromUser && (
-                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
                     <div className="w-8 h-8 rounded-full bg-amber/15 text-amber flex items-center justify-center text-xs font-bold flex-shrink-0">
                       {selectedTx.fromUser.name.charAt(0).toUpperCase()}
                     </div>
@@ -668,7 +668,7 @@ export default function TransactionsPage() {
                   </div>
                 )}
                 {selectedTx.createdBy && (
-                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
                     <div className="w-8 h-8 rounded-full bg-violet/15 text-violet flex items-center justify-center text-xs font-bold flex-shrink-0">
                       {selectedTx.createdBy.name.charAt(0).toUpperCase()}
                     </div>
@@ -679,7 +679,7 @@ export default function TransactionsPage() {
                   </div>
                 )}
                 {selectedTx.reviewedBy && (
-                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                  <div className="flex items-center gap-3 bg-bg-deepest rounded-xl p-4">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                       selectedTx.status === "APPROVED" ? "bg-mint/15 text-mint" : "bg-coral/15 text-coral"
                     }`}>
@@ -697,7 +697,7 @@ export default function TransactionsPage() {
 
               {/* Review note */}
               {selectedTx.reviewNote && (
-                <div className="mb-6 bg-bg-deep rounded-xl p-4">
+                <div className="mb-6 bg-bg-deepest rounded-xl p-4">
                   <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Review Note</div>
                   <div className="text-sm text-text-secondary italic">{selectedTx.reviewNote}</div>
                 </div>
