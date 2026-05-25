@@ -70,6 +70,27 @@ async function sendLocalPhotoToTopic(topic: Topic, localUrl: string, caption: st
   }
 }
 
+// ─── Audit action → emoji map ───
+const auditEmoji: Record<string, string> = {
+  CREATE: "🆕",
+  UPDATE: "✏️",
+  DELETE: "🗑️",
+  APPROVE: "✅",
+  REJECT: "❌",
+  BOT_REGISTER: "🤖",
+  WEB_LOGIN: "🔑",
+  ROLE_CHANGE: "🏷️",
+  CREDENTIAL_CREATE: "🔐",
+  CREDENTIAL_UPDATE: "🔏",
+  CREDENTIAL_REVIEW: "📋",
+  SUBSCRIPTION_CREATE: "💳",
+  SUBSCRIPTION_UPDATE: "🔄",
+  REMINDER_CREATE: "⏰",
+  REMINDER_UPDATE: "🔔",
+  SERVICE_CREATE: "🛠️",
+  SERVICE_UPDATE: "⚙️",
+};
+
 export function logTransaction(tx: {
   id: string;
   amount: unknown;
@@ -82,15 +103,15 @@ export function logTransaction(tx: {
   fromUserName?: string;
   createdByName?: string;
 }) {
-  const arrow = tx.direction === "IN" ? "📥" : "📤";
+  const arrow = tx.direction === "IN" ? "💰" : "💸";
   const symbol = tx.currency === "INR" ? "₹" : "$";
   const lines = [
     `${arrow} <b>New Transaction</b>`,
     `<b>${symbol}${tx.amount}</b> · ${tx.method} · ${tx.type}`,
     tx.description,
     `Status: <b>${tx.status}</b>`,
-    tx.fromUserName ? `From: ${tx.fromUserName}` : null,
-    tx.createdByName ? `By: ${tx.createdByName}` : null,
+    tx.fromUserName ? `👤 From: ${tx.fromUserName}` : null,
+    tx.createdByName ? `🖊️ By: ${tx.createdByName}` : null,
     `<code>${tx.id}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
@@ -105,13 +126,13 @@ export function logTransactionReview(tx: {
   reviewerName: string;
   reason?: string | null;
 }) {
-  const icon = tx.status === "APPROVED" ? "✅" : "❌";
+  const icon = tx.status === "APPROVED" ? "✅" : "🚫";
   const symbol = tx.currency === "INR" ? "₹" : "$";
   const lines = [
     `${icon} <b>Transaction ${tx.status}</b>`,
     `<b>${symbol}${tx.amount}</b> — ${tx.description}`,
-    `Reviewed by: ${tx.reviewerName}`,
-    tx.reason ? `Reason: ${tx.reason}` : null,
+    `👁️ Reviewed by: ${tx.reviewerName}`,
+    tx.reason ? `💬 Reason: ${tx.reason}` : null,
     `<code>${tx.id}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
@@ -124,9 +145,10 @@ export function logAuditEvent(entry: {
   userName: string;
   details?: string;
 }) {
+  const emoji = auditEmoji[entry.action] || "📝";
   const lines = [
-    `🔍 <b>${entry.action}</b> · ${entry.entityType}`,
-    `By: ${entry.userName}`,
+    `${emoji} <b>${entry.action}</b> · ${entry.entityType}`,
+    `👤 By: ${entry.userName}`,
     entry.details || null,
     `<code>${entry.entityId}</code>`,
   ];
@@ -140,10 +162,10 @@ export function logUserCreated(user: {
   createdByName: string;
 }) {
   const lines = [
-    `👤 <b>New User</b>`,
-    `${user.name} (@${user.telegramUser})`,
-    `Roles: ${user.roles.join(", ")}`,
-    `Added by: ${user.createdByName}`,
+    `🎉 <b>New User Registered</b>`,
+    `👤 ${user.name} (@${user.telegramUser})`,
+    `🏷️ Roles: ${user.roles.join(", ")}`,
+    `🖊️ Added by: ${user.createdByName}`,
   ];
   return sendToTopic("audit", lines.join("\n"));
 }
@@ -152,7 +174,7 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
   return sendPhotoToTopic(
     "screenshots",
     fileId,
-    `📎 Proof for: ${description}\n<code>${txId}</code>`
+    `🧾 Proof for: ${description}\n<code>${txId}</code>`
   );
 }
 
@@ -165,7 +187,7 @@ export async function logReceiptPhotos(txId: string, description: string, urls: 
     await sendLocalPhotoToTopic(
       "screenshots",
       url,
-      `📎 Receipt for: ${description}\n<code>${txId}</code>`
+      `🖼️ Receipt for: ${description}\n<code>${txId}</code>`
     );
   }
 }
