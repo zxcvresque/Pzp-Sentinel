@@ -10,20 +10,58 @@ export async function GET(request: NextRequest) {
 
   const approved = await prisma.transaction.findMany({
     where: { status: "APPROVED" },
-    select: { amount: true, direction: true, type: true, date: true },
+    select: { amount: true, currency: true, direction: true, type: true, date: true },
   });
-
-  const totalDonated = approved
-    .filter((t: { direction: string }) => t.direction === "IN")
-    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
-
-  const totalSpent = approved
-    .filter((t: { direction: string }) => t.direction === "OUT")
-    .reduce((sum: number, t: { amount: unknown }) => sum + Number(t.amount), 0);
 
   const pendingCount = await prisma.transaction.count({
     where: { status: "PENDING" },
   });
+
+  // Currency conversion support
+  const searchParams = request.nextUrl.searchParams;
+  const displayCurrency = searchParams.get("currency") === "USD" ? "USD" : "INR";
+
+  // Always fetch exchange rate — needed to normalize mixed-currency transactions
+  let usdToInr: number | null = null;
+  try {
+    const rateRes = await fetch(
+      new URL("/api/exchange-rate", request.nextUrl.origin).toString(),
+    );
+    if (rateRes.ok) {
+      const rateData = await rateRes.json();
+      usdToInr = rateData.rate; // e.g. 84.5
+    }
+  } catch {
+    // fallback below
+  }
+
+  // Normalize any amount to the display currency
+  const toDisplay = (amount: number, fromCurrency: string): number => {
+    if (fromCurrency === displayCurrency) return amount;
+
+    if (!usdToInr) {
+      // No rate available — return raw (better than nothing)
+      return amount;
+    }
+
+    if (fromCurrency === "USD" && displayCurrency === "INR") {
+      return amount * usdToInr;
+    }
+    if (fromCurrency === "INR" && displayCurrency === "USD") {
+      return amount / usdToInr;
+    }
+    return amount;
+  };
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const totalDonated = approved
+    .filter((t) => t.direction === "IN")
+    .reduce((sum, t) => sum + toDisplay(Number(t.amount), t.currency), 0);
+
+  const totalSpent = approved
+    .filter((t) => t.direction === "OUT")
+    .reduce((sum, t) => sum + toDisplay(Number(t.amount), t.currency), 0);
 
   // Monthly breakdown for the last 6 months
   const now = new Date();
@@ -34,37 +72,33 @@ export async function GET(request: NextRequest) {
     const start = new Date(d.getFullYear(), d.getMonth(), 1);
     const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
 
-    const monthTxns = approved.filter((t: { date: Date }) => {
+    const monthTxns = approved.filter((t) => {
       const td = new Date(t.date);
       return td >= start && td < end;
     });
 
     const donated = monthTxns
-      .filter((t: { direction: string }) => t.direction === "IN")
-      .reduce((s: number, t: { amount: unknown }) => s + Number(t.amount), 0);
+      .filter((t) => t.direction === "IN")
+      .reduce((s, t) => s + toDisplay(Number(t.amount), t.currency), 0);
     const spent = monthTxns
-      .filter((t: { direction: string }) => t.direction === "OUT")
-      .reduce((s: number, t: { amount: unknown }) => s + Number(t.amount), 0);
+      .filter((t) => t.direction === "OUT")
+      .reduce((s, t) => s + toDisplay(Number(t.amount), t.currency), 0);
 
-    monthlyBreakdown.push({ month: label, donated, spent });
+    monthlyBreakdown.push({ month: label, donated: round2(donated), spent: round2(spent) });
   }
 
   // Expense breakdown by type (OUT direction only)
-  const outgoing = approved.filter(
-    (t: { direction: string }) => t.direction === "OUT",
-  );
+  const outgoing = approved.filter((t) => t.direction === "OUT");
   const expenseByType: Record<string, number> = {};
   for (const t of outgoing) {
-    const typ = (t as { type: string }).type || "OTHER";
-    expenseByType[typ] = (expenseByType[typ] || 0) + Number(t.amount);
+    const typ = t.type || "OTHER";
+    expenseByType[typ] = (expenseByType[typ] || 0) + toDisplay(Number(t.amount), t.currency);
   }
 
   // Burn rate: average monthly OUT spending over last 6 months
-  const monthsWithSpending = monthlyBreakdown.filter((m) => m.spent > 0);
   const burnRate =
-    monthsWithSpending.length > 0
-      ? monthlyBreakdown.reduce((s, m) => s + m.spent, 0) /
-        monthlyBreakdown.length
+    monthlyBreakdown.length > 0
+      ? monthlyBreakdown.reduce((s, m) => s + m.spent, 0) / monthlyBreakdown.length
       : 0;
   const runwayMonths =
     burnRate > 0
@@ -78,61 +112,30 @@ export async function GET(request: NextRequest) {
 
   const activeSubRecords = await prisma.subscription.findMany({
     where: { status: "ACTIVE" },
-    select: { price: true, frequency: true },
+    select: { price: true, currency: true, frequency: true },
   });
 
   const monthlySubs = activeSubRecords.reduce((sum, sub) => {
-    const price = Number(sub.price);
+    const price = toDisplay(Number(sub.price), sub.currency);
     if (sub.frequency === "YEARLY") return sum + price / 12;
     if (sub.frequency === "ONE_TIME") return sum;
     return sum + price; // MONTHLY
   }, 0);
 
-  // Currency conversion support
-  const searchParams = request.nextUrl.searchParams;
-  const displayCurrency = searchParams.get("currency") === "USD" ? "USD" : "INR";
-
-  let exchangeRate: number | null = null;
-
-  if (displayCurrency === "USD") {
-    try {
-      const rateRes = await fetch(
-        new URL("/api/exchange-rate", request.nextUrl.origin).toString(),
-      );
-      if (rateRes.ok) {
-        const rateData = await rateRes.json();
-        exchangeRate = rateData.rate; // USD -> INR rate
-      }
-    } catch {
-      // Fall back to INR if exchange rate unavailable
-    }
-  }
-
-  const convert = (inrAmount: number) => {
-    if (displayCurrency === "USD" && exchangeRate) {
-      return Math.round((inrAmount / exchangeRate) * 100) / 100;
-    }
-    return inrAmount;
-  };
-
   return NextResponse.json({
-    totalBalance: convert(totalDonated - totalSpent),
-    totalDonated: convert(totalDonated),
-    totalSpent: convert(totalSpent),
+    totalBalance: round2(totalDonated - totalSpent),
+    totalDonated: round2(totalDonated),
+    totalSpent: round2(totalSpent),
     pendingCount,
-    monthlyBreakdown: monthlyBreakdown.map((m) => ({
-      ...m,
-      donated: convert(m.donated),
-      spent: convert(m.spent),
-    })),
+    monthlyBreakdown,
     expenseByType: Object.fromEntries(
-      Object.entries(expenseByType).map(([k, v]) => [k, convert(v)]),
+      Object.entries(expenseByType).map(([k, v]) => [k, round2(v)]),
     ),
-    burnRate: Math.round(convert(burnRate) * 100) / 100,
+    burnRate: round2(burnRate),
     runwayMonths,
     activeSubs,
-    monthlySubs: Math.round(convert(monthlySubs) * 100) / 100,
+    monthlySubs: round2(monthlySubs),
     displayCurrency,
-    exchangeRate,
+    exchangeRate: usdToInr,
   });
 }
