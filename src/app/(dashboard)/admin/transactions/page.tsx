@@ -65,6 +65,8 @@ export default function TransactionsPage() {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [viewingAttachments, setViewingAttachments] = useState<string[] | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -489,26 +491,17 @@ export default function TransactionsPage() {
               </thead>
               <tbody>
                 {filtered.map((tx) => (
-                  <tr key={tx.id} className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors ${editingId === tx.id ? "bg-[rgba(99,102,241,0.06)]" : ""}`}>
+                  <tr
+                    key={tx.id}
+                    onClick={() => setSelectedTx(tx)}
+                    className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer ${editingId === tx.id ? "bg-[rgba(99,102,241,0.06)]" : ""}`}
+                  >
                     <td className="p-4 text-sm">
                       <div className="flex items-center gap-1.5">
                         <span>{tx.description}</span>
-                        {tx.proofFileId && (
-                          <span
-                            title="Proof attached"
-                            className="inline-flex items-center justify-center w-5 h-5 rounded bg-violet/10 text-violet flex-shrink-0"
-                          >
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M14 10.667v2.666A1.333 1.333 0 0 1 12.667 14.667H3.333A1.333 1.333 0 0 1 2 13.333v-2.666M11.333 5.333 8 2 4.667 5.333M8 2v8.667" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </span>
-                        )}
                         {tx.attachments && tx.attachments.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setViewingAttachments(tx.attachments!)}
-                            title={`${tx.attachments.length} receipt photo${tx.attachments.length > 1 ? "s" : ""}`}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-mint/10 text-mint hover:bg-mint/20 transition-colors flex-shrink-0"
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-mint/10 text-mint flex-shrink-0"
                           >
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                               <rect x="2" y="2" width="12" height="12" rx="2" />
@@ -516,7 +509,7 @@ export default function TransactionsPage() {
                               <path d="M14 10l-3.3-3.3a1 1 0 0 0-1.4 0L2 14" />
                             </svg>
                             <span className="text-[10px] font-semibold">{tx.attachments.length}</span>
-                          </button>
+                          </span>
                         )}
                       </div>
                       {tx.fromUser && (
@@ -548,24 +541,15 @@ export default function TransactionsPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
                         {tx.status}
                       </span>
-                      {(tx.status === "APPROVED" || tx.status === "REJECTED") && (tx.reviewedBy || tx.reviewNote) && (
-                        <div className="mt-1">
-                          {tx.reviewedBy && (
-                            <div className="text-text-tertiary text-[10px]">by {tx.reviewedBy.name}</div>
-                          )}
-                          {tx.reviewNote && (
-                            <div className="text-text-tertiary text-[10px] italic truncate max-w-[120px] mx-auto" title={tx.reviewNote}>
-                              {tx.reviewNote}
-                            </div>
-                          )}
-                        </div>
+                      {(tx.status === "APPROVED" || tx.status === "REJECTED") && tx.reviewedBy && (
+                        <div className="text-text-tertiary text-[10px] mt-1">by {tx.reviewedBy.name}</div>
                       )}
                     </td>
                     <td className="p-4 text-right text-text-secondary text-sm">
                       {formatDate(tx.date)}
                     </td>
                     <td className="p-4 text-center">
-                      <div className="flex gap-1 justify-center flex-wrap">
+                      <div className="flex gap-1 justify-center flex-wrap" onClick={(e) => e.stopPropagation()}>
                         {tx.status === "PENDING" && (
                           <>
                             <button
@@ -606,45 +590,199 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* Attachment viewer modal */}
-      {viewingAttachments && (
+      {/* Transaction detail modal */}
+      {selectedTx && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
-          onClick={() => setViewingAttachments(null)}
+          onClick={() => setSelectedTx(null)}
         >
           <div
-            className="relative bg-bg-surface border border-[var(--border)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+            className="relative bg-bg-surface border border-[var(--border)] rounded-2xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">
-                Receipt Photos ({viewingAttachments.length})
-              </h3>
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-bg-surface border-b border-[var(--border)] px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <div className="flex items-center gap-3">
+                <span className={`status-tag ${
+                  selectedTx.status === "APPROVED" ? "status-approved" : selectedTx.status === "PENDING" ? "status-pending" : "status-rejected"
+                }`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                  {selectedTx.status}
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--bg-deep)] text-text-secondary">
+                  {selectedTx.type}
+                </span>
+              </div>
               <button
-                onClick={() => setViewingAttachments(null)}
-                className="w-8 h-8 rounded-full bg-bg-deep hover:bg-[var(--border)] flex items-center justify-center transition-colors text-text-secondary"
+                onClick={() => setSelectedTx(null)}
+                className="w-8 h-8 rounded-full bg-bg-deep hover:bg-[var(--border)] flex items-center justify-center transition-colors text-text-secondary hover:text-text-primary"
               >
                 &times;
               </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {viewingAttachments.map((url, i) => (
-                <a
-                  key={i}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block rounded-lg overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-colors"
+
+            <div className="p-6">
+              {/* Amount */}
+              <div className="mb-6">
+                <div className={`text-3xl font-bold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
+                  {selectedTx.direction === "IN" ? "+" : "-"}
+                  {selectedTx.currency === "INR" ? "₹" : "$"}
+                  {parseFloat(selectedTx.amount).toLocaleString()}
+                </div>
+                <div className="text-text-secondary text-sm mt-1">{selectedTx.description}</div>
+              </div>
+
+              {/* Details grid */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-bg-deep rounded-xl p-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Direction</div>
+                  <div className={`text-sm font-semibold ${selectedTx.direction === "IN" ? "text-mint" : "text-coral"}`}>
+                    {selectedTx.direction === "IN" ? "Incoming" : "Outgoing"}
+                  </div>
+                </div>
+                <div className="bg-bg-deep rounded-xl p-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Method</div>
+                  <div className="text-sm font-semibold text-violet">{selectedTx.method}</div>
+                </div>
+                <div className="bg-bg-deep rounded-xl p-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Currency</div>
+                  <div className="text-sm font-semibold text-text-primary">{selectedTx.currency}</div>
+                </div>
+                <div className="bg-bg-deep rounded-xl p-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">Date</div>
+                  <div className="text-sm font-semibold text-text-primary">{formatDate(selectedTx.date)}</div>
+                </div>
+              </div>
+
+              {/* People */}
+              <div className="space-y-3 mb-6">
+                {selectedTx.fromUser && (
+                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                    <div className="w-8 h-8 rounded-full bg-amber/15 text-amber flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {selectedTx.fromUser.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Donor</div>
+                      <div className="text-sm font-medium text-text-primary">{selectedTx.fromUser.name}</div>
+                    </div>
+                  </div>
+                )}
+                {selectedTx.createdBy && (
+                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                    <div className="w-8 h-8 rounded-full bg-violet/15 text-violet flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {selectedTx.createdBy.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Created by</div>
+                      <div className="text-sm font-medium text-text-primary">{selectedTx.createdBy.name}</div>
+                    </div>
+                  </div>
+                )}
+                {selectedTx.reviewedBy && (
+                  <div className="flex items-center gap-3 bg-bg-deep rounded-xl p-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      selectedTx.status === "APPROVED" ? "bg-mint/15 text-mint" : "bg-coral/15 text-coral"
+                    }`}>
+                      {selectedTx.reviewedBy.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
+                        {selectedTx.status === "APPROVED" ? "Approved by" : "Rejected by"}
+                      </div>
+                      <div className="text-sm font-medium text-text-primary">{selectedTx.reviewedBy.name}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Review note */}
+              {selectedTx.reviewNote && (
+                <div className="mb-6 bg-bg-deep rounded-xl p-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Review Note</div>
+                  <div className="text-sm text-text-secondary italic">{selectedTx.reviewNote}</div>
+                </div>
+              )}
+
+              {/* Attachments / receipt photos */}
+              {selectedTx.attachments && selectedTx.attachments.length > 0 && (
+                <div className="mb-6">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+                    Receipt Photos ({selectedTx.attachments.length})
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {selectedTx.attachments.map((url, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setLightboxImg(url)}
+                        className="block rounded-xl overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-all hover:shadow-lg group"
+                      >
+                        <img
+                          src={url}
+                          alt={`Receipt ${i + 1}`}
+                          className="w-full h-40 object-cover group-hover:scale-[1.02] transition-transform"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-2 border-t border-[var(--border)]">
+                {selectedTx.status === "PENDING" && (
+                  <>
+                    <button
+                      onClick={() => { handleApprove(selectedTx.id); setSelectedTx(null); }}
+                      className="px-4 py-2 rounded-full text-sm font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => { handleReject(selectedTx.id); setSelectedTx(null); }}
+                      className="px-4 py-2 rounded-full text-sm font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => { startEdit(selectedTx); setSelectedTx(null); }}
+                  className="px-4 py-2 rounded-full text-sm font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
                 >
-                  <img
-                    src={url}
-                    alt={`Receipt ${i + 1}`}
-                    className="w-full h-48 object-cover"
-                  />
-                </a>
-              ))}
+                  Edit
+                </button>
+                {selectedTx.status === "PENDING" && (
+                  <button
+                    onClick={() => { handleDelete(selectedTx); setSelectedTx(null); }}
+                    className="px-4 py-2 rounded-full text-sm font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors ml-auto"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Image lightbox */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-md animate-fade-in cursor-zoom-out"
+          onClick={() => setLightboxImg(null)}
+        >
+          <img
+            src={lightboxImg}
+            alt="Receipt"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+          />
+          <button
+            onClick={() => setLightboxImg(null)}
+            className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-xl"
+          >
+            &times;
+          </button>
         </div>
       )}
     </div>
