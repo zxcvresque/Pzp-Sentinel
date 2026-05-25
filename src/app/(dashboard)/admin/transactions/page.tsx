@@ -14,6 +14,7 @@ interface Transaction {
   status: string;
   date: string;
   proofFileId?: string | null;
+  attachments?: string[];
   reviewNote?: string | null;
   fromUser?: { name: string } | null;
   createdBy?: { name: string } | null;
@@ -63,6 +64,7 @@ export default function TransactionsPage() {
 
   const [users, setUsers] = useState<UserOption[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [viewingAttachments, setViewingAttachments] = useState<string[] | null>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -501,6 +503,21 @@ export default function TransactionsPage() {
                             </svg>
                           </span>
                         )}
+                        {tx.attachments && tx.attachments.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingAttachments(tx.attachments!)}
+                            title={`${tx.attachments.length} receipt photo${tx.attachments.length > 1 ? "s" : ""}`}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-mint/10 text-mint hover:bg-mint/20 transition-colors flex-shrink-0"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="2" width="12" height="12" rx="2" />
+                              <circle cx="5.5" cy="5.5" r="1" />
+                              <path d="M14 10l-3.3-3.3a1 1 0 0 0-1.4 0L2 14" />
+                            </svg>
+                            <span className="text-[10px] font-semibold">{tx.attachments.length}</span>
+                          </button>
+                        )}
                       </div>
                       {tx.fromUser && (
                         <div className="text-text-tertiary text-xs mt-0.5">from {tx.fromUser.name}</div>
@@ -585,6 +602,48 @@ export default function TransactionsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Attachment viewer modal */}
+      {viewingAttachments && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in"
+          onClick={() => setViewingAttachments(null)}
+        >
+          <div
+            className="relative bg-bg-surface border border-[var(--border)] rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">
+                Receipt Photos ({viewingAttachments.length})
+              </h3>
+              <button
+                onClick={() => setViewingAttachments(null)}
+                className="w-8 h-8 rounded-full bg-bg-deep hover:bg-[var(--border)] flex items-center justify-center transition-colors text-text-secondary"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              {viewingAttachments.map((url, i) => (
+                <a
+                  key={i}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block rounded-lg overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-colors"
+                >
+                  <img
+                    src={url}
+                    alt={`Receipt ${i + 1}`}
+                    className="w-full h-48 object-cover"
+                  />
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       )}

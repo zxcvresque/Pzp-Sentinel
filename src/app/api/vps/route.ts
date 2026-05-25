@@ -54,7 +54,9 @@ export async function POST(req: NextRequest) {
   }
 
   const { name, provider, ip, platform, password, notes } = await req.json();
-  if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
+  if (!name || !platform || !ip || !password) {
+    return NextResponse.json({ error: "Name, platform, IP, and password are required" }, { status: 400 });
+  }
 
   const isAdmin = hasRole(user.roles, "ADMIN");
   const token = isAdmin ? randomBytes(32).toString("hex") : randomBytes(32).toString("hex");

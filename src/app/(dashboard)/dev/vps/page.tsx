@@ -336,9 +336,14 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const canSubmit = name.trim() && platform.trim() && ip.trim() && password.trim();
+
+  const inputClass =
+    "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary text-sm focus:outline-none focus:border-[var(--border-active)] transition-colors";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!canSubmit) return;
 
     setSubmitting(true);
     setError("");
@@ -382,10 +387,10 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
     }
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((v) => !v)}
         className="font-mono text-xs px-3 py-1.5 rounded transition-colors"
         style={{
           color: "var(--lime)",
@@ -393,110 +398,113 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
           border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
         }}
       >
-        + Request Server
-      </button>
-    );
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="card p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          Request Server
-        </span>
-        <button
-          type="button"
-          onClick={() => { setOpen(false); setSuccess(false); setError(""); }}
-          className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
-            <path
-              d="M2 2l8 8M10 2l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
+        {open ? (
+          <svg width="14" height="14" viewBox="0 0 12 12" fill="none" className="inline-block">
+            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
-        </button>
-      </div>
+        ) : (
+          "+ Request Server"
+        )}
+      </button>
 
-      {success ? (
-        <div
-          className="rounded-lg px-4 py-3 font-mono text-xs"
-          style={{
-            color: "var(--lime)",
-            background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
-            border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
-          }}
-        >
-          Request submitted — pending admin approval
-        </div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input
-              type="text"
-              placeholder="Name *"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-            />
-            <input
-              type="text"
-              placeholder="Provider (e.g. Oracle, Hetzner)"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-            />
-            <input
-              type="text"
-              placeholder="Platform (e.g. Ubuntu 22.04)"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-            />
-            <input
-              type="text"
-              placeholder="IP Address"
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-            />
+      {open && (
+        <form onSubmit={handleSubmit} className="card p-5 flex flex-col gap-4 col-span-full">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+              Request Server
+            </span>
           </div>
-          <input
-            type="password"
-            placeholder="Password (SSH)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)]"
-          />
-          <textarea
-            placeholder="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="font-mono text-sm px-3 py-2 rounded-lg bg-[var(--bg-deep)] text-[var(--text-primary)] border border-[var(--border)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--lime)] resize-none"
-          />
 
-          {error && (
-            <p className="text-xs text-[var(--coral)]">{error}</p>
+          {success ? (
+            <div
+              className="rounded-lg px-4 py-3 font-mono text-xs"
+              style={{
+                color: "var(--lime)",
+                background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
+                border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
+              }}
+            >
+              Request submitted — pending admin approval
+            </div>
+          ) : (
+            <>
+              {/* Row 1: Name, Platform, IP Address */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  placeholder="Server name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="Oracle, Netcup, Hetzner..."
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="xxx.xxx.xxx.xxx"
+                  value={ip}
+                  onChange={(e) => setIp(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Row 2: Provider, Password */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Who provided it?"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  className={inputClass}
+                />
+                <input
+                  type="password"
+                  placeholder="SSH password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Row 3: Notes */}
+              <textarea
+                placeholder="Any additional notes..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                className={`${inputClass} resize-none`}
+              />
+
+              {error && (
+                <p className="text-xs text-[var(--coral)]">{error}</p>
+              )}
+
+              {/* Row 4: Submit */}
+              <button
+                type="submit"
+                disabled={submitting || !canSubmit}
+                className="font-mono text-xs px-4 py-2.5 rounded-lg transition-colors self-start disabled:opacity-40"
+                style={{
+                  color: "var(--bg-deep)",
+                  background: "var(--lime)",
+                }}
+              >
+                {submitting ? "Submitting..." : "Request Server"}
+              </button>
+            </>
           )}
-
-          <button
-            type="submit"
-            disabled={submitting || !name.trim()}
-            className="font-mono text-xs px-4 py-2 rounded-lg transition-colors self-start disabled:opacity-40"
-            style={{
-              color: "var(--bg-deep)",
-              background: "var(--lime)",
-            }}
-          >
-            {submitting ? "Submitting..." : "Submit Request"}
-          </button>
-        </>
+        </form>
       )}
-    </form>
+    </>
   );
 }
 
@@ -590,8 +598,12 @@ export default function VpsPage() {
               </span>
             </>
           )}
-          <RequestServerForm onRequested={fetchServers} />
         </div>
+      </div>
+
+      {/* Request Server form (full-width below header) */}
+      <div className="mb-6">
+        <RequestServerForm onRequested={fetchServers} />
       </div>
 
       {servers.length === 0 ? (
