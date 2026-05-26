@@ -212,10 +212,11 @@ export async function POST() {
         type: "SYSTEM",
         title: "BMC Sync Complete",
         message: `${synced} new donation${synced > 1 ? "s" : ""} imported from Buy Me a Coffee`,
+        actionUrl: "/admin/transactions",
         telegramMessage: formatTgMessage(
           "🔄 BMC Sync",
           `${synced} new donation${synced > 1 ? "s" : ""} imported`,
-          `Skipped ${skipped} existing | By: ${user.name}`,
+          `Skipped ${skipped} existing · By: ${user.name}`,
         ),
       });
     }
