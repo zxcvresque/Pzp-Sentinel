@@ -155,6 +155,7 @@ export async function POST(req: NextRequest) {
       currency: transaction.currency,
       description,
       userName: user.name,
+      attachments,
     }).catch(() => {});
   }
 

@@ -112,6 +112,15 @@ export function logTransactionReview(tx: {
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
 }
 
+/** Replace "IN INR 500" / "OUT USD 20" with emoji + symbol in audit details */
+function formatAuditDetails(details: string): string {
+  return details
+    .replace(/\bIN\s+(INR)\s+/g, "💰 ₹")
+    .replace(/\bIN\s+(USD)\s+/g, "💰 $")
+    .replace(/\bOUT\s+(INR)\s+/g, "💸 ₹")
+    .replace(/\bOUT\s+(USD)\s+/g, "💸 $");
+}
+
 export function logAuditEvent(entry: {
   action: string;
   entityType: string;
@@ -123,7 +132,7 @@ export function logAuditEvent(entry: {
   const lines = [
     `${emoji} <b>${entry.action}</b> · ${entry.entityType}`,
     `👤 By: ${entry.userName}`,
-    entry.details || null,
+    entry.details ? formatAuditDetails(entry.details) : null,
     `<code>${entry.entityId}</code>`,
   ];
   return sendToTopic("audit", lines.filter(Boolean).join("\n"));
@@ -153,8 +162,9 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
 }
 
 /**
- * Re-send proof screenshots to the screenshots topic with full transaction context.
- * Called after tx creation — `urls` are proxy URLs like /api/avatar/{fileId}.
+ * Send proof screenshots to the screenshots topic with full transaction context.
+ * `urls` are proxy URLs like /api/avatar/{fileId} — extracts the file_id and
+ * re-sends the photo with a proper caption containing tx details.
  */
 export async function logProofScreenshots(tx: {
   id: string;
@@ -162,15 +172,19 @@ export async function logProofScreenshots(tx: {
   currency: string;
   description: string;
   userName: string;
+  attachments: string[];
 }) {
-  // We just send a text summary — the photos are already in the topic from upload
   const symbol = tx.currency === "INR" ? "₹" : "$";
-  const lines = [
-    `🧾 <b>Proof Attached</b>`,
-    `<b>${symbol}${tx.amount}</b> — ${tx.description}`,
-    `👤 By: ${tx.userName}`,
-    `<code>${tx.id}</code>`,
-  ];
-  return sendToTopic("screenshots", lines.join("\n"));
+  const caption =
+    `🧾 <b>Proof: ${tx.description}</b>\n` +
+    `<b>${symbol}${tx.amount}</b> · ${tx.userName}\n` +
+    `<code>${tx.id}</code>`;
+
+  for (const url of tx.attachments) {
+    const match = url.match(/\/api\/avatar\/(.+)$/);
+    if (match) {
+      await sendPhotoToTopic("screenshots", match[1], caption);
+    }
+  }
 }
 
