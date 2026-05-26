@@ -189,6 +189,7 @@ export async function POST(req: NextRequest) {
             title: "BMC Refund",
             message: `$${existing.amount} support refunded`,
             entityId: existing.id,
+            actionUrl: "/admin/transactions",
             telegramMessage: formatTgMessage(
               "🔄 Refund",
               `$${existing.amount} support refunded`,
@@ -235,6 +236,7 @@ export async function POST(req: NextRequest) {
           title: "New BMC Extra",
           message: `$${amount} — ${title} from ${name}`,
           entityId: tx.id,
+          actionUrl: "/admin/transactions",
           telegramMessage: formatTgMessage(
             "🎁 New Extra Purchase",
             `$${amount.toFixed(2)} — ${title}`,
@@ -263,6 +265,7 @@ export async function POST(req: NextRequest) {
             title: "🔄 BMC Extra Refund",
             message: `$${existing.amount} extra refunded`,
             entityId: existing.id,
+            actionUrl: "/admin/transactions",
           });
         }
 
