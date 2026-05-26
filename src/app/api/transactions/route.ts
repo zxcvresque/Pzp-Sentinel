@@ -160,19 +160,19 @@ export async function POST(req: NextRequest) {
     }).catch(() => {});
   }
 
-  // Notify admins when a pending donation is submitted
+  // Notify admins when a pending donation needs approval
   if (txStatus === "PENDING") {
     const symbol = transaction.currency === "INR" ? "₹" : "$";
     notifyAdmins({
       type: "TX_PENDING",
-      title: "New Donation Pending",
-      message: `${user.name} submitted ${symbol}${transaction.amount} via ${transaction.method} — awaiting approval.`,
+      title: "Approval Required",
+      message: `${user.name} donated ${symbol}${transaction.amount} via ${transaction.method} — approve or reject.`,
       entityId: transaction.id,
       priority: "HIGH",
       telegramMessage: formatTgMessage(
-        "💰 New Donation Pending",
+        "🔔 Approval Required",
         `${symbol}${transaction.amount} via ${transaction.method}`,
-        `👤 ${user.name}\n${description}`,
+        `👤 ${user.name} · ${description}\n\n<i>Open Sentinel to approve or reject</i>`,
       ),
     }).catch(() => {});
   }
