@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Transaction {
   id: string;
@@ -53,6 +53,8 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState<"INR" | "USD">("INR");
+  const currencyRef = useRef(currency);
+  currencyRef.current = currency;
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
@@ -84,8 +86,24 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboard();
-    // Poll every 30s for live webhook updates
-    const interval = setInterval(() => fetchDashboard(true), 30000);
+    // Poll every 30s for live webhook updates, using ref to read latest currency
+    const interval = setInterval(() => {
+      const curr = currencyRef.current;
+      Promise.all([
+        fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)),
+        fetch("/api/transactions/stats" + (curr !== "INR" ? `?currency=${curr}` : "")).then((r) => (r.ok ? r.json() : null)),
+        fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ])
+        .then(([txData, statsData, bmcData]) => {
+          if (txData) setTransactions(txData.transactions || []);
+          if (statsData) {
+            setStats(statsData);
+            if (statsData.exchangeRate) setExchangeRate(statsData.exchangeRate);
+          }
+          if (bmcData) setBmcStats(bmcData);
+        })
+        .catch(() => {});
+    }, 30000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -186,25 +204,46 @@ export default function AdminDashboard() {
           Treasury <span className="font-display text-lime">Overview</span>
         </h1>
         <div className="flex items-center gap-3">
-          {currency === "USD" && exchangeRate && (
-            <span className="font-mono text-[10px] text-text-tertiary">
-              1 USD = {sym === "$" ? "₹" : "$"}{exchangeRate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          {exchangeRate && (
+            <span className="font-mono text-[10px] text-text-tertiary transition-opacity duration-200" style={{ opacity: currency === "USD" ? 1 : 0 }}>
+              1 USD = ₹{exchangeRate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
             </span>
           )}
-          <button
-            onClick={toggleCurrency}
-            disabled={currencyLoading}
-            className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5"
-            style={{
-              borderColor: currency === "USD" ? "var(--mint)" : "var(--border)",
-              background: currency === "USD" ? "rgba(111,209,215,0.08)" : "transparent",
-              color: currency === "USD" ? "var(--mint)" : "var(--text-secondary)",
-              opacity: currencyLoading ? 0.5 : 1,
-            }}
+          <div
+            className="relative flex items-center rounded-full border border-[var(--border)] overflow-hidden transition-opacity duration-150"
+            style={{ opacity: currencyLoading ? 0.5 : 1 }}
           >
-            <span style={{ fontSize: 12 }}>{currency === "INR" ? "₹" : "$"}</span>
-            {currency}
-          </button>
+            {/* Sliding highlight pill */}
+            <div
+              className="absolute top-0 bottom-0 w-1/2 rounded-full transition-transform duration-200 ease-out"
+              style={{
+                background: "var(--lime)",
+                transform: currency === "USD" ? "translateX(100%)" : "translateX(0)",
+              }}
+            />
+            <button
+              onClick={() => currency !== "INR" && toggleCurrency()}
+              disabled={currencyLoading}
+              className="relative z-10 font-mono text-[10px] uppercase tracking-[0.08em] px-3.5 py-1.5 flex items-center gap-1 transition-colors duration-200"
+              style={{
+                color: currency === "INR" ? "var(--bg-void)" : "var(--text-tertiary)",
+                fontWeight: currency === "INR" ? 700 : 400,
+              }}
+            >
+              <span style={{ fontSize: 11 }}>₹</span> INR
+            </button>
+            <button
+              onClick={() => currency !== "USD" && toggleCurrency()}
+              disabled={currencyLoading}
+              className="relative z-10 font-mono text-[10px] uppercase tracking-[0.08em] px-3.5 py-1.5 flex items-center gap-1 transition-colors duration-200"
+              style={{
+                color: currency === "USD" ? "var(--bg-void)" : "var(--text-tertiary)",
+                fontWeight: currency === "USD" ? 700 : 400,
+              }}
+            >
+              <span style={{ fontSize: 11 }}>$</span> USD
+            </button>
+          </div>
         </div>
       </div>
 

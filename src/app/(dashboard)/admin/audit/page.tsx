@@ -98,8 +98,13 @@ export default function AuditPage() {
   const [actions, setActions] = useState<string[]>([]);
   const [entityTypes, setEntityTypes] = useState<string[]>([]);
 
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+
   const [filterAction, setFilterAction] = useState("");
   const [filterEntity, setFilterEntity] = useState("");
+  const [filterUser, setFilterUser] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchLogs = useCallback(
@@ -107,13 +112,21 @@ export default function AuditPage() {
       const params = new URLSearchParams();
       if (filterAction) params.set("action", filterAction);
       if (filterEntity) params.set("entityType", filterEntity);
+      if (filterUser) params.set("userId", filterUser);
+      if (filterFrom) params.set("from", new Date(filterFrom).toISOString());
+      if (filterTo) {
+        // Set to end of selected day
+        const toDate = new Date(filterTo);
+        toDate.setHours(23, 59, 59, 999);
+        params.set("to", toDate.toISOString());
+      }
       if (cursor) params.set("cursor", cursor);
 
       const res = await fetch(`/api/audit?${params.toString()}`);
       const data = await res.json();
       return data;
     },
-    [filterAction, filterEntity],
+    [filterAction, filterEntity, filterUser, filterFrom, filterTo],
   );
 
   // Initial load and filter changes
@@ -127,6 +140,7 @@ export default function AuditPage() {
       setUserMap((prev) => ({ ...prev, ...(data.userMap || {}) }));
       if (data.actions) setActions(data.actions);
       if (data.entityTypes) setEntityTypes(data.entityTypes);
+      if (data.users) setUsers(data.users);
       setLoading(false);
     });
   }, [fetchLogs]);
@@ -190,12 +204,54 @@ export default function AuditPage() {
             size="sm"
           />
         </div>
-        {(filterAction || filterEntity) && (
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
+            User
+          </label>
+          <Dropdown
+            value={filterUser}
+            options={[
+              { value: "", label: "All users" },
+              ...users.map((u) => ({ value: u.id, label: u.name })),
+            ]}
+            onChange={setFilterUser}
+            placeholder="All users"
+            size="sm"
+          />
+        </div>
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
+            From
+          </label>
+          <input
+            type="date"
+            value={filterFrom}
+            onChange={(e) => setFilterFrom(e.target.value)}
+            className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--border-active)]"
+            style={{ colorScheme: "dark" }}
+          />
+        </div>
+        <div>
+          <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
+            To
+          </label>
+          <input
+            type="date"
+            value={filterTo}
+            onChange={(e) => setFilterTo(e.target.value)}
+            className="bg-[var(--bg-deep)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--border-active)]"
+            style={{ colorScheme: "dark" }}
+          />
+        </div>
+        {(filterAction || filterEntity || filterUser || filterFrom || filterTo) && (
           <div className="flex items-end">
             <button
               onClick={() => {
                 setFilterAction("");
                 setFilterEntity("");
+                setFilterUser("");
+                setFilterFrom("");
+                setFilterTo("");
               }}
               className="text-xs text-text-tertiary hover:text-text-secondary transition-colors px-3 py-2"
             >

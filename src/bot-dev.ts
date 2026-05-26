@@ -158,6 +158,45 @@ async function fetchAndSaveProfilePhoto(
   }
 }
 
+// ── Per-user rate limiting ──────────────────────────────────────────────
+const rateLimitMap = new Map<string, number[]>();
+const RATE_LIMIT = 5; // max commands
+const RATE_WINDOW = 60_000; // per 60 seconds
+
+bot.use(async (ctx, next) => {
+  const userId = ctx.from?.id;
+  if (!userId) return next();
+
+  const key = userId.toString();
+  const now = Date.now();
+  const timestamps = (rateLimitMap.get(key) || []).filter(
+    (t) => now - t < RATE_WINDOW,
+  );
+
+  if (timestamps.length >= RATE_LIMIT) {
+    await ctx.reply(
+      `<blockquote><b>⏳ Slow down</b></blockquote>\n` +
+        `<i>You're sending commands too fast. Please wait a moment before trying again.</i>`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  timestamps.push(now);
+  rateLimitMap.set(key, timestamps);
+  return next();
+});
+
+// Periodic cleanup to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamps] of rateLimitMap.entries()) {
+    const valid = timestamps.filter((t) => now - t < RATE_WINDOW);
+    if (valid.length === 0) rateLimitMap.delete(key);
+    else rateLimitMap.set(key, valid);
+  }
+}, 5 * 60 * 1000);
+
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
