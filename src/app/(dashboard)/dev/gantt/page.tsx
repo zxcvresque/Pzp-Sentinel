@@ -182,6 +182,83 @@ function Tooltip({ data }: { data: TooltipData }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Mobile mini-bar (inline timeline visualization)                    */
+/* ------------------------------------------------------------------ */
+
+function MobileTimelineBar({
+  task,
+  timelineStart,
+  totalDays,
+  todayPct,
+}: {
+  task: Task;
+  timelineStart: Date;
+  totalDays: number;
+  todayPct: number;
+}) {
+  const start = task.startDate
+    ? startOfDay(new Date(task.startDate))
+    : startOfDay(new Date(task.createdAt));
+  const end = task.deadline ? startOfDay(new Date(task.deadline)) : null;
+  const startPct = Math.max(
+    0,
+    Math.min(100, (daysBetween(timelineStart, start) / totalDays) * 100),
+  );
+
+  if (!end || start.getTime() === end.getTime()) {
+    return (
+      <div
+        className="relative h-1.5 rounded-full overflow-hidden"
+        style={{ background: "rgba(255,255,255,0.06)" }}
+      >
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+          style={{
+            left: `calc(${startPct}% - 4px)`,
+            background: STATUS_COLOR[task.status],
+          }}
+        />
+        {todayPct > 0 && todayPct < 100 && (
+          <div
+            className="absolute top-0 bottom-0 w-0.5 rounded-full"
+            style={{ left: `${todayPct}%`, background: "var(--lime)", opacity: 0.7 }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  const endPct = Math.max(
+    0,
+    Math.min(100, (daysBetween(timelineStart, end) / totalDays) * 100),
+  );
+  const widthPct = Math.max(endPct - startPct, 1);
+
+  return (
+    <div
+      className="relative h-1.5 rounded-full overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.06)" }}
+    >
+      <div
+        className="absolute top-0 bottom-0 rounded-full"
+        style={{
+          left: `${startPct}%`,
+          width: `${widthPct}%`,
+          background: STATUS_COLOR[task.status],
+          opacity: 0.5,
+        }}
+      />
+      {todayPct > 0 && todayPct < 100 && (
+        <div
+          className="absolute top-0 bottom-0 w-0.5 rounded-full"
+          style={{ left: `${todayPct}%`, background: "var(--lime)", opacity: 0.7 }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Gantt page                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -192,6 +269,8 @@ export default function GanttPage() {
   const [filterProject, setFilterProject] = useState("");
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -371,6 +450,18 @@ export default function GanttPage() {
     }
   }, [loading, todayPct]);
 
+  /* ── Detect mobile viewport ── */
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      setExpandedId(null);
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
   /* ── Loading skeleton ── */
   if (loading) {
     return (
@@ -420,6 +511,272 @@ export default function GanttPage() {
           <p className="text-text-tertiary text-sm">
             Tasks with dates assigned to you will appear here as timeline bars.
           </p>
+        </div>
+      ) : isMobile ? (
+        /* ── Mobile list view ── */
+        <div className="space-y-3">
+          {/* Timeline range indicator */}
+          <div className="flex items-center justify-between px-1">
+            <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+              {formatDate(timelineStart)}
+            </span>
+            <div
+              className="flex-1 mx-3 relative"
+              style={{ height: 1, background: "var(--border)" }}
+            >
+              {todayPct > 0 && todayPct < 100 && (
+                <div
+                  className="absolute -top-1 w-2 h-2 rounded-full"
+                  style={{
+                    left: `${todayPct}%`,
+                    background: "var(--lime)",
+                    transform: "translateX(-50%)",
+                  }}
+                />
+              )}
+            </div>
+            <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+              {formatDate(timelineEnd)}
+            </span>
+          </div>
+
+          {/* Project groups */}
+          {Object.entries(groupedByProject).map(
+            ([pid, { name, tasks: projectTasks }]) => (
+              <div
+                key={pid}
+                className="rounded-xl border border-[var(--border)] overflow-hidden"
+                style={{ background: "var(--bg-card)" }}
+              >
+                {/* Project header */}
+                <div
+                  className="px-4 py-2.5 flex items-center gap-2"
+                  style={{
+                    borderBottom: "1px solid var(--border)",
+                    background: "var(--bg-deep)",
+                  }}
+                >
+                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-lime">
+                    {name}
+                  </span>
+                  <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                    {projectTasks.length}
+                  </span>
+                </div>
+
+                {/* Task cards */}
+                {projectTasks.map((task, idx) => {
+                  const isExpanded = expandedId === task.id;
+                  const startD = task.startDate
+                    ? new Date(task.startDate)
+                    : null;
+                  const endD = task.deadline
+                    ? new Date(task.deadline)
+                    : null;
+                  const isOverdue =
+                    endD && endD < new Date() && task.status !== "DONE";
+                  const duration =
+                    startD && endD ? daysBetween(startD, endD) : null;
+
+                  return (
+                    <div
+                      key={task.id}
+                      style={{
+                        borderBottom:
+                          idx < projectTasks.length - 1
+                            ? "1px solid var(--border)"
+                            : undefined,
+                      }}
+                    >
+                      <button
+                        className="w-full text-left px-4 py-3 active:bg-white/[0.03] transition-colors"
+                        onClick={() =>
+                          setExpandedId(isExpanded ? null : task.id)
+                        }
+                      >
+                        {/* Title row */}
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{
+                              background: STATUS_COLOR[task.status],
+                            }}
+                          />
+                          <span className="text-sm text-[var(--text-primary)] truncate flex-1 font-medium">
+                            {task.title}
+                          </span>
+                          <svg
+                            className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform shrink-0 ${
+                              isExpanded ? "rotate-90" : ""
+                            }`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </div>
+
+                        {/* Meta tags */}
+                        <div className="flex items-center gap-2 mb-2 pl-3.5">
+                          <span
+                            className="font-mono text-[9px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded"
+                            style={{
+                              color: STATUS_COLOR[task.status],
+                              background: STATUS_BG[task.status],
+                            }}
+                          >
+                            {STATUS_LABEL[task.status] || task.status}
+                          </span>
+                          <span
+                            className="font-mono text-[9px] uppercase tracking-[0.08em] px-1.5 py-0.5 rounded"
+                            style={{
+                              color: PRIORITY_BORDER[task.priority],
+                              background: "rgba(255,255,255,0.04)",
+                            }}
+                          >
+                            {task.priority}
+                          </span>
+                          {task.assignee && (
+                            <span className="text-[11px] text-[var(--text-tertiary)] ml-auto truncate max-w-[80px]">
+                              {task.assignee.name}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Date range */}
+                        <div className="flex items-center mb-2 pl-3.5">
+                          <span
+                            className={`text-[11px] ${
+                              isOverdue
+                                ? "text-[var(--coral)]"
+                                : "text-[var(--text-tertiary)]"
+                            }`}
+                          >
+                            {startD ? formatDate(startD) : "No start"}
+                            {" → "}
+                            {endD ? formatDate(endD) : "No end"}
+                            {duration !== null && (
+                              <span className="text-[var(--text-tertiary)] ml-1">
+                                · {duration}d
+                              </span>
+                            )}
+                            {isOverdue && (
+                              <span className="ml-1.5 text-[var(--coral)] font-medium">
+                                overdue
+                              </span>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Mini timeline bar */}
+                        <div className="pl-3.5">
+                          <MobileTimelineBar
+                            task={task}
+                            timelineStart={timelineStart}
+                            totalDays={totalDays}
+                            todayPct={todayPct}
+                          />
+                        </div>
+                      </button>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div
+                          className="px-4 pb-3 space-y-2"
+                          style={{
+                            paddingLeft: "2rem",
+                            borderTop: "1px solid var(--border)",
+                            background: "rgba(255,255,255,0.01)",
+                          }}
+                        >
+                          {task.description && (
+                            <p className="text-xs text-[var(--text-secondary)] leading-relaxed pt-2">
+                              {task.description}
+                            </p>
+                          )}
+                          {task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {task.tags.map((tag) => (
+                                <span
+                                  key={tag.id}
+                                  className="font-mono text-[9px] px-2 py-0.5 rounded-full"
+                                  style={{
+                                    background: `${tag.color}20`,
+                                    color: tag.color,
+                                  }}
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div>
+                              <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--text-tertiary)] block mb-0.5">
+                                Start
+                              </span>
+                              <span className="text-xs text-[var(--text-secondary)]">
+                                {startD ? formatDateFull(startD) : "—"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-[var(--text-tertiary)] block mb-0.5">
+                                Deadline
+                              </span>
+                              <span
+                                className={`text-xs ${
+                                  isOverdue
+                                    ? "text-[var(--coral)]"
+                                    : "text-[var(--text-secondary)]"
+                                }`}
+                              >
+                                {endD ? formatDateFull(endD) : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          )}
+
+          {/* Mobile legend */}
+          <div
+            className="rounded-xl border border-[var(--border)] px-4 py-3"
+            style={{ background: "var(--bg-deep)" }}
+          >
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {Object.entries(STATUS_LABEL).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: STATUS_COLOR[key] }}
+                  />
+                  <span className="font-mono text-[9px] text-[var(--text-tertiary)]">
+                    {label}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-3 h-0.5 rounded-full"
+                  style={{ background: "var(--lime)", opacity: 0.7 }}
+                />
+                <span className="font-mono text-[9px] text-[var(--text-tertiary)]">
+                  Today
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div
