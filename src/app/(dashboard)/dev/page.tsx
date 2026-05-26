@@ -39,6 +39,24 @@ interface Project {
   taskCounts: Record<string, number>;
 }
 
+interface Commit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+  avatar: string | null;
+}
+
+function timeAgo(dateStr: string): string {
+  const s = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 const COLUMNS: { key: string; label: string }[] = [
   { key: "BACKLOG", label: "Backlog" },
   { key: "TODO", label: "To Do" },
@@ -117,7 +135,12 @@ export default function DevDashboard() {
   const [projRepo, setProjRepo] = useState("");
   const [projSubmitting, setProjSubmitting] = useState(false);
 
+  // Git commits
+  const [commits, setCommits] = useState<Commit[]>([]);
+  const [commitsOpen, setCommitsOpen] = useState(false);
+
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const selectedRepoUrl = selectedProject?.repoUrl || null;
 
   const fetchTasks = useCallback(() => {
     if (!selectedProjectId) return;
@@ -147,6 +170,18 @@ export default function DevDashboard() {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  // Fetch commits when project changes
+  useEffect(() => {
+    if (!selectedRepoUrl) {
+      setCommits([]);
+      return;
+    }
+    fetch(`/api/github/commits?repoUrl=${encodeURIComponent(selectedRepoUrl)}`)
+      .then((r) => (r.ok ? r.json() : { commits: [] }))
+      .then((data) => setCommits(data.commits || []))
+      .catch(() => setCommits([]));
+  }, [selectedRepoUrl]);
 
   async function handleStatusChange(taskId: string, newStatus: string) {
     const prev = tasks;
@@ -624,6 +659,79 @@ export default function DevDashboard() {
             {submitting ? "Creating..." : "Create Task"}
           </button>
         </form>
+      )}
+
+      {/* ── Git Commits Feed ── */}
+      {selectedRepoUrl && commits.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setCommitsOpen(!commitsOpen)}
+            className="flex items-center gap-2.5 w-full text-left group mb-2"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-tertiary shrink-0">
+              <circle cx="12" cy="12" r="3" />
+              <line x1="12" y1="3" x2="12" y2="9" />
+              <line x1="12" y1="15" x2="12" y2="21" />
+            </svg>
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary group-hover:text-text-secondary transition-colors">
+              Latest Commits
+            </span>
+            <span className="font-mono text-[10px] text-text-tertiary">{commits.length}</span>
+            {!commitsOpen && commits[0] && (
+              <span className="text-xs text-text-tertiary truncate mx-2 flex-1 hidden sm:inline">
+                {commits[0].message}
+                <span className="ml-2 font-mono text-[10px]">{timeAgo(commits[0].date)}</span>
+              </span>
+            )}
+            <span className="font-mono text-[10px] text-text-tertiary ml-auto shrink-0">
+              {commitsOpen ? "▾" : "▸"}
+            </span>
+          </button>
+          {commitsOpen && (
+            <div
+              className="rounded-xl border border-[var(--border)] overflow-hidden"
+              style={{ background: "var(--bg-card)" }}
+            >
+              {commits.slice(0, 10).map((c, i) => (
+                <a
+                  key={c.sha + i}
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+                  style={{
+                    borderBottom:
+                      i < Math.min(commits.length, 10) - 1
+                        ? "1px solid var(--border)"
+                        : undefined,
+                  }}
+                >
+                  <code className="font-mono text-[11px] text-lime shrink-0">
+                    {c.sha}
+                  </code>
+                  <span className="text-xs text-text-secondary truncate flex-1 min-w-0">
+                    {c.message}
+                  </span>
+                  <span className="text-[11px] text-text-tertiary shrink-0 hidden sm:inline">
+                    {c.author}
+                  </span>
+                  <span className="font-mono text-[10px] text-text-tertiary shrink-0">
+                    {timeAgo(c.date)}
+                  </span>
+                </a>
+              ))}
+              <a
+                href={selectedRepoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block px-4 py-2 text-center font-mono text-[10px] text-lime hover:text-lime/80 transition-colors"
+                style={{ background: "var(--bg-deep)", borderTop: "1px solid var(--border)" }}
+              >
+                View on GitHub →
+              </a>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="flex items-center gap-2 mb-4">
