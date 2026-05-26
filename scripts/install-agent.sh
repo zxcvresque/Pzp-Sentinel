@@ -4,10 +4,10 @@
 # ═══════════════════════════════════════════════════════════════════════
 #
 #   One-liner install:
-#     curl -fsSL https://pzp.finance/install.sh | sudo bash -s -- --token <TOKEN>
+#     curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- --token <TOKEN>
 #
 #   Or with self-registration (requires admin API key):
-#     curl -fsSL https://pzp.finance/install.sh | sudo bash -s -- \
+#     curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- \
 #       --register --api-key <JWT> --name "web-01" --ip 1.2.3.4 --platform ubuntu
 #
 #   What it does:
@@ -26,7 +26,7 @@
 set -euo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────────
-SENTINEL_URL="${SENTINEL_URL:-https://pzp.finance}"
+SENTINEL_URL="${SENTINEL_URL:-https://sentinel.piratezparty.com}"
 SENTINEL_TOKEN=""
 REGISTER=false
 API_KEY=""
@@ -83,7 +83,7 @@ Registration flags (required with --register):
   --platform <PLATFORM>   OS platform (e.g. "ubuntu", "debian")
 
 Optional:
-  --url <URL>             Sentinel base URL       (default: https://pzp.finance)
+  --url <URL>             Sentinel base URL       (default: https://sentinel.piratezparty.com)
   --interval <SEC>        Heartbeat interval       (default: 30)
   --provider <NAME>       Hosting provider         (e.g. "hetzner", "contabo")
   --password <PASS>       Server root password     (stored in Sentinel for reference)
@@ -302,7 +302,7 @@ log "Creating systemd service..."
 cat > "$SERVICE_FILE" <<UNIT
 [Unit]
 Description=Sentinel VPS Monitoring Agent
-Documentation=https://pzp.finance
+Documentation=https://sentinel.piratezparty.com
 After=network-online.target
 Wants=network-online.target
 
