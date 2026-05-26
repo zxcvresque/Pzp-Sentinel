@@ -169,12 +169,13 @@ export async function POST(req: NextRequest) {
       message: `${user.name} donated ${symbol}${transaction.amount} via ${transaction.method} — approve or reject.`,
       entityId: transaction.id,
       priority: "HIGH",
+      actionUrl: "/admin/transactions",
       telegramMessage: formatTgMessage(
         "🔔 Approval Required",
         `${symbol}${transaction.amount} via ${transaction.method}`,
-        `👤 ${user.name} · ${description}\n\n<i>Open Sentinel to approve or reject</i>`,
+        `👤 ${user.name} · ${description}`,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[tx] notifyAdmins failed:", err));
   }
 
   return NextResponse.json({ transaction }, { status: 201 });

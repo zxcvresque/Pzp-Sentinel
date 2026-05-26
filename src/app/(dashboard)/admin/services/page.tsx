@@ -425,10 +425,10 @@ export default function ServicesPage() {
                     Price
                   </label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="decimal"
                     value={price}
-                    onChange={(e) => setPrice(e.target.value)}
+                    onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) setPrice(e.target.value); }}
                     placeholder="0.00"
                     className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
                   />

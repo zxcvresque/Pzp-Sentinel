@@ -98,12 +98,13 @@ export async function POST(
       message: notifMessage,
       entityId: id,
       priority: "HIGH",
+      actionUrl: "/donor",
       telegramMessage: formatTgMessage(
         "❌ Transaction Rejected",
         `Your donation of ${updated.currency} ${updated.amount} was rejected`,
         tgDetails,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[reject] notify failed:", err));
   }
 
   return NextResponse.json({ transaction: updated });

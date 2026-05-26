@@ -38,8 +38,10 @@ export async function notify(data: {
   entityId?: string;
   priority?: "LOW" | "NORMAL" | "HIGH";
   telegramMessage?: string;
+  /** Relative path (e.g. "/admin/transactions") — becomes an inline "Open Sentinel" button */
+  actionUrl?: string;
 }) {
-  const { userId, type, title, message, entityId, priority = "NORMAL", telegramMessage } = data;
+  const { userId, type, title, message, entityId, priority = "NORMAL", telegramMessage, actionUrl } = data;
 
   // 1. Create in-app notification
   const notification = await prisma.notification.create({
@@ -54,15 +56,32 @@ export async function notify(data: {
     });
 
     const dmBot = getBot();
-    if (user?.chatId && dmBot && user.dmPreferences.includes(type)) {
+    const hasPref = user?.dmPreferences.includes(type);
+    const isHighPriority = priority === "HIGH";
+
+    // HIGH priority notifications (approvals, etc.) always send DM regardless of preference
+    if (user?.chatId && dmBot && (hasPref || isHighPriority)) {
       const tgText = telegramMessage ?? formatTgMessage(title, message);
-      await dmBot.api.sendMessage(user.chatId, tgText, { parse_mode: "HTML" });
+      const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";
+      const replyMarkup = actionUrl
+        ? { inline_keyboard: [[{ text: "Open Sentinel →", url: `${baseUrl}${actionUrl}` }]] }
+        : undefined;
+      await dmBot.api.sendMessage(user.chatId, tgText, {
+        parse_mode: "HTML",
+        reply_markup: replyMarkup,
+      });
+    } else if (!user?.chatId) {
+      console.warn(`[notify] No chatId for user ${userId} — skipping TG DM`);
+    } else if (!dmBot) {
+      console.warn(`[notify] BOT_TOKEN not set — skipping TG DM`);
+    } else {
+      console.log(`[notify] User ${userId} has no pref for ${type} (non-high priority) — skipping DM`);
     }
   } catch (err: unknown) {
-    // If the bot was blocked by the user (403), clear their chatId so the UI shows "Not linked"
     const desc = typeof err === "object" && err !== null && "description" in err
       ? (err as { description?: string }).description ?? ""
       : "";
+    // If the bot was blocked by the user (403), clear their chatId so the UI shows "Not linked"
     if (desc.includes("bot was blocked") || desc.includes("user is deactivated")) {
       try {
         await prisma.user.update({ where: { id: userId }, data: { chatId: null } });
@@ -70,6 +89,7 @@ export async function notify(data: {
         // ignore — best effort cleanup
       }
     }
+    console.error(`[notify] TG DM failed for user ${userId}:`, err);
   }
 
   return notification;

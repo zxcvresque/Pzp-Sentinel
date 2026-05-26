@@ -103,12 +103,13 @@ export async function POST(
       message: `Your donation of ${updated.currency} ${updated.amount} has been approved. ${appreciation}`,
       entityId: id,
       priority: "NORMAL",
+      actionUrl: "/donor",
       telegramMessage: formatTgMessage(
         "✅ Transaction Approved",
         `${updated.currency} ${updated.amount} approved`,
         appreciation,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[approve] notify failed:", err));
   }
 
   return NextResponse.json({ transaction: updated });
