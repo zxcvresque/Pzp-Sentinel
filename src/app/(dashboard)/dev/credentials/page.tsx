@@ -153,7 +153,7 @@ export default function DevCredentialsPage() {
           onClick={() => (showForm ? resetForm() : startNew())}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
-          {showForm ? "Cancel" : "Propose New"}
+          {showForm ? "Cancel" : "Share New"}
         </button>
       </div>
 
@@ -161,10 +161,10 @@ export default function DevCredentialsPage() {
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
           <div className="text-xs text-amber mb-4">
             {editingParentId
-              ? "Proposing an update. Admin approval required."
-              : "Proposing a new credential. Admin approval required."}
+              ? "Proposing an updated value. Admin will review before replacing the current one."
+              : "Sharing a credential you own with the team. Admin will review before it goes live."}
           </div>
-          <FormExample lines={["Platform: Vercel Dashboard", "Why: Need deployment access for frontend"]} />
+          <FormExample lines={["Platform: Hetzner VPS", "Label: Root Password, API Key, etc.", "Value: the actual secret"]} />
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Platform
@@ -233,7 +233,7 @@ export default function DevCredentialsPage() {
             disabled={submitting || !platform || !hasValidField}
             className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
           >
-            {submitting ? "Submitting..." : "Submit for Approval"}
+            {submitting ? "Submitting..." : "Submit for Review"}
           </button>
         </form>
       )}
