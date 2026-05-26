@@ -137,7 +137,8 @@ model Transaction {
   fromUserId  String?
   fromUser    User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
   description String
-  proofFileId String?
+  proofFileId  String?
+  attachments  String[]      @default([])
   date        DateTime      @default(now())
   status      TxStatus      @default(PENDING)
   reviewedById String?

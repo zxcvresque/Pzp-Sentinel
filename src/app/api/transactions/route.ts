@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { amount, currency, method, direction, type, description, proofFileId, fromUserId } = body;
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
   if (!amount || !description) {
     return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
@@ -97,6 +98,7 @@ export async function POST(req: NextRequest) {
       type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
       description,
       proofFileId: proofFileId || null,
+      attachments,
       fromUserId: fromUserId || (direction === "IN" ? user.id : null),
       status: txStatus,
       createdById: user.id,

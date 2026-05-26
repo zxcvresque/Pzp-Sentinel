@@ -17,6 +17,7 @@ interface Transaction {
   status: string;
   date: string;
   proofFileId?: string | null;
+  attachments?: string[];
   reviewNote?: string | null;
   fromUser?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
   createdBy?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
@@ -68,6 +69,7 @@ export default function TransactionsPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [viewingAttachments, setViewingAttachments] = useState<string[] | null>(null);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -499,7 +501,12 @@ export default function TransactionsPage() {
                     className={`border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer ${editingId === tx.id ? "bg-[rgba(99,102,241,0.06)]" : ""}`}
                   >
                     <td className="p-4 text-sm">
-                      <div>{tx.description}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span>{tx.description}</span>
+                        {tx.attachments && tx.attachments.length > 0 && (
+                          <span className="text-text-tertiary text-[10px]">📎 {tx.attachments.length}</span>
+                        )}
+                      </div>
                       {tx.fromUser && (
                         <div className="text-text-tertiary text-xs mt-0.5">from {tx.fromUser.name}</div>
                       )}
@@ -670,6 +677,31 @@ export default function TransactionsPage() {
                 </div>
               )}
 
+              {/* Proof screenshots */}
+              {selectedTx.attachments && selectedTx.attachments.length > 0 && (
+                <div>
+                  <div className="font-mono text-[8px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] mb-2">
+                    Proof Screenshots ({selectedTx.attachments.length})
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {selectedTx.attachments.map((url, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setLightboxImg(url)}
+                        className="block rounded-lg overflow-hidden border border-[var(--border)] hover:border-[var(--border-hover)] transition-all group aspect-square"
+                      >
+                        <img
+                          src={url}
+                          alt={`Proof ${i + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Sticky footer actions */}
@@ -706,6 +738,28 @@ export default function TransactionsPage() {
               )}
             </div>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Image lightbox — portalled to body */}
+      {lightboxImg && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-md animate-fade-in p-4"
+          onClick={() => setLightboxImg(null)}
+        >
+          <button
+            onClick={() => setLightboxImg(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white text-xl z-10"
+          >
+            &times;
+          </button>
+          <img
+            src={lightboxImg}
+            alt="Proof screenshot"
+            className="max-w-full max-h-[90vh] max-h-[90dvh] object-contain rounded-lg select-none"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>,
         document.body
       )}

@@ -12,6 +12,7 @@ interface Transaction {
   description: string;
   status: string;
   date: string;
+  attachments?: string[];
 }
 
 export default function DonorDashboard() {
@@ -28,6 +29,9 @@ export default function DonorDashboard() {
   const [currency, setCurrency] = useState("INR");
   const [method, setMethod] = useState("UPI");
   const [reference, setReference] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetch("/api/transactions?limit=50")
@@ -59,12 +63,48 @@ export default function DonorDashboard() {
     return cur === "USD" ? "$" : "₹";
   }
 
+  function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files || []);
+    const valid = selected.filter(f => {
+      if (f.size > 20 * 1024 * 1024) { setFormError(`${f.name} exceeds 20MB`); return false; }
+      if (!f.type.startsWith("image/")) { setFormError(`${f.name} is not an image`); return false; }
+      return true;
+    });
+    setFiles(prev => [...prev, ...valid]);
+    valid.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = (ev) => setPreviews(prev => [...prev, ev.target?.result as string]);
+      reader.readAsDataURL(f);
+    });
+    e.target.value = "";
+  }
+
+  function removeFile(index: number) {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setFormError("");
 
     try {
+      let attachmentUrls: string[] = [];
+      if (files.length > 0) {
+        setUploading(true);
+        const fd = new FormData();
+        files.forEach(f => fd.append("files", f));
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json().catch(() => null);
+          throw new Error(err?.error || "Upload failed");
+        }
+        const uploadData = await uploadRes.json();
+        attachmentUrls = uploadData.urls;
+        setUploading(false);
+      }
+
       const desc =
         reference.trim() || `Donation via ${method}`;
       const res = await fetch("/api/transactions", {
@@ -77,6 +117,7 @@ export default function DonorDashboard() {
           direction: "IN",
           type: "DONATION",
           description: desc,
+          attachments: attachmentUrls,
         }),
       });
 
@@ -90,6 +131,8 @@ export default function DonorDashboard() {
       setShowForm(false);
       setAmount("");
       setReference("");
+      setFiles([]);
+      setPreviews([]);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: unknown) {
@@ -240,6 +283,38 @@ export default function DonorDashboard() {
               </p>
             </div>
 
+            {/* Proof screenshots */}
+            <div className="mb-5">
+              <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+                Proof Screenshots <span className="normal-case tracking-normal">(optional, max 20MB each)</span>
+              </div>
+              <div className="flex flex-wrap gap-3 mb-3">
+                {previews.map((src, i) => (
+                  <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)] group">
+                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <span className="text-white text-lg">&times;</span>
+                    </button>
+                  </div>
+                ))}
+                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] hover:border-[var(--border-hover)] cursor-pointer flex flex-col items-center justify-center transition-colors">
+                  <span className="text-text-tertiary text-xl">+</span>
+                  <span className="text-text-tertiary text-[8px] uppercase tracking-wider">Photo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFiles}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
             {formError && (
               <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
                 {formError}
@@ -248,10 +323,10 @@ export default function DonorDashboard() {
 
             <button
               type="submit"
-              disabled={submitting || !amount}
+              disabled={submitting || uploading || !amount}
               className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
             >
-              {submitting ? "Submitting..." : "Submit Donation"}
+              {uploading ? "Uploading..." : submitting ? "Submitting..." : "Submit Donation"}
             </button>
           </form>
         </div>
@@ -323,6 +398,11 @@ export default function DonorDashboard() {
                 <span className="text-mint font-semibold">
                   {currencySymbol(tx.currency)}
                   {parseFloat(tx.amount).toLocaleString()}
+                  {tx.attachments && tx.attachments.length > 0 && (
+                    <span className="text-text-tertiary text-[10px] ml-1 font-normal">
+                      📎 {tx.attachments.length}
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`status-tag ${
