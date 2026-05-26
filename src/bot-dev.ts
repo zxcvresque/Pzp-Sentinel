@@ -519,10 +519,98 @@ bot.catch((err) => {
   console.error("Bot error:", err);
 });
 
+// ── Service expiry checker ─────────────────────────────────────────────
+const EXPIRY_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function checkServiceExpiry() {
+  console.log("[expiry] Running service expiry check...");
+  try {
+    const now = new Date();
+    const in1Day = new Date(now.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    // Auto-expire services past their date
+    const expired = await dbRetry(() =>
+      prisma.service.updateMany({
+        where: { status: "ACTIVE", expiryDate: { lte: now, not: null } },
+        data: { status: "EXPIRED" },
+      }),
+    );
+    if (expired.count > 0) {
+      console.log(`[expiry] Auto-expired ${expired.count} service(s)`);
+    }
+
+    // Find services expiring within 7 days
+    const expiring = await dbRetry(() =>
+      prisma.service.findMany({
+        where: {
+          status: "ACTIVE",
+          expiryDate: { not: null, lte: in7Days, gt: now },
+        },
+        orderBy: { expiryDate: "asc" },
+      }),
+    );
+
+    if (expiring.length === 0) {
+      console.log("[expiry] No services expiring soon.");
+      return;
+    }
+
+    for (const svc of expiring) {
+      const expiryDate = svc.expiryDate!;
+      const daysLeft = Math.ceil((expiryDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      const dateStr = expiryDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const daysLabel = daysLeft === 1 ? "1 day" : `${daysLeft} days`;
+
+      let emoji: string, heading: string, priority: string;
+      if (expiryDate <= in1Day) {
+        emoji = "🔴"; heading = "Service Expiring Tomorrow"; priority = "HIGH";
+      } else if (expiryDate <= in3Days) {
+        emoji = "🟡"; heading = "Service Expiring Soon"; priority = "NORMAL";
+      } else {
+        emoji = "📋"; heading = "Service Expiry Reminder"; priority = "LOW";
+      }
+
+      let priceDetail = "";
+      if (svc.price != null && svc.currency && svc.frequency) {
+        priceDetail = `\nPrice: ${svc.currency} ${svc.price}/${svc.frequency.toLowerCase()}`;
+      }
+
+      await notifyAdminsFromBot(prisma, bot, {
+        type: "SYSTEM",
+        title: `Service Expiring: ${svc.name}`,
+        message: `${svc.name} expires in ${daysLabel} (${dateStr}). Renew or update the service.`,
+        entityId: svc.id,
+        priority,
+        telegramMessage:
+          `<blockquote><b>${emoji} ${heading}</b></blockquote>\n` +
+          `<b>${svc.name}</b> (${svc.category})\n` +
+          `Expires: ${dateStr} (${daysLabel} left)${priceDetail}`,
+      });
+
+      console.log(`[expiry] Alerted: ${svc.name} — ${daysLabel} left`);
+    }
+
+    console.log(`[expiry] Done. ${expiring.length} alert(s) sent.`);
+  } catch (err) {
+    console.error("[expiry] Check failed:", err);
+  }
+}
+
 (async () => {
   await bot.api.deleteWebhook();
   console.log("Sentinel bot starting in polling mode...");
   bot.start({
-    onStart: () => console.log("Sentinel bot is live! Send /start to @" + process.env.BOT_USERNAME),
+    onStart: () => {
+      console.log("Sentinel bot is live! Send /start to @" + process.env.BOT_USERNAME);
+
+      // Run first expiry check after 10s (let DB connections warm up), then every 24h
+      setTimeout(() => {
+        checkServiceExpiry();
+        setInterval(checkServiceExpiry, EXPIRY_CHECK_INTERVAL);
+      }, 10_000);
+      console.log("[expiry] Scheduled — first check in 10s, then every 24h");
+    },
   });
 })();
