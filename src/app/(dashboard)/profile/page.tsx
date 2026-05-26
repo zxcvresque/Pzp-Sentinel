@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import ThemeColorPicker from "@/components/ThemeColorPicker";
 import { getRoleColor } from "@/lib/role-colors";
+import { useFormExamples } from "@/hooks/useFormExamples";
 
 interface UserProfile {
   id: string;
@@ -41,6 +42,7 @@ export default function ProfilePage() {
   const [dmPrefs, setDmPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null); // null = synced with user.themeColor
+  const { showExamples, hideExamples, enableExamples } = useFormExamples();
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -533,6 +535,40 @@ export default function ProfilePage() {
                 saving...
               </span>
             )}
+          </div>
+
+          {/* ── Preferences ── */}
+          <div className="mt-4 pt-4 border-t border-[var(--border)]">
+            <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+              Preferences
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <div className="pr-3 min-w-0">
+                <div className="text-xs font-medium text-text-primary">Form Examples</div>
+                <div className="text-[10px] text-text-tertiary mt-0.5">
+                  Show contextual hints in forms
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showExamples}
+                onClick={() => (showExamples ? hideExamples() : enableExamples())}
+                className={`relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200 cursor-pointer ${
+                  showExamples
+                    ? "bg-lime/30"
+                    : "bg-bg-elevated border border-[var(--border)]"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
+                    showExamples
+                      ? "translate-x-4 bg-lime"
+                      : "translate-x-0 bg-text-tertiary"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
       </div>

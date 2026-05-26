@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Dropdown from "@/components/Dropdown";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface Member {
   id: string;
@@ -343,6 +345,7 @@ export default function DevDashboard() {
             </button>
           ) : (
             <form onSubmit={handleCreateProject} className="text-left mt-4 max-w-md mx-auto space-y-4">
+              <FormExample lines={["Name: PzP Dashboard · Repo: github.com/org/repo", "Description: Internal finance management tool"]} />
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Project Name
@@ -462,6 +465,7 @@ export default function DevDashboard() {
 
       {showProjectForm && (
         <form onSubmit={handleCreateProject} className="card p-6 mb-6">
+          <FormExample lines={["Name: PzP Dashboard · Repo: github.com/org/repo", "Description: Internal finance management tool"]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -514,6 +518,7 @@ export default function DevDashboard() {
 
       {showForm && (
         <form onSubmit={handleCreate} className="card p-6 mb-6">
+          <FormExample lines={["Title: Implement dark mode toggle", "Priority: HIGH · Assignee: pick from members", "Tags: frontend, UI"]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div className="sm:col-span-2">
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -948,7 +953,9 @@ function TaskCard({
         </div>
       )}
       {task.assignee && (
-        <div className="text-text-secondary text-xs mb-2">{task.assignee.name}</div>
+        <div className="mb-2">
+          <TgUser name={task.assignee.name} size={18} />
+        </div>
       )}
       {task.deadline && (
         <div className="text-text-tertiary text-xs mb-2">

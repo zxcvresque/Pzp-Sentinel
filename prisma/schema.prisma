@@ -149,33 +149,27 @@ model Transaction {
   createdBy    User         @relation("TxCreatedBy", fields: [createdById], references: [id])
   createdAt    DateTime     @default(now())
 
-  subscription Subscription? @relation("SubPaidTx")
+  service      Service?     @relation("SubPaidTx")
   auditLogs    AuditLog[]
 }
 
-model Subscription {
-  id              String    @id @default(cuid())
-  platform        String
-  planUrl         String?
-  price           Decimal
-  currency        Currency  @default(INR)
-  frequency       Frequency @default(MONTHLY)
-  proofFileId     String?
-  specs           Json?
-  expiryDate      DateTime
-  lastRenewalDate DateTime?
-  paidTxId        String?   @unique
-  paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
-  status          SubStatus @default(ACTIVE)
-  createdAt       DateTime  @default(now())
-}
-
 model Service {
-  id       String @id @default(cuid())
-  category String
-  name     String
-  columns  Json?
-  entries  Json?
+  id              String     @id @default(cuid())
+  category        String
+  name            String
+  columns         Json?
+  entries         Json?
+  // Optional subscription / cost tracking
+  price           Decimal?
+  currency        Currency?
+  frequency       Frequency?
+  planUrl         String?
+  expiryDate      DateTime?
+  lastRenewalDate DateTime?
+  paidTxId        String?    @unique
+  paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
+  status          SubStatus?
+  createdAt       DateTime   @default(now())
 }
 
 model Project {

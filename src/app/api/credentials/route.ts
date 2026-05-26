@@ -15,11 +15,11 @@ export async function GET() {
       const credentials = await prisma.credential.findMany({
         where: { parentId: null },
         include: {
-          assignees: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, name: true } },
+          assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+          createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
           revisions: {
             where: { status: "PENDING" },
-            include: { createdBy: { select: { id: true, name: true } } },
+            include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
             orderBy: { createdAt: "desc" },
           },
         },
@@ -36,8 +36,8 @@ export async function GET() {
           status: "APPROVED",
         },
         include: {
-          assignees: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, name: true } },
+          assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+          createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
         },
         orderBy: [{ platform: "asc" }, { label: "asc" }],
       });
@@ -90,8 +90,8 @@ export async function POST(req: NextRequest) {
           : undefined,
       },
       include: {
-        assignees: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
+        assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+        createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       },
     });
     // GitHub immutable log

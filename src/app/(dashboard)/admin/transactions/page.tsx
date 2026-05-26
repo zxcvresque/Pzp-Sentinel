@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface Transaction {
   id: string;
@@ -17,9 +19,9 @@ interface Transaction {
   proofFileId?: string | null;
   attachments?: string[];
   reviewNote?: string | null;
-  fromUser?: { name: string } | null;
-  createdBy?: { name: string } | null;
-  reviewedBy?: { name: string } | null;
+  fromUser?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
+  createdBy?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
+  reviewedBy?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
 }
 
 interface UserOption {
@@ -324,6 +326,7 @@ export default function TransactionsPage() {
               </button>
             )}
           </div>
+          <FormExample lines={["Amount: 5000 · Currency: INR", "Method: UPI · Direction: Incoming · Type: Donation", "Description: Monthly contribution from donor"]} />
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
             <div>
               <label className={labelClass}>Amount</label>
@@ -655,33 +658,22 @@ export default function TransactionsPage() {
               <div className="space-y-2">
                 {selectedTx.fromUser && (
                   <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-full bg-amber/15 text-amber flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                      {selectedTx.fromUser.name.charAt(0).toUpperCase()}
-                    </div>
                     <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">Donor</span>
-                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.fromUser.name}</span>
+                    <TgUser name={selectedTx.fromUser.name} telegramUser={selectedTx.fromUser.telegramUser} photoUrl={selectedTx.fromUser.photoUrl} size={24} />
                   </div>
                 )}
                 {selectedTx.createdBy && (
                   <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded-full bg-violet/15 text-violet flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                      {selectedTx.createdBy.name.charAt(0).toUpperCase()}
-                    </div>
                     <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">By</span>
-                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.createdBy.name}</span>
+                    <TgUser name={selectedTx.createdBy.name} telegramUser={selectedTx.createdBy.telegramUser} photoUrl={selectedTx.createdBy.photoUrl} size={24} />
                   </div>
                 )}
                 {selectedTx.reviewedBy && (
                   <div className="flex items-center gap-2.5">
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-                      selectedTx.status === "APPROVED" ? "bg-mint/15 text-mint" : "bg-coral/15 text-coral"
-                    }`}>
-                      {selectedTx.reviewedBy.name.charAt(0).toUpperCase()}
-                    </div>
                     <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--text-tertiary)] w-16 flex-shrink-0">
                       {selectedTx.status === "APPROVED" ? "Approved" : "Rejected"}
                     </span>
-                    <span className="text-sm text-[var(--text-primary)]">{selectedTx.reviewedBy.name}</span>
+                    <TgUser name={selectedTx.reviewedBy.name} telegramUser={selectedTx.reviewedBy.telegramUser} photoUrl={selectedTx.reviewedBy.photoUrl} size={24} />
                   </div>
                 )}
               </div>

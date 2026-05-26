@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface Reminder {
   id: string;
@@ -10,7 +12,7 @@ interface Reminder {
   nextFire: string;
   channel: string;
   recipientRoles: string[];
-  createdBy: { name: string };
+  createdBy: { name: string; photoUrl?: string | null; telegramUser?: string | null };
   createdAt: string;
 }
 
@@ -184,6 +186,7 @@ export default function RemindersPage() {
               </button>
             )}
           </div>
+          <FormExample lines={["Message: Renew Supabase Pro plan", "Frequency: Monthly · Channel: Telegram DM"]} />
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Message
@@ -304,7 +307,7 @@ export default function RemindersPage() {
                   ))}
                 </div>
                 <div className="text-text-tertiary text-xs mt-2">
-                  Next: {new Date(rem.nextFire).toLocaleString()} · by {rem.createdBy.name}
+                  Next: {new Date(rem.nextFire).toLocaleString()} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">

@@ -39,7 +39,7 @@ export async function PATCH(
       channel: channel || "BOTH",
       recipientRoles: recipientRoles || [],
     },
-    include: { createdBy: { select: { name: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });
 
   // GitHub immutable log

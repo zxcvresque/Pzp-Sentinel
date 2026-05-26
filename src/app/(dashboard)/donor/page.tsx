@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
+import FormExample from "@/components/FormExample";
 
 interface Transaction {
   id: string;
@@ -215,6 +216,7 @@ export default function DonorDashboard() {
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
             New Donation
           </div>
+          <FormExample lines={["Amount: 1000 · Currency: INR · Method: UPI", "Reference: UPI transaction ID or note"]} />
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               {/* Amount */}

@@ -53,10 +53,10 @@ export async function PATCH(
     where: { id },
     data,
     include: {
-      assignee: { select: { id: true, name: true } },
+      assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       project: { select: { id: true, name: true } },
       tags: true,
-      subtasks: { include: { assignee: { select: { id: true, name: true } } } },
+      subtasks: { include: { assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } } },
     },
   });
 

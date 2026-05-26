@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TgUser from "@/components/TgUser";
 
 interface Donor {
   rank: number;
   userId: string;
   name: string;
+  photoUrl?: string | null;
+  telegramUser?: string | null;
   totalAmount: number;
   donationCount: number;
 }
@@ -119,9 +122,7 @@ export default function DonorsLeaderboard() {
 
                 {/* Name + count */}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-text-primary truncate">
-                    {donor.name}
-                  </div>
+                  <TgUser name={donor.name} telegramUser={donor.telegramUser} photoUrl={donor.photoUrl} size={24} />
                   <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
                     {donor.donationCount} donation{donor.donationCount !== 1 ? "s" : ""}
                   </div>

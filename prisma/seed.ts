@@ -15,7 +15,6 @@ async function main() {
   await prisma.task.deleteMany();
   await prisma.project.deleteMany();
   await prisma.service.deleteMany();
-  await prisma.subscription.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.tag.deleteMany();
 

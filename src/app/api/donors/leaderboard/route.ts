@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
     select: {
       amount: true,
       fromUserId: true,
-      fromUser: { select: { id: true, name: true } },
+      fromUser: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
     },
   });
 

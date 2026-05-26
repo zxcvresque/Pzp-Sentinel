@@ -24,10 +24,10 @@ export async function GET(
   const tasks = await prisma.task.findMany({
     where: { ...where, parentId: null },
     include: {
-      assignee: { select: { id: true, name: true } },
+      assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       tags: true,
       subtasks: {
-        include: { assignee: { select: { id: true, name: true } }, tags: true },
+        include: { assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, tags: true },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -76,9 +76,9 @@ export async function POST(
       createdById: user.id,
     },
     include: {
-      assignee: { select: { id: true, name: true } },
+      assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       tags: true,
-      subtasks: { include: { assignee: { select: { id: true, name: true } } } },
+      subtasks: { include: { assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } } },
     },
   });
 

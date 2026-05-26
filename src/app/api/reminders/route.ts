@@ -12,7 +12,7 @@ export async function GET() {
 
   const reminders = await prisma.reminder.findMany({
     orderBy: { nextFire: "asc" },
-    include: { createdBy: { select: { name: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });
 
   return NextResponse.json({ reminders });
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       recipientRoles: recipientRoles || [],
       createdById: user.id,
     },
-    include: { createdBy: { select: { name: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });
 
   // GitHub immutable log

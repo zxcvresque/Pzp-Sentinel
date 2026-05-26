@@ -105,18 +105,18 @@ export async function GET(request: NextRequest) {
       ? Math.round(((totalDonated - totalSpent) / burnRate) * 10) / 10
       : null;
 
-  // Active subscriptions
-  const activeSubs = await prisma.subscription.count({
-    where: { status: "ACTIVE" },
+  // Active services with cost tracking
+  const activeSubs = await prisma.service.count({
+    where: { status: "ACTIVE", price: { not: null } },
   });
 
-  const activeSubRecords = await prisma.subscription.findMany({
-    where: { status: "ACTIVE" },
+  const activeSubRecords = await prisma.service.findMany({
+    where: { status: "ACTIVE", price: { not: null } },
     select: { price: true, currency: true, frequency: true },
   });
 
   const monthlySubs = activeSubRecords.reduce((sum, sub) => {
-    const price = toDisplay(Number(sub.price), sub.currency);
+    const price = toDisplay(Number(sub.price!), sub.currency ?? "INR");
     if (sub.frequency === "YEARLY") return sum + price / 12;
     if (sub.frequency === "ONE_TIME") return sum;
     return sum + price; // MONTHLY

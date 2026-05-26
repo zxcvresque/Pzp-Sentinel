@@ -289,10 +289,10 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Subscriptions */}
+        {/* Recurring costs */}
         <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
-            Subscriptions
+            Recurring Costs
           </div>
           <div className="flex items-baseline gap-2">
             <div className="text-3xl font-extrabold" style={{ color: "var(--violet)" }}>

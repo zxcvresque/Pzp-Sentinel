@@ -19,6 +19,7 @@ export async function GET() {
       telegramId: true,
       telegramUser: true,
       name: true,
+      photoUrl: true,
       roles: true,
       status: true,
       chatId: true,

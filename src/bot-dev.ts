@@ -51,6 +51,65 @@ async function dbRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   throw new Error("dbRetry exhausted");
 }
 
+/**
+ * Notify all active admins from the bot process.
+ * Creates in-app Notification rows + sends Telegram DMs.
+ */
+async function notifyAdminsFromBot(
+  db: typeof prisma,
+  botInstance: typeof bot,
+  data: {
+    type: string;
+    title: string;
+    message: string;
+    entityId?: string;
+    priority?: string;
+    telegramMessage?: string;
+  },
+) {
+  try {
+    const admins = await dbRetry(() =>
+      db.user.findMany({
+        where: { roles: { has: "ADMIN" }, status: "ACTIVE" },
+        select: { id: true, chatId: true, dmPreferences: true },
+      }),
+    );
+
+    for (const admin of admins) {
+      // In-app notification
+      try {
+        await dbRetry(() =>
+          db.notification.create({
+            data: {
+              userId: admin.id,
+              type: data.type as never,
+              title: data.title,
+              message: data.message,
+              entityId: data.entityId,
+              priority: data.priority || "NORMAL",
+            },
+          }),
+        );
+      } catch {
+        // isolated failure per admin
+      }
+
+      // Telegram DM
+      if (admin.chatId && data.telegramMessage && admin.dmPreferences.includes(data.type)) {
+        try {
+          await botInstance.api.sendMessage(admin.chatId, data.telegramMessage, {
+            parse_mode: "HTML",
+          });
+        } catch {
+          // bot blocked or delivery failed — non-blocking
+        }
+      }
+    }
+  } catch {
+    // don't break the main flow
+  }
+}
+
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
@@ -136,6 +195,18 @@ bot.command("start", async (ctx) => {
           userName: firstName,
           details: `@${username || telegramId} registered via web login`,
         });
+
+        notifyAdminsFromBot(prisma, bot, {
+          type: "USER_REGISTERED",
+          title: "New User Started Bot",
+          message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
+          entityId: authUser.id,
+          priority: "HIGH",
+          telegramMessage:
+            `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
+            `<b>${firstName}</b> (@${username || telegramId})\n` +
+            `<i>Registered via web login — awaiting role assignment</i>`,
+        });
       } else {
         // Update chatId if missing
         if (!authUser.chatId || authUser.chatId !== chatId) {
@@ -211,6 +282,19 @@ bot.command("start", async (ctx) => {
       entityId: created.id,
       userName: firstName,
       details: `@${username || telegramId} started the bot — awaiting role assignment`,
+    });
+
+    // Notify all admins — in-app + Telegram DM
+    notifyAdminsFromBot(prisma, bot, {
+      type: "USER_REGISTERED",
+      title: "New User Started Bot",
+      message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
+      entityId: created.id,
+      priority: "HIGH",
+      telegramMessage:
+        `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
+        `<b>${firstName}</b> (@${username || telegramId})\n` +
+        `<i>Awaiting role assignment</i>`,
     });
 
     try {

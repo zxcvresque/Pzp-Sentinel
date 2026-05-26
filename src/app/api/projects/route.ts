@@ -13,7 +13,7 @@ export async function GET() {
   const projects = await prisma.project.findMany({
     where: { status: "ACTIVE" },
     include: {
-      members: { select: { id: true, name: true } },
+      members: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       tasks: { select: { status: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       repoUrl: repoUrl || null,
     },
     include: {
-      members: { select: { id: true, name: true } },
+      members: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
     },
   });
 

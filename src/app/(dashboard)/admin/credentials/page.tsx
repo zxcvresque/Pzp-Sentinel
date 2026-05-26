@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface UserRef {
   id: string;
   name: string;
+  photoUrl?: string | null;
+  telegramUser?: string | null;
 }
 
 interface Revision {
@@ -205,6 +209,7 @@ export default function CredentialsPage() {
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
+          <FormExample lines={["Platform: AWS Console", "Fields: Username → admin@pzp.dev, Password → ••••••"]} />
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Platform
@@ -351,12 +356,7 @@ export default function CredentialsPage() {
                               Access:
                             </span>
                             {cred.assignees.map((a) => (
-                              <span
-                                key={a.id}
-                                className="font-mono text-[10px] px-2 py-0.5 rounded bg-violet/10 text-violet"
-                              >
-                                {a.name}
-                              </span>
+                              <TgUser key={a.id} name={a.name} telegramUser={a.telegramUser} photoUrl={a.photoUrl} size={18} />
                             ))}
                           </div>
                         )}
@@ -389,8 +389,8 @@ export default function CredentialsPage() {
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
-                                <div className="text-xs text-text-secondary mb-1">
-                                  By {rev.createdBy.name} · {new Date(rev.createdAt).toLocaleString()}
+                                <div className="text-xs text-text-secondary mb-1 flex items-center gap-1">
+                                  By <TgUser name={rev.createdBy.name} telegramUser={rev.createdBy.telegramUser} photoUrl={rev.createdBy.photoUrl} size={18} /> · {new Date(rev.createdAt).toLocaleString()}
                                 </div>
                                 <div className="text-sm mb-1">
                                   <span className="text-text-tertiary">Platform:</span>{" "}

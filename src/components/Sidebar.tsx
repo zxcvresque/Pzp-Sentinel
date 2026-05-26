@@ -220,7 +220,6 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Dashboard",     href: "/admin",                icon: "◈", Icon: IconDashboardGrid },
     { label: "Transactions",  href: "/admin/transactions",   icon: "₹", Icon: IconTransactions },
     { label: "Services",      href: "/admin/services",       icon: "◎", Icon: IconServer },
-    { label: "Subscriptions", href: "/admin/subscriptions",  icon: "◇", Icon: IconCreditCard },
     { label: "Donors",        href: "/admin/donors",         icon: "◆", Icon: IconTrophy },
     { label: "Users",         href: "/admin/users",          icon: "◉", Icon: IconUsers },
     { label: "Reminders",     href: "/admin/reminders",      icon: "◆", Icon: IconBell },

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     where,
     orderBy: { date: "desc" },
     include: {
-      fromUser: { select: { name: true } },
+      fromUser: { select: { name: true, photoUrl: true, telegramUser: true } },
     },
   });
 

@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { getRoleColor } from "@/lib/role-colors";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface User {
   id: string;
   name: string;
   telegramId: string;
   telegramUser: string;
+  photoUrl?: string | null;
   roles: string[];
   status: string;
   chatId: string | null;
@@ -245,7 +248,7 @@ export default function UsersPage() {
               className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
             />
           ) : (
-            u.name
+            <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={24} />
           )}
         </td>
         <td className="p-4 text-sm text-text-secondary">
@@ -398,7 +401,7 @@ export default function UsersPage() {
               </div>
             ) : (
               <>
-                <div className="text-sm font-semibold">{u.name}</div>
+                <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={24} />
                 <div className="text-text-tertiary text-xs mt-0.5">
                   @{u.telegramUser || u.telegramId} &middot; started bot {new Date(u.createdAt).toLocaleDateString()}
                 </div>
@@ -567,6 +570,7 @@ export default function UsersPage() {
                 {error}
               </div>
             )}
+            <FormExample lines={["Name: John Doe", "Telegram ID: 123456789 · Username: johndoe", "Roles: DONOR (or ADMIN, DEV)"]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">

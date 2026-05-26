@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TgUser from "@/components/TgUser";
+import FormExample from "@/components/FormExample";
 
 interface UserRef {
   id: string;
   name: string;
+  photoUrl?: string | null;
+  telegramUser?: string | null;
 }
 
 interface Credential {
@@ -160,6 +164,7 @@ export default function DevCredentialsPage() {
               ? "Proposing an update. Admin approval required."
               : "Proposing a new credential. Admin approval required."}
           </div>
+          <FormExample lines={["Platform: Vercel Dashboard", "Why: Need deployment access for frontend"]} />
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Platform
@@ -297,7 +302,7 @@ export default function DevCredentialsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-wrap text-xs text-text-tertiary">
-                          <span>Added by {cred.createdBy.name}</span>
+                          <span className="flex items-center gap-1">Added by <TgUser name={cred.createdBy.name} telegramUser={cred.createdBy.telegramUser} photoUrl={cred.createdBy.photoUrl} size={18} /></span>
                           {cred.assignees.length > 1 && (
                             <>
                               <span className="opacity-30">|</span>

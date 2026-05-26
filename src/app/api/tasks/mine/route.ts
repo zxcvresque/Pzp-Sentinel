@@ -15,10 +15,10 @@ export async function GET() {
     where: { assigneeId: user.id, parentId: null },
     include: {
       project: { select: { id: true, name: true } },
-      assignee: { select: { id: true, name: true } },
+      assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       tags: true,
       subtasks: {
-        include: { assignee: { select: { id: true, name: true } }, tags: true },
+        include: { assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, tags: true },
         orderBy: { createdAt: "asc" },
       },
     },

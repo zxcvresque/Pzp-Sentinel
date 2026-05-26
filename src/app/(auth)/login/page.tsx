@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [waitingForBot, setWaitingForBot] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const verifiedRef = useRef(false);
 
   // Generate a nonce and navigate to bot deep link
   const handleTelegramLogin = useCallback(async () => {
@@ -52,16 +53,19 @@ export default function LoginPage() {
     if (!nonce || !waitingForBot) return;
 
     const poll = async () => {
+      if (verifiedRef.current) return; // already verified, ignore stale polls
       try {
         const res = await fetch(`/api/auth/login-check?nonce=${nonce}`);
         const data = await res.json();
 
         if (data.status === "verified") {
-          // Stop polling, redirect
+          verifiedRef.current = true;
           if (pollRef.current) clearInterval(pollRef.current);
           window.location.href = data.redirect;
           return;
         }
+
+        if (verifiedRef.current) return; // guard against race
 
         if (data.status === "expired") {
           if (pollRef.current) clearInterval(pollRef.current);

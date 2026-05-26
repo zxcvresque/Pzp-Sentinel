@@ -41,8 +41,8 @@ export async function PATCH(
       }),
     },
     include: {
-      assignees: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
+      assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+      createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
     },
   });
 
