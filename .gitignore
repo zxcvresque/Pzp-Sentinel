@@ -31,6 +31,8 @@ sentinel-secrets.html
 # uploads (user-generated content)
 /public/uploads/receipts/*
 !/public/uploads/receipts/.gitkeep
+/public/uploads/avatars/*
+!/public/uploads/avatars/.gitkeep
 
 # debug
 npm-debug.log*

@@ -3,6 +3,8 @@ import { Bot } from "grammy";
 import { PrismaClient } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+import fs from "fs";
+import path from "path";
 import { logAuditEvent } from "./lib/telegram-log";
 
 const pool = new pg.Pool({
@@ -75,6 +77,8 @@ async function notifyAdminsFromBot(
       }),
     );
 
+    console.log(`[notifyAdmins] Found ${admins.length} admin(s) to notify for ${data.type}`);
+
     for (const admin of admins) {
       // In-app notification
       try {
@@ -90,23 +94,65 @@ async function notifyAdminsFromBot(
             },
           }),
         );
-      } catch {
-        // isolated failure per admin
+        console.log(`[notifyAdmins] In-app notification created for admin ${admin.id}`);
+      } catch (err) {
+        console.error(`[notifyAdmins] Failed to create notification for admin ${admin.id}:`, err);
       }
 
       // Telegram DM
-      if (admin.chatId && data.telegramMessage && admin.dmPreferences.includes(data.type)) {
-        try {
-          await botInstance.api.sendMessage(admin.chatId, data.telegramMessage, {
-            parse_mode: "HTML",
-          });
-        } catch {
-          // bot blocked or delivery failed — non-blocking
+      if (admin.chatId && data.telegramMessage) {
+        const hasPref = admin.dmPreferences.includes(data.type);
+        console.log(`[notifyAdmins] Admin ${admin.id} chatId=${admin.chatId} hasPref=${hasPref}`);
+        if (hasPref) {
+          try {
+            await botInstance.api.sendMessage(admin.chatId, data.telegramMessage, {
+              parse_mode: "HTML",
+            });
+            console.log(`[notifyAdmins] DM sent to admin ${admin.id}`);
+          } catch (err) {
+            console.error(`[notifyAdmins] DM failed for admin ${admin.id}:`, err);
+          }
         }
       }
     }
-  } catch {
-    // don't break the main flow
+  } catch (err) {
+    console.error("[notifyAdmins] Top-level failure:", err);
+  }
+}
+
+/**
+ * Fetch user's profile photo via the bot API (bypasses privacy settings)
+ * and save to /public/uploads/avatars/{telegramId}.jpg
+ */
+async function fetchAndSaveProfilePhoto(
+  botInstance: typeof bot,
+  telegramId: string,
+): Promise<string | null> {
+  try {
+    const photos = await botInstance.api.getUserProfilePhotos(parseInt(telegramId), { limit: 1 });
+    if (photos.total_count === 0) return null;
+
+    const photo = photos.photos[0];
+    const bestSize = photo[photo.length - 1]; // largest available
+    const file = await botInstance.api.getFile(bestSize.file_id);
+    if (!file.file_path) return null;
+
+    const downloadUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+    const response = await fetch(downloadUrl);
+    if (!response.ok) return null;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const avatarDir = path.join(process.cwd(), "public", "uploads", "avatars");
+    fs.mkdirSync(avatarDir, { recursive: true });
+
+    const ext = file.file_path.split(".").pop() || "jpg";
+    const filename = `${telegramId}.${ext}`;
+    fs.writeFileSync(path.join(avatarDir, filename), buffer);
+
+    return `/uploads/avatars/${filename}`;
+  } catch (err) {
+    console.error(`Failed to fetch profile photo for ${telegramId}:`, err);
+    return null;
   }
 }
 
@@ -176,6 +222,9 @@ bot.command("start", async (ctx) => {
       );
 
       if (!authUser) {
+        // Fetch profile photo before creating user
+        const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId);
+
         authUser = await dbRetry(() =>
           prisma.user.create({
             data: {
@@ -183,6 +232,7 @@ bot.command("start", async (ctx) => {
               telegramUser: username,
               name: firstName,
               chatId,
+              photoUrl,
               roles: [],
             },
           }),
@@ -196,7 +246,7 @@ bot.command("start", async (ctx) => {
           details: `@${username || telegramId} registered via web login`,
         });
 
-        notifyAdminsFromBot(prisma, bot, {
+        await notifyAdminsFromBot(prisma, bot, {
           type: "USER_REGISTERED",
           title: "New User Started Bot",
           message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
@@ -208,12 +258,17 @@ bot.command("start", async (ctx) => {
             `<i>Registered via web login — awaiting role assignment</i>`,
         });
       } else {
-        // Update chatId if missing
-        if (!authUser.chatId || authUser.chatId !== chatId) {
+        // Update chatId + refresh profile photo
+        const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId);
+        const updates: Record<string, string | null> = {};
+        if (!authUser.chatId || authUser.chatId !== chatId) updates.chatId = chatId;
+        if (photoUrl) updates.photoUrl = photoUrl;
+
+        if (Object.keys(updates).length > 0) {
           await dbRetry(() =>
             prisma.user.update({
               where: { id: authUser!.id },
-              data: { chatId },
+              data: updates,
             }),
           );
         }
@@ -256,10 +311,15 @@ bot.command("start", async (ctx) => {
 
   let user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
+  // Always refresh profile photo on /start
+  const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId);
+
   if (user) {
+    const updates: Record<string, string | null> = { chatId };
+    if (photoUrl) updates.photoUrl = photoUrl;
     await dbRetry(() => prisma.user.update({
       where: { id: user!.id },
-      data: { chatId },
+      data: updates,
     }));
   }
 
@@ -272,6 +332,7 @@ bot.command("start", async (ctx) => {
         telegramUser: username,
         name: firstName,
         chatId,
+        photoUrl,
         roles: [],
       },
     }));
@@ -285,7 +346,7 @@ bot.command("start", async (ctx) => {
     });
 
     // Notify all admins — in-app + Telegram DM
-    notifyAdminsFromBot(prisma, bot, {
+    await notifyAdminsFromBot(prisma, bot, {
       type: "USER_REGISTERED",
       title: "New User Started Bot",
       message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
