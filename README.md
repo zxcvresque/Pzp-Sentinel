@@ -26,17 +26,17 @@
 
 ```mermaid
 graph TB
-  subgraph Client
+  subgraph Client[" Client "]
     TMA[Telegram Mini App]
     Browser[Web Browser]
   end
 
-  subgraph Sentinel["sentinel.piratezparty.com"]
+  subgraph Sentinel[" sentinel.piratezparty.com "]
     Next[Next.js 16<br/>App Router + API Routes]
     Bot[grammY Bot<br/>Polling Mode]
   end
 
-  subgraph External
+  subgraph External[" External Services "]
     Supabase[(PostgreSQL<br/>Supabase)]
     TG[Telegram API]
     GH[GitHub<br/>Immutable Logs]
@@ -44,7 +44,7 @@ graph TB
     FX[Exchange Rate API]
   end
 
-  subgraph VPS Servers
+  subgraph Infra[" VPS Fleet "]
     Agent1[sentinel-agent<br/>systemd service]
     Agent2[sentinel-agent<br/>systemd service]
   end
@@ -61,18 +61,47 @@ graph TB
   Next -->|USD/INR rate| FX
   Agent1 -->|Heartbeat POST /30s| Next
   Agent2 -->|Heartbeat POST /30s| Next
+
+  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
+  classDef client fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
+  classDef db fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:2px
+  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
+  classDef extservice fill:#332010,stroke:#f59e0b,color:#fef3c7,stroke-width:1.5px
+  classDef infra fill:#351515,stroke:#f87171,color:#fecaca,stroke-width:1.5px
+
+  class Next,Bot core
+  class TMA,Browser client
+  class Supabase db
+  class TG telegram
+  class GH extservice
+  class BMC extservice
+  class FX extservice
+  class Agent1,Agent2 infra
+
+  style Client fill:#111128,stroke:#818cf8,stroke-width:1.5px,color:#c7d2fe
+  style Sentinel fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
+  style External fill:#1a1510,stroke:#f59e0b,stroke-width:1.5px,color:#fef3c7
+  style Infra fill:#1f1010,stroke:#f87171,stroke-width:1.5px,color:#fecaca
 ```
 
 ### Request Flow
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant TG as Telegram
-  participant App as Next.js API
-  participant DB as PostgreSQL
-  participant Bot as grammY Bot
-  participant GH as GitHub Logs
+  box rgb(17, 17, 40) Client
+    participant U as User
+  end
+  box rgb(28, 22, 54) Telegram
+    participant TG as Telegram
+  end
+  box rgb(10, 42, 48) Sentinel
+    participant App as Next.js API
+    participant Bot as grammY Bot
+  end
+  box rgb(20, 51, 42) Storage
+    participant DB as PostgreSQL
+    participant GH as GitHub Logs
+  end
 
   U->>TG: Open Mini App
   TG->>App: initData (HMAC-SHA256)
@@ -82,10 +111,10 @@ sequenceDiagram
   U->>App: Submit donation
   App->>DB: Create transaction (PENDING)
   App->>Bot: Notify admins (DM + group)
-  Bot-->>TG: Inline keyboard "Open Sentinel"
+  Bot-->>TG: Inline keyboard → Open Sentinel
 
   Note over App: Admin approves
-  App->>DB: Update status (APPROVED)
+  App->>DB: Update status → APPROVED
   App->>Bot: Notify donor (DM)
   App->>GH: Immutable audit log commit
   App->>DB: Write audit entry
@@ -95,10 +124,18 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant Admin as Admin Dashboard
-  participant API as Sentinel API
-  participant DB as PostgreSQL
-  participant Agent as VPS Agent
+  box rgb(17, 17, 40) Client
+    participant Admin as Admin Dashboard
+  end
+  box rgb(10, 42, 48) Sentinel
+    participant API as Sentinel API
+  end
+  box rgb(20, 51, 42) Storage
+    participant DB as PostgreSQL
+  end
+  box rgb(53, 21, 21) Infrastructure
+    participant Agent as VPS Agent
+  end
 
   Admin->>API: POST /api/vps (create server)
   API->>DB: Insert VpsServer + generate token
@@ -319,7 +356,7 @@ Sentinel runs as two processes in production:
 
 ```mermaid
 graph LR
-  subgraph Ubuntu VPS
+  subgraph VPS[" Ubuntu VPS "]
     PM2[PM2 / systemd]
     PM2 --> NextProc[Next.js<br/>port 3000]
     PM2 --> BotProc[grammY Bot<br/>polling]
@@ -327,6 +364,18 @@ graph LR
 
   Nginx[Nginx Reverse Proxy<br/>sentinel.piratezparty.com] --> NextProc
   BotProc <--> TG[Telegram API]
+
+  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
+  classDef proxy fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
+  classDef process fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:1.5px
+  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
+
+  class PM2 core
+  class NextProc,BotProc process
+  class Nginx proxy
+  class TG telegram
+
+  style VPS fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
 ```
 
 1. **Next.js application** — web frontend and all API routes
