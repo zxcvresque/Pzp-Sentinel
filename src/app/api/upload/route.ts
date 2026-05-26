@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { randomBytes } from "crypto";
 
 const MAX_SIZE = 20 * 1024 * 1024; // 20MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
+/**
+ * Upload receipt photos → Telegram group (screenshots topic).
+ * Returns proxy URLs (/api/avatar/{fileId}) instead of local paths.
+ */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,8 +19,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No files" }, { status: 400 });
   }
 
-  const uploadDir = join(process.cwd(), "public", "uploads", "receipts");
-  await mkdir(uploadDir, { recursive: true });
+  const token = process.env.BOT_TOKEN;
+  const groupId = process.env.TG_GROUP_ID;
+  const topicId = process.env.TG_TOPIC_SCREENSHOTS;
+
+  if (!token || !groupId || !topicId) {
+    return NextResponse.json(
+      { error: "Telegram upload not configured" },
+      { status: 500 },
+    );
+  }
 
   const urls: string[] = [];
 
@@ -38,12 +47,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ext = file.name.split(".").pop() || "jpg";
-    const filename = `${Date.now()}-${randomBytes(8).toString("hex")}.${ext}`;
-    const filepath = join(uploadDir, filename);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filepath, buffer);
-    urls.push(`/uploads/receipts/${filename}`);
+    // Upload to Telegram group via Bot API
+    const tgForm = new FormData();
+    tgForm.append("chat_id", groupId);
+    tgForm.append("message_thread_id", topicId);
+    tgForm.append("photo", file, file.name);
+    tgForm.append("caption", `🧾 Receipt uploaded by ${user.name}`);
+
+    const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: "POST",
+      body: tgForm,
+    });
+
+    const tgData = await tgRes.json();
+
+    if (!tgData.ok || !tgData.result?.photo?.length) {
+      console.error("[upload] TG sendPhoto failed:", tgData);
+      return NextResponse.json(
+        { error: `Failed to upload "${file.name}"` },
+        { status: 502 },
+      );
+    }
+
+    // Grab the largest photo size's file_id
+    const photos = tgData.result.photo;
+    const bestPhoto = photos[photos.length - 1];
+    urls.push(`/api/avatar/${bestPhoto.file_id}`);
   }
 
   return NextResponse.json({ urls });

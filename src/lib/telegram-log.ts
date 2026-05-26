@@ -51,20 +51,31 @@ async function sendPhotoToTopic(topic: Topic, fileId: string, caption: string) {
  * Send a locally-stored image file to a TG topic.
  * `localUrl` is a path like `/uploads/receipts/abc.jpg` — resolved from `public/`.
  */
-async function sendLocalPhotoToTopic(topic: Topic, localUrl: string, caption: string) {
+async function sendPhotoByUrlToTopic(topic: Topic, url: string, caption: string) {
   if (!GROUP_ID) return;
   const threadId = topicMap[topic];
   if (!threadId) return;
 
   try {
-    const filePath = join(process.cwd(), "public", localUrl);
-    const buffer = await readFile(filePath);
-    const filename = localUrl.split("/").pop() || "receipt.jpg";
-    await bot.api.sendPhoto(GROUP_ID, new InputFile(buffer, filename), {
-      message_thread_id: parseInt(threadId),
-      caption,
-      parse_mode: "HTML",
-    });
+    // Extract file_id from proxy URL like /api/avatar/{fileId}
+    const fileIdMatch = url.match(/\/api\/avatar\/(.+)$/);
+    if (fileIdMatch) {
+      await bot.api.sendPhoto(GROUP_ID, fileIdMatch[1], {
+        message_thread_id: parseInt(threadId),
+        caption,
+        parse_mode: "HTML",
+      });
+    } else {
+      // Fallback: local file path
+      const filePath = join(process.cwd(), "public", url);
+      const buffer = await readFile(filePath);
+      const filename = url.split("/").pop() || "receipt.jpg";
+      await bot.api.sendPhoto(GROUP_ID, new InputFile(buffer, filename), {
+        message_thread_id: parseInt(threadId),
+        caption,
+        parse_mode: "HTML",
+      });
+    }
   } catch {
     // TG delivery failed — non-blocking
   }
@@ -179,12 +190,12 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
 }
 
 /**
- * Send locally-uploaded receipt photos to the screenshots topic.
- * `urls` are relative paths like `/uploads/receipts/abc.jpg`.
+ * Send receipt photos to the screenshots topic.
+ * `urls` can be proxy URLs (/api/avatar/{fileId}) or legacy local paths.
  */
 export async function logReceiptPhotos(txId: string, description: string, urls: string[]) {
   for (const url of urls) {
-    await sendLocalPhotoToTopic(
+    await sendPhotoByUrlToTopic(
       "screenshots",
       url,
       `🖼️ Receipt for: ${description}\n<code>${txId}</code>`
