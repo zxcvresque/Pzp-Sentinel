@@ -52,9 +52,6 @@ export async function POST(req: NextRequest) {
     tgForm.append("chat_id", groupId);
     tgForm.append("message_thread_id", topicId);
     tgForm.append("photo", file, file.name);
-    // Minimal caption — real context sent after tx creation via logProofScreenshots
-    tgForm.append("caption", `📎 ${user.name}`);
-
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
       method: "POST",
       body: tgForm,
@@ -70,7 +67,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Grab the largest photo size's file_id
+    // Delete the staging message — we only needed it for the file_id.
+    // The real captioned photo is sent by logProofScreenshots after tx creation.
+    if (tgData.result.message_id) {
+      fetch(`https://api.telegram.org/bot${token}/deleteMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: groupId, message_id: tgData.result.message_id }),
+      }).catch(() => {});
+    }
+
+    // Grab the largest photo size's file_id (stays valid after message deletion)
     const photos = tgData.result.photo;
     const bestPhoto = photos[photos.length - 1];
     urls.push(`/api/avatar/${bestPhoto.file_id}`);
