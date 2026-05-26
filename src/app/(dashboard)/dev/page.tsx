@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
@@ -8,6 +9,7 @@ import FormExample from "@/components/FormExample";
 interface Member {
   id: string;
   name: string;
+  photoUrl?: string | null;
 }
 
 interface Tag {
@@ -23,7 +25,7 @@ interface Task {
   status: string;
   priority: string;
   deadline: string | null;
-  assignee: { id: string; name: string } | null;
+  assignee: { id: string; name: string; photoUrl?: string | null } | null;
   tags: Tag[];
   subtasks: Task[];
 }
@@ -561,7 +563,7 @@ export default function DevDashboard() {
               </label>
               <Dropdown
                 value={formAssignee}
-                options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name })) || [])]}
+                options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name, avatar: m.photoUrl ?? null })) || [])]}
                 onChange={setFormAssignee}
                 placeholder="Unassigned"
               />
@@ -743,170 +745,255 @@ export default function DevDashboard() {
         </div>
       )}
 
-      {/* Edit Modal */}
-      {editingTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeEdit} />
-          <div className="relative bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-bold">Edit Task</h2>
+      {/* Task Detail Overlay */}
+      {editingTask && createPortal(
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeEdit} />
+          <div
+            className="relative w-full max-w-2xl max-h-[90vh] max-h-[90dvh] flex flex-col rounded-2xl border border-[var(--border)] overflow-hidden"
+            style={{ background: "var(--bg-surface)" }}
+          >
+            {/* ── Header bar ── */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] shrink-0" style={{ background: "var(--bg-deep)" }}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded ${PRIORITY_COLOR[editingTask.priority]} ${PRIORITY_BG[editingTask.priority]}`}>
+                  {editingTask.priority}
+                </span>
+                <span
+                  className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded"
+                  style={{
+                    color: `var(--${editingTask.status === "DONE" ? "mint" : editingTask.status === "IN_PROGRESS" ? "amber" : editingTask.status === "REVIEW" ? "violet" : "text-secondary"})`,
+                    background: `var(--${editingTask.status === "DONE" ? "mint" : editingTask.status === "IN_PROGRESS" ? "amber" : editingTask.status === "REVIEW" ? "violet" : "text-secondary"}, rgba(255,255,255,0.1))`,
+                    backgroundColor: editingTask.status === "DONE" ? "rgba(52,211,153,0.12)" : editingTask.status === "IN_PROGRESS" ? "rgba(251,191,36,0.12)" : editingTask.status === "REVIEW" ? "rgba(167,139,250,0.12)" : "rgba(228,228,232,0.08)",
+                  }}
+                >
+                  {editingTask.status.replace(/_/g, " ")}
+                </span>
+                {editingTask.tags.map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="px-2.5 py-1 rounded-full text-[10px] font-semibold"
+                    style={{ backgroundColor: tag.color + "25", color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
               <button
                 onClick={closeEdit}
-                className="text-text-tertiary hover:text-text-primary transition-colors text-xl leading-none"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-[var(--bg-hover)] transition-colors shrink-0"
               >
-                &times;
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
               </button>
             </div>
-            <form onSubmit={handleSaveEdit} className="space-y-4">
+
+            {/* ── Scrollable body ── */}
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 space-y-6">
+              {/* Title + description (read view) */}
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  required
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Description
-                </label>
-                <textarea
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  rows={3}
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30 resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Status
-                  </label>
-                  <Dropdown
-                    value={editStatus}
-                    options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
-                    onChange={setEditStatus}
-                  />
-                </div>
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Priority
-                  </label>
-                  <Dropdown
-                    value={editPriority}
-                    options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
-                    onChange={setEditPriority}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Assignee
-                  </label>
-                  <Dropdown
-                    value={editAssignee}
-                    options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name })) || [])]}
-                    onChange={setEditAssignee}
-                    placeholder="Unassigned"
-                  />
-                </div>
-                <div>
-                  <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                    Deadline
-                  </label>
-                  <input
-                    type="date"
-                    value={editDeadline}
-                    onChange={(e) => setEditDeadline(e.target.value)}
-                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Parent Task
-                </label>
-                <Dropdown
-                  value={editParentId}
-                  options={[{ value: "", label: "None (top-level task)" }, ...tasks.filter((t) => t.id !== editingTask.id).map((t) => ({ value: t.id, label: t.title }))]}
-                  onChange={setEditParentId}
-                  placeholder="None (top-level task)"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Tags
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {allTags.map((tag) => {
-                    const selected = editTags.includes(tag.id);
-                    return (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => toggleEditTag(tag.id)}
-                        className="px-3 py-1 rounded-full text-xs font-semibold transition-all border"
-                        style={{
-                          backgroundColor: selected ? tag.color + "30" : "transparent",
-                          borderColor: selected ? tag.color : "var(--border)",
-                          color: selected ? tag.color : "var(--text-secondary)",
-                        }}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="submit"
-                  disabled={saving || !editTitle.trim()}
-                  className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
-                {!confirmDelete ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(true)}
-                    className="text-coral text-sm hover:text-coral/80 transition-colors"
-                  >
-                    Delete
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-text-tertiary">
-                      {editingTask.subtasks.length > 0
-                        ? `Delete with ${editingTask.subtasks.length} subtask${editingTask.subtasks.length !== 1 ? "s" : ""}?`
-                        : "Are you sure?"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleDeleteTask}
-                      disabled={deleting}
-                      className="bg-coral/20 text-coral px-3 py-1 rounded-full text-xs font-semibold hover:bg-coral/30 disabled:opacity-40 transition-colors"
-                    >
-                      {deleting ? "Deleting..." : "Confirm"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(false)}
-                      className="text-text-tertiary text-xs hover:text-text-secondary transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                <h2 className="text-xl font-bold leading-snug mb-2">{editingTask.title}</h2>
+                {editingTask.description && (
+                  <p className="text-sm text-text-secondary leading-relaxed">{editingTask.description}</p>
                 )}
               </div>
-            </form>
+
+              {/* Metadata row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {editingTask.assignee && (
+                  <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--bg-deep)" }}>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Assignee</span>
+                    <TgUser name={editingTask.assignee.name} photoUrl={editingTask.assignee.photoUrl} size={22} />
+                  </div>
+                )}
+                {editingTask.deadline && (
+                  <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--bg-deep)" }}>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">Deadline</span>
+                    <span className="text-sm text-text-primary font-medium">{new Date(editingTask.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                  </div>
+                )}
+                <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--bg-deep)" }}>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">Priority</span>
+                  <span className={`text-sm font-medium ${PRIORITY_COLOR[editingTask.priority]}`}>{editingTask.priority}</span>
+                </div>
+              </div>
+
+              {/* Subtasks */}
+              {editingTask.subtasks.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Subtasks</span>
+                    <span className="font-mono text-[10px] text-text-tertiary">
+                      {editingTask.subtasks.filter((s) => s.status === "DONE").length}/{editingTask.subtasks.length} done
+                    </span>
+                    {/* Progress bar */}
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-deep)" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${(editingTask.subtasks.filter((s) => s.status === "DONE").length / editingTask.subtasks.length) * 100}%`,
+                          background: "var(--mint)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {editingTask.subtasks.map((sub) => (
+                      <div
+                        key={sub.id}
+                        className="flex items-center gap-3 rounded-lg px-3 py-2"
+                        style={{ background: "var(--bg-deep)" }}
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${sub.status === "DONE" ? "bg-mint" : sub.status === "IN_PROGRESS" ? "bg-amber" : "bg-text-tertiary"}`} />
+                        <span className={`text-sm flex-1 ${sub.status === "DONE" ? "text-text-tertiary line-through" : "text-text-secondary"}`}>
+                          {sub.title}
+                        </span>
+                        {sub.tags.map((tag) => (
+                          <span key={tag.id} className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold shrink-0" style={{ backgroundColor: tag.color + "25", color: tag.color }}>
+                            {tag.name}
+                          </span>
+                        ))}
+                        <span className={`font-mono text-[9px] uppercase tracking-[0.08em] shrink-0 ${COLUMN_ACCENT[sub.status] || "text-text-tertiary"}`}>
+                          {sub.status.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Edit fields ── */}
+              <div className="border-t border-[var(--border)] pt-5">
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-4">Edit Task</span>
+                <form onSubmit={handleSaveEdit} className="space-y-4">
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Title</label>
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      required
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Description</label>
+                    <textarea
+                      value={editDesc}
+                      onChange={(e) => setEditDesc(e.target.value)}
+                      rows={2}
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Status</label>
+                      <Dropdown value={editStatus} options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))} onChange={setEditStatus} />
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Priority</label>
+                      <Dropdown value={editPriority} options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))} onChange={setEditPriority} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Assignee</label>
+                      <Dropdown
+                        value={editAssignee}
+                        options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name, avatar: m.photoUrl ?? null })) || [])]}
+                        onChange={setEditAssignee}
+                        placeholder="Unassigned"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Deadline</label>
+                      <input
+                        type="date"
+                        value={editDeadline}
+                        onChange={(e) => setEditDeadline(e.target.value)}
+                        className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Parent Task</label>
+                    <Dropdown
+                      value={editParentId}
+                      options={[{ value: "", label: "None (top-level)" }, ...tasks.filter((t) => t.id !== editingTask.id).map((t) => ({ value: t.id, label: t.title }))]}
+                      onChange={setEditParentId}
+                      placeholder="None (top-level)"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Tags</label>
+                    <div className="flex flex-wrap gap-2">
+                      {allTags.map((tag) => {
+                        const isSelected = editTags.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleEditTag(tag.id)}
+                            className="px-3 py-1 rounded-full text-xs font-semibold transition-all border"
+                            style={{
+                              backgroundColor: isSelected ? tag.color + "30" : "transparent",
+                              borderColor: isSelected ? tag.color : "var(--border)",
+                              color: isSelected ? tag.color : "var(--text-secondary)",
+                            }}
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* ── Sticky footer ── */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)] shrink-0" style={{ background: "var(--bg-deep)" }}>
+              <button
+                onClick={(e) => { e.preventDefault(); handleSaveEdit(e as unknown as React.FormEvent); }}
+                disabled={saving || !editTitle.trim()}
+                className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="px-4 py-2 rounded-full text-xs font-semibold text-coral bg-coral/10 hover:bg-coral/20 transition-colors"
+                >
+                  Delete Task
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-tertiary">
+                    {editingTask.subtasks.length > 0
+                      ? `Delete with ${editingTask.subtasks.length} subtask${editingTask.subtasks.length !== 1 ? "s" : ""}?`
+                      : "Sure?"}
+                  </span>
+                  <button
+                    onClick={handleDeleteTask}
+                    disabled={deleting}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/20 text-coral hover:bg-coral/30 disabled:opacity-40 transition-colors"
+                  >
+                    {deleting ? "..." : "Confirm"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="text-text-tertiary text-xs hover:text-text-secondary transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -954,7 +1041,7 @@ function TaskCard({
       )}
       {task.assignee && (
         <div className="mb-2">
-          <TgUser name={task.assignee.name} size={18} />
+          <TgUser name={task.assignee.name} photoUrl={task.assignee.photoUrl} size={20} />
         </div>
       )}
       {task.deadline && (

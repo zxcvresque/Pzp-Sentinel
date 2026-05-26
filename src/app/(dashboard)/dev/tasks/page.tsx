@@ -17,7 +17,7 @@ interface Task {
   priority: string;
   deadline: string | null;
   project: { id: string; name: string };
-  assignee: { id: string; name: string } | null;
+  assignee: { id: string; name: string; photoUrl?: string | null } | null;
   tags: Tag[];
   subtasks: Task[];
 }

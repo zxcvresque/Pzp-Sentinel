@@ -457,11 +457,11 @@ export default function ProfilePage() {
           <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Notifications
           </div>
-          <div className="text-[10px] text-text-tertiary mb-4">
+          <div className="text-[11px] text-text-secondary mb-4">
             {user.chatId ? (
-              <>Linked via <span className="text-text-secondary">@TheSentinelRobot</span></>
+              <>Linked via <span className="text-text-primary font-medium">@TheSentinelRobot</span></>
             ) : (
-              <>Not linked — start <span className="text-text-secondary">@TheSentinelRobot</span></>
+              <>Not linked — start <span className="text-text-primary font-medium">@TheSentinelRobot</span></>
             )}
           </div>
 
@@ -497,7 +497,7 @@ export default function ProfilePage() {
                     <div className={`text-xs font-medium ${disabled ? "text-text-tertiary" : "text-text-primary"}`}>
                       {cat.label}
                     </div>
-                    <div className="text-[10px] text-text-tertiary mt-0.5 break-words">
+                    <div className="text-[11px] text-text-secondary mt-0.5 break-words">
                       {cat.desc}
                     </div>
                   </div>
@@ -545,7 +545,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between py-1">
               <div className="pr-3 min-w-0">
                 <div className="text-xs font-medium text-text-primary">Form Examples</div>
-                <div className="text-[10px] text-text-tertiary mt-0.5">
+                <div className="text-[11px] text-text-secondary mt-0.5">
                   Show contextual hints in forms
                 </div>
               </div>
