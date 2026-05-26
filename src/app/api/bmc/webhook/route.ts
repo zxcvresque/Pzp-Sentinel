@@ -332,6 +332,7 @@ export async function POST(req: NextRequest) {
           type: "SYSTEM",
           title: "BMC Cancellation",
           message: `${name} cancelled their recurring support`,
+          actionUrl: "/admin/transactions",
           telegramMessage: formatTgMessage(
             "👋 Cancellation",
             `${name} cancelled recurring support`,
@@ -374,6 +375,7 @@ export async function POST(req: NextRequest) {
           title: "New BMC Commission",
           message: `$${amount} from ${name}`,
           entityId: tx.id,
+          actionUrl: "/admin/transactions",
           telegramMessage: formatTgMessage(
             "🎨 New Commission",
             `$${amount.toFixed(2)} from ${name}`,
@@ -418,6 +420,7 @@ export async function POST(req: NextRequest) {
           title: "BMC Wishlist Payment",
           message: `$${amount} — ${item} from ${name}`,
           entityId: tx.id,
+          actionUrl: "/admin/transactions",
           telegramMessage: formatTgMessage(
             "⭐ Wishlist Payment",
             `$${amount.toFixed(2)} — ${item} from ${name}`,
