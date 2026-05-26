@@ -40,6 +40,7 @@ function timeAgo(date: string): string {
 function getNotificationHref(notif: Notification, roles: string[]): string | null {
   const isAdmin = roles.includes("ADMIN");
   switch (notif.type) {
+    case "TX_PENDING":
     case "TX_APPROVED":
     case "TX_REJECTED":
       return isAdmin ? "/admin/transactions" : "/donor/receipts";

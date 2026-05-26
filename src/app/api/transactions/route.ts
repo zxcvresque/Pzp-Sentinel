@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransaction, logProofScreenshot, logProofScreenshots } from "@/lib/telegram-log";
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
+import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { Prisma } from "@/generated/prisma/client";
 
 export async function GET(req: NextRequest) {
@@ -156,6 +157,23 @@ export async function POST(req: NextRequest) {
       description,
       userName: user.name,
       attachments,
+    }).catch(() => {});
+  }
+
+  // Notify admins when a pending donation is submitted
+  if (txStatus === "PENDING") {
+    const symbol = transaction.currency === "INR" ? "₹" : "$";
+    notifyAdmins({
+      type: "TX_PENDING",
+      title: "New Donation Pending",
+      message: `${user.name} submitted ${symbol}${transaction.amount} via ${transaction.method} — awaiting approval.`,
+      entityId: transaction.id,
+      priority: "HIGH",
+      telegramMessage: formatTgMessage(
+        "💰 New Donation Pending",
+        `${symbol}${transaction.amount} via ${transaction.method}`,
+        `👤 ${user.name}\n${description}`,
+      ),
     }).catch(() => {});
   }
 

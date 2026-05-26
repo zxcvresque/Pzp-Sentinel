@@ -20,7 +20,7 @@ interface UserProfile {
 }
 
 const DM_CATEGORIES = [
-  { label: "Transactions", types: ["TX_APPROVED", "TX_REJECTED"], desc: "Donation approvals & rejections" },
+  { label: "Transactions", types: ["TX_PENDING", "TX_APPROVED", "TX_REJECTED"], desc: "New donations, approvals & rejections" },
   { label: "Tasks", types: ["TASK_ASSIGNED"], desc: "Task assignments" },
   { label: "Credentials", types: ["CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED"], desc: "Shared credentials & reviews" },
   { label: "System", types: ["SYSTEM", "USER_REGISTERED"], desc: "BMC donations, sync, admin alerts" },
