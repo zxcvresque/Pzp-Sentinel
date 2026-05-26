@@ -22,7 +22,257 @@
 
 ---
 
-## Architecture
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| UI | React 19, Tailwind CSS 4 |
+| Language | TypeScript 5 |
+| ORM | Prisma 7 (driver adapters, `@prisma/adapter-pg` + `pg`) |
+| Database | PostgreSQL (Supabase) |
+| Bot | grammY (Telegram Bot framework, polling mode) |
+| Auth | jose (JWT, Edge-compatible), Telegram Login Widget |
+| Theme | Glassmorphism dark UI (`#111116` base, `#6FD1D7` default accent) |
+
+---
+
+## 🚀 Quick Start
+
+```bash
+git clone https://github.com/zxcvresque/Pzp-Sentinel.git
+cd Pzp-Sentinel
+npm install
+cp .env.example .env
+```
+
+### Environment Variables
+
+```env
+# Database
+DATABASE_URL=postgresql://user:pass@host:5432/sentinel
+
+# Telegram Bot
+BOT_TOKEN=your-telegram-bot-token
+BOT_USERNAME=TheSentinelRobot
+BOT_WEBHOOK_SECRET=your-webhook-secret
+
+# Auth
+JWT_SECRET=your-jwt-secret
+
+# App
+WEBAPP_URL=https://sentinel.piratezparty.com
+
+# Telegram Group Topics
+TG_GROUP_ID=your-group-id
+TG_TOPIC_AUDIT=topic-id
+TG_TOPIC_TRANSACTIONS=topic-id
+TG_TOPIC_SCREENSHOTS=topic-id
+
+# GitHub Audit Logs
+GITHUB_LOGS_TOKEN=your-github-pat
+
+# Buy Me a Coffee
+BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
+BMC_TOKEN=your-bmc-api-token
+```
+
+### Database Setup
+
+```bash
+npx prisma db push
+npx prisma generate
+npx tsx prisma/seed.ts
+```
+
+### Run
+
+Two separate processes:
+
+```bash
+npm run dev        # Next.js dev server
+npm run bot:dev    # Telegram bot (separate terminal)
+```
+
+### Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Next.js dev server (Turbopack) |
+| `npm run bot:dev` | Telegram bot in polling mode |
+| `npm run db:seed` | Seed database with default users + tags |
+| `npm run db:push` | Push Prisma schema to database |
+| `npm run db:generate` | Regenerate Prisma client |
+
+---
+
+## 🖥 VPS Agent Setup
+
+Lightweight bash agent that collects system metrics (CPU, RAM, disk, network, uptime, load average) and POSTs them to Sentinel every 30 seconds via systemd.
+
+### 1. Register the server
+
+In the Sentinel admin panel, go to **VPS Stats** and add a server. Copy the token — it's shown once.
+
+### 2. Install on the target VPS
+
+```bash
+curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- --token YOUR_TOKEN
+```
+
+This will:
+- Install the agent to `/usr/local/bin/sentinel-agent`
+- Create a hardened systemd service (`sentinel-agent.service`)
+- Enable and start the service
+- Verify the first heartbeat
+
+### Self-registration mode
+
+Skip the dashboard step — register the server directly from the VPS using your admin JWT:
+
+```bash
+curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- \
+  --register --api-key YOUR_JWT \
+  --name "web-01" --platform ubuntu --provider hetzner
+```
+
+Auto-detects public IP and gets a token back from the API.
+
+### Agent management
+
+```bash
+journalctl -u sentinel-agent -f        # Live logs
+systemctl status sentinel-agent         # Service status
+systemctl restart sentinel-agent        # Restart
+```
+
+### Uninstall
+
+```bash
+sudo systemctl disable --now sentinel-agent
+sudo rm /usr/local/bin/sentinel-agent /etc/systemd/system/sentinel-agent.service
+sudo systemctl daemon-reload
+```
+
+---
+
+## 🛰 Deployment
+
+Sentinel runs as two processes in production:
+
+```mermaid
+graph LR
+  subgraph VPS[" Ubuntu VPS "]
+    PM2[PM2 / systemd]
+    PM2 --> NextProc[Next.js<br/>port 3000]
+    PM2 --> BotProc[grammY Bot<br/>polling]
+  end
+
+  Nginx[Nginx Reverse Proxy<br/>sentinel.piratezparty.com] --> NextProc
+  BotProc <--> TG[Telegram API]
+
+  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
+  classDef proxy fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
+  classDef process fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:1.5px
+  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
+
+  class PM2 core
+  class NextProc,BotProc process
+  class Nginx proxy
+  class TG telegram
+
+  style VPS fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
+```
+
+1. **Next.js application** — web frontend and all API routes
+2. **Telegram bot** — standalone grammY bot in polling mode (`bot-dev.ts`)
+
+### Database
+
+```bash
+npx prisma db push       # Sync schema
+npx prisma generate      # Regenerate client
+rm -rf .next             # Clear Turbopack cache after prisma generate
+```
+
+Schema: 12 models, 17 enums. Seed data includes default users and 8 color-coded task tags.
+
+---
+
+## 🔐 Roles
+
+Three roles with distinct navigation, theming, and permissions.
+
+| Role | Theme | Access |
+|------|-------|--------|
+| **ADMIN** | Violet | Dashboard, Transactions, Services, Donors, Users, Reminders, Credentials, VPS Stats, Audit Log |
+| **DEV** | Cyan | Board, My Tasks, Gantt, VPS Stats, Credentials |
+| **DONOR** | Amber | My Donations, Receipts |
+
+Users can hold multiple roles. The sidebar switches context per role, with settings pages (General + Audit Log) accessible from any role.
+
+---
+
+## ⚙ Features
+
+### Admin — Treasury and Operations
+
+- Treasury dashboard with real-time balance, multi-currency support (INR/USD with live exchange rate)
+- Transaction approval/rejection workflow with receipt photo viewing
+- CSV export for all transactions
+- Service registry with dynamic columns
+- Credential vault with revision history and dev assignment (propose/approve flow)
+- User management with role assignment and status control
+- Reminders with role-based targeting
+- VPS server monitoring — live CPU, RAM, disk, network metrics from bash agents with 30s refresh
+- Server approval flow for dev-requested VPS nodes
+- Donor leaderboard
+- Full audit log with GitHub-backed immutable history
+- Buy Me a Coffee integration — webhook receiver + manual sync for all BMC event types
+
+### Dev — Project Board and Credentials
+
+- Kanban board with 5 status columns (Backlog, To Do, In Progress, Review, Done)
+- Task management with priority levels, subtasks, deadlines, and color-coded tags
+- 8 tags: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
+- Gantt chart view for timeline planning
+- VPS stats (read-only monitoring + request new servers pending admin approval)
+- Credential access with propose/approve workflow
+
+### Donor — Contributions
+
+- Donation submission with amount, currency (INR/USD), method (UPI / BMC / Bank / Other), and reference
+- Photo receipt upload (max 20 MB)
+- Status tracking across pending, approved, and rejected states
+- 3 stat cards: total contributed, pending count, approved count
+- Appreciation messages on approval (5 normal + 5 generous thresholds based on average donation)
+
+### Telegram Integration
+
+- Mini App auth via `initData` HMAC-SHA256 validation
+- Bot-based login flow (@TheSentinelRobot) with OTP
+- Group topic logging (audit, transactions, screenshots)
+- DM notifications with inline keyboard buttons linking to relevant pages
+- 9 configurable notification categories (all ON by default for new users)
+- HIGH priority notifications (approvals, rejections) bypass user preferences
+- Profile photo sync from Telegram
+
+### Platform-Wide
+
+- Immutable audit log backed by GitHub commits (Sentinel-Logs repo)
+- Buy Me a Coffee webhook integration — supports payments, extras, memberships, commissions, wishlists, refunds, cancellations
+- Multi-currency with live USD/INR exchange rate
+- Custom accent color with 3 saveable preset slots
+- Role-based theming (ADMIN violet, DONOR amber, DEV cyan)
+- Glassmorphism dark UI (`#111116` base, `#6FD1D7` default accent)
+- Collapsible sidebar with context-aware settings mode
+- Mobile bottom navigation bar
+- In-app notification system with bell + unread count
+- Form examples toggle for contextual input hints
+
+---
+
+## 🏗 Architecture
 
 ```mermaid
 graph TB
@@ -157,243 +407,7 @@ sequenceDiagram
 
 ---
 
-## Roles
-
-Three roles with distinct navigation, theming, and permissions.
-
-| Role | Theme | Access |
-|------|-------|--------|
-| **ADMIN** | Violet | Dashboard, Transactions, Services, Donors, Users, Reminders, Credentials, VPS Stats, Audit Log |
-| **DEV** | Cyan | Board, My Tasks, Gantt, VPS Stats, Credentials |
-| **DONOR** | Amber | My Donations, Receipts |
-
-Users can hold multiple roles. The sidebar switches context per role, with settings pages (General + Audit Log) accessible from any role.
-
----
-
-## Features
-
-### Admin — Treasury and Operations
-
-- Treasury dashboard with real-time balance, multi-currency support (INR/USD with live exchange rate)
-- Transaction approval/rejection workflow with receipt photo viewing
-- CSV export for all transactions
-- Service registry with dynamic columns
-- Credential vault with revision history and dev assignment (propose/approve flow)
-- User management with role assignment and status control
-- Reminders with role-based targeting
-- VPS server monitoring — live CPU, RAM, disk, network metrics from bash agents with 30s refresh
-- Server approval flow for dev-requested VPS nodes
-- Donor leaderboard
-- Full audit log with GitHub-backed immutable history
-- Buy Me a Coffee integration — webhook receiver + manual sync for all BMC event types
-
-### Dev — Project Board and Credentials
-
-- Kanban board with 5 status columns (Backlog, To Do, In Progress, Review, Done)
-- Task management with priority levels, subtasks, deadlines, and color-coded tags
-- 8 tags: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
-- Gantt chart view for timeline planning
-- VPS stats (read-only monitoring + request new servers pending admin approval)
-- Credential access with propose/approve workflow
-
-### Donor — Contributions
-
-- Donation submission with amount, currency (INR/USD), method (UPI / BMC / Bank / Other), and reference
-- Photo receipt upload (max 20 MB)
-- Status tracking across pending, approved, and rejected states
-- 3 stat cards: total contributed, pending count, approved count
-- Appreciation messages on approval (5 normal + 5 generous thresholds based on average donation)
-
-### Telegram Integration
-
-- Mini App auth via `initData` HMAC-SHA256 validation
-- Bot-based login flow (@TheSentinelRobot) with OTP
-- Group topic logging (audit, transactions, screenshots)
-- DM notifications with inline keyboard buttons linking to relevant pages
-- 9 configurable notification categories (all ON by default for new users)
-- HIGH priority notifications (approvals, rejections) bypass user preferences
-- Profile photo sync from Telegram
-
-### Platform-Wide
-
-- Immutable audit log backed by GitHub commits (Sentinel-Logs repo)
-- Buy Me a Coffee webhook integration — supports payments, extras, memberships, commissions, wishlists, refunds, cancellations
-- Multi-currency with live USD/INR exchange rate
-- Custom accent color with 3 saveable preset slots
-- Role-based theming (ADMIN violet, DONOR amber, DEV cyan)
-- Glassmorphism dark UI (`#111116` base, `#6FD1D7` default accent)
-- Collapsible sidebar with context-aware settings mode
-- Mobile bottom navigation bar
-- In-app notification system with bell + unread count
-- Form examples toggle for contextual input hints
-
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/zxcvresque/Pzp-Sentinel.git
-cd Pzp-Sentinel
-npm install
-cp .env.example .env
-```
-
-### Environment Variables
-
-```env
-# Database
-DATABASE_URL=postgresql://user:pass@host:5432/sentinel
-
-# Telegram Bot
-BOT_TOKEN=your-telegram-bot-token
-BOT_USERNAME=TheSentinelRobot
-BOT_WEBHOOK_SECRET=your-webhook-secret
-
-# Auth
-JWT_SECRET=your-jwt-secret
-
-# App
-WEBAPP_URL=https://sentinel.piratezparty.com
-
-# Telegram Group Topics
-TG_GROUP_ID=your-group-id
-TG_TOPIC_AUDIT=topic-id
-TG_TOPIC_TRANSACTIONS=topic-id
-TG_TOPIC_SCREENSHOTS=topic-id
-
-# GitHub Audit Logs
-GITHUB_LOGS_TOKEN=your-github-pat
-
-# Buy Me a Coffee
-BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
-BMC_TOKEN=your-bmc-api-token
-
-# VPS Agent (only on monitored servers, not on Sentinel itself)
-# SENTINEL_TOKEN=server-specific-token
-```
-
-### Database Setup
-
-```bash
-npx prisma db push
-npx prisma generate
-npx tsx prisma/seed.ts
-```
-
-### Run (two processes)
-
-```bash
-npm run dev        # Next.js dev server
-npm run bot:dev    # Telegram bot (separate terminal)
-```
-
-### Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Next.js dev server (Turbopack) |
-| `npm run bot:dev` | Telegram bot in polling mode |
-| `npm run db:seed` | Seed database with default users + tags |
-| `npm run db:push` | Push Prisma schema to database |
-| `npm run db:generate` | Regenerate Prisma client |
-
----
-
-## VPS Agent Setup
-
-The agent is a lightweight bash script that collects system metrics (CPU, RAM, disk, network, uptime, load average) and POSTs them to Sentinel every 30 seconds. It runs as a systemd service.
-
-### 1. Register the server
-
-In the Sentinel admin panel, go to **VPS Stats** and add a server. Copy the token — it's shown once.
-
-### 2. Install on the target VPS
-
-```bash
-curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- --token YOUR_TOKEN
-```
-
-This will:
-- Install the agent to `/usr/local/bin/sentinel-agent`
-- Create a hardened systemd service (`sentinel-agent.service`)
-- Enable and start the service
-- Verify the first heartbeat
-
-### Self-registration mode
-
-Skip the dashboard step — register the server from the VPS itself using your admin JWT:
-
-```bash
-curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- \
-  --register --api-key YOUR_JWT \
-  --name "web-01" --platform ubuntu --provider hetzner
-```
-
-The script auto-detects the public IP and gets a token back from the API.
-
-### Agent management
-
-```bash
-journalctl -u sentinel-agent -f        # Live logs
-systemctl status sentinel-agent         # Service status
-systemctl restart sentinel-agent        # Restart
-```
-
-### Uninstall
-
-```bash
-sudo systemctl disable --now sentinel-agent
-sudo rm /usr/local/bin/sentinel-agent /etc/systemd/system/sentinel-agent.service
-sudo systemctl daemon-reload
-```
-
----
-
-## Deployment
-
-Sentinel runs as two processes in production:
-
-```mermaid
-graph LR
-  subgraph VPS[" Ubuntu VPS "]
-    PM2[PM2 / systemd]
-    PM2 --> NextProc[Next.js<br/>port 3000]
-    PM2 --> BotProc[grammY Bot<br/>polling]
-  end
-
-  Nginx[Nginx Reverse Proxy<br/>sentinel.piratezparty.com] --> NextProc
-  BotProc <--> TG[Telegram API]
-
-  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
-  classDef proxy fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
-  classDef process fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:1.5px
-  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
-
-  class PM2 core
-  class NextProc,BotProc process
-  class Nginx proxy
-  class TG telegram
-
-  style VPS fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
-```
-
-1. **Next.js application** — web frontend and all API routes
-2. **Telegram bot** — standalone grammY bot in polling mode (`bot-dev.ts`)
-
-### Database
-
-```bash
-npx prisma db push       # Sync schema
-npx prisma generate      # Regenerate client
-rm -rf .next             # Clear Turbopack cache after prisma generate
-```
-
-Schema: 12 models, 17 enums. Seed data includes default users and 8 color-coded task tags.
-
----
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 prisma/
