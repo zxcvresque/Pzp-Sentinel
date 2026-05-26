@@ -69,12 +69,13 @@ export async function PATCH(
         message: `${credential.platform} -- ${credential.label} has been shared with you by ${user.name}.`,
         entityId: id,
         priority: "NORMAL",
+        actionUrl: "/credentials",
         telegramMessage: formatTgMessage(
           "🔐 Credential Shared",
-          `${credential.platform} -- ${credential.label}`,
+          `${credential.platform} · ${credential.label}`,
           `Shared by ${user.name}`,
         ),
-      }).catch(() => {});
+      }).catch((err) => console.error("[cred] notify failed:", err));
     }
   }
 

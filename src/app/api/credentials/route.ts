@@ -114,12 +114,13 @@ export async function POST(req: NextRequest) {
           message: `${platform} -- ${label} has been shared with you by ${user.name}.`,
           entityId: credential.id,
           priority: "NORMAL",
+          actionUrl: "/credentials",
           telegramMessage: formatTgMessage(
             "🔐 Credential Shared",
-            `${platform} -- ${label}`,
+            `${platform} · ${label}`,
             `Shared by ${user.name}`,
           ),
-        }).catch(() => {});
+        }).catch((err) => console.error("[cred] notify failed:", err));
       }
     }
 

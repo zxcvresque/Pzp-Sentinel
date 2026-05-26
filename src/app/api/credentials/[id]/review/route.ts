@@ -56,12 +56,13 @@ export async function POST(
       message: `${pending.platform} -- ${pending.label} has been rejected by ${user.name}.`,
       entityId: id,
       priority: "HIGH",
+      actionUrl: "/credentials",
       telegramMessage: formatTgMessage(
         "❌ Credential Rejected",
-        `${pending.platform} -- ${pending.label}`,
+        `${pending.platform} · ${pending.label}`,
         `Rejected by ${user.name}`,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[cred-review] notify failed:", err));
 
     return NextResponse.json({ success: true, status: "REJECTED" });
   }
@@ -111,12 +112,13 @@ export async function POST(
     message: `${pending.platform} -- ${pending.label} has been approved by ${user.name}.`,
     entityId: id,
     priority: "NORMAL",
+    actionUrl: "/credentials",
     telegramMessage: formatTgMessage(
       "✅ Credential Approved",
-      `${pending.platform} -- ${pending.label}`,
+      `${pending.platform} · ${pending.label}`,
       `Approved by ${user.name}`,
     ),
-  }).catch(() => {});
+  }).catch((err) => console.error("[cred-review] notify failed:", err));
 
   return NextResponse.json({ success: true, status: "APPROVED" });
 }
