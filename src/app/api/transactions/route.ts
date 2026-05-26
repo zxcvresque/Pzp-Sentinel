@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { logTransaction, logProofScreenshot, logReceiptPhotos } from "@/lib/telegram-log";
+import { logTransaction, logProofScreenshot } from "@/lib/telegram-log";
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -66,7 +66,6 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { amount, currency, method, direction, type, description, proofFileId, fromUserId } = body;
-  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
   if (!amount || !description) {
     return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
@@ -98,7 +97,6 @@ export async function POST(req: NextRequest) {
       type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
       description,
       proofFileId: proofFileId || null,
-      attachments,
       fromUserId: fromUserId || (direction === "IN" ? user.id : null),
       status: txStatus,
       createdById: user.id,
@@ -145,11 +143,6 @@ export async function POST(req: NextRequest) {
 
   if (proofFileId) {
     logProofScreenshot(transaction.id, proofFileId, description);
-  }
-
-  // Send receipt photos to TG screenshots topic
-  if (attachments.length > 0) {
-    logReceiptPhotos(transaction.id, description, attachments).catch(() => {});
   }
 
   return NextResponse.json({ transaction }, { status: 201 });
