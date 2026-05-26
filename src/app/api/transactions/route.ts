@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { logTransaction, logProofScreenshot } from "@/lib/telegram-log";
+import { logTransaction, logProofScreenshot, logProofScreenshots } from "@/lib/telegram-log";
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -145,6 +145,17 @@ export async function POST(req: NextRequest) {
 
   if (proofFileId) {
     logProofScreenshot(transaction.id, proofFileId, description);
+  }
+
+  // Log proof screenshots context to TG screenshots topic
+  if (attachments.length > 0) {
+    logProofScreenshots({
+      id: transaction.id,
+      amount: transaction.amount,
+      currency: transaction.currency,
+      description,
+      userName: user.name,
+    }).catch(() => {});
   }
 
   return NextResponse.json({ transaction }, { status: 201 });

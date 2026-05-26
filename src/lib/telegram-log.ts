@@ -152,3 +152,25 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
   );
 }
 
+/**
+ * Re-send proof screenshots to the screenshots topic with full transaction context.
+ * Called after tx creation — `urls` are proxy URLs like /api/avatar/{fileId}.
+ */
+export async function logProofScreenshots(tx: {
+  id: string;
+  amount: unknown;
+  currency: string;
+  description: string;
+  userName: string;
+}) {
+  // We just send a text summary — the photos are already in the topic from upload
+  const symbol = tx.currency === "INR" ? "₹" : "$";
+  const lines = [
+    `🧾 <b>Proof Attached</b>`,
+    `<b>${symbol}${tx.amount}</b> — ${tx.description}`,
+    `👤 By: ${tx.userName}`,
+    `<code>${tx.id}</code>`,
+  ];
+  return sendToTopic("screenshots", lines.join("\n"));
+}
+

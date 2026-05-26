@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     tgForm.append("chat_id", groupId);
     tgForm.append("message_thread_id", topicId);
     tgForm.append("photo", file, file.name);
-    tgForm.append("caption", `🧾 Proof screenshot by ${user.name}`);
+    tgForm.append("caption", `📎 Upload by ${user.name}`);
 
     const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
       method: "POST",
