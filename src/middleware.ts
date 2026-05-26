@@ -8,7 +8,7 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 const publicPaths = ["/", "/login", "/plan"];
 
 // Public API routes — no JWT needed
-const publicApiPaths = ["/api/auth", "/api/bot", "/api/exchange-rate", "/api/bmc/webhook", "/api/vps/heartbeat"];
+const publicApiPaths = ["/api/auth", "/api/bot", "/api/exchange-rate", "/api/bmc/webhook", "/api/vps/heartbeat", "/api/vps/install", "/api/vps/agent"];
 
 const roleRoutes: Record<string, Role> = {
   "/admin": "ADMIN",
