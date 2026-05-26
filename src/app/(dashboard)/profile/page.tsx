@@ -41,7 +41,7 @@ export default function ProfilePage() {
   const [savedColors, setSavedColors] = useState<string[]>([]);
   const [dmPrefs, setDmPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
-  const [hexDraft, setHexDraft] = useState<string | null>(null); // null = synced with user.themeColor
+  const [hexDraft, setHexDraft] = useState<string | null>(null);
   const { showExamples, hideExamples, enableExamples } = useFormExamples();
 
   useEffect(() => {
@@ -162,7 +162,6 @@ export default function ProfilePage() {
     const currentColor = user.themeColor || "#6FD1D7";
     const newSaved = [...savedColors];
     newSaved[index] = currentColor;
-    // Fill gaps if saving to slot 2 but slot 0 is empty
     while (newSaved.length <= index) newSaved.push(currentColor);
     const trimmed = newSaved.slice(0, 3);
     setSavedColors(trimmed);
@@ -173,7 +172,6 @@ export default function ProfilePage() {
         body: JSON.stringify({ savedColors: trimmed }),
       });
     } catch {
-      // revert on failure
       setSavedColors(savedColors);
     }
   }
@@ -228,12 +226,11 @@ export default function ProfilePage() {
   return (
     <div className="pb-20 md:pb-0">
       <h1 className="text-2xl font-extrabold mb-4">
-        <span className="font-display text-lime">Profile</span>
+        <span className="font-display text-lime">Settings</span>
       </h1>
 
-      {/* Single-screen grid: 3 columns on desktop */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* ── Col 1: Identity ── */}
+        {/* ── Col 1: Identity + Preferences ── */}
         <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[var(--border)] bg-bg-deep flex items-center justify-center shrink-0">
@@ -319,7 +316,7 @@ export default function ProfilePage() {
           </div>
 
           {/* Details grid */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 mb-4">
             <div>
               <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-0.5">
                 Telegram ID
@@ -346,6 +343,40 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+
+          {/* ── Preferences ── */}
+          <div className="pt-4 border-t border-[var(--border)]">
+            <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
+              Preferences
+            </div>
+            <div className="flex items-center justify-between py-1">
+              <div className="pr-3 min-w-0">
+                <div className="text-xs font-medium text-text-primary">Form Examples</div>
+                <div className="text-[11px] text-text-secondary mt-0.5">
+                  Show contextual hints in forms
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showExamples}
+                onClick={() => (showExamples ? hideExamples() : enableExamples())}
+                className={`relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200 cursor-pointer ${
+                  showExamples
+                    ? "bg-lime/30"
+                    : "bg-bg-elevated border border-[var(--border)]"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
+                    showExamples
+                      ? "translate-x-4 bg-lime"
+                      : "translate-x-0 bg-text-tertiary"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* ── Col 2: Theme ── */}
@@ -368,25 +399,30 @@ export default function ProfilePage() {
                 const isActive = color && user.themeColor === color;
 
                 if (color) {
-                  // Filled slot — click to apply, double-click to remove
                   return (
-                    <button
-                      key={i}
-                      onClick={() => handleThemeChange(color)}
-                      onDoubleClick={(e) => {
-                        e.preventDefault();
-                        removeColorFromSlot(i);
-                      }}
-                      title={`Apply ${color}`}
-                      className={`w-7 h-7 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
-                        isActive ? "border-white/40 ring-1 ring-white/20" : "border-[var(--border)] hover:border-[var(--border-hover)]"
-                      }`}
-                      style={{ background: color }}
-                    />
+                    <div key={i} className="relative group">
+                      <button
+                        onClick={() => handleThemeChange(color)}
+                        title={`Apply ${color}`}
+                        className={`w-7 h-7 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
+                          isActive ? "border-white/40 ring-1 ring-white/20" : "border-[var(--border)] hover:border-[var(--border-hover)]"
+                        }`}
+                        style={{ background: color }}
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeColorFromSlot(i);
+                        }}
+                        title="Remove saved colour"
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-bg-card border border-[var(--border)] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:border-coral hover:text-coral text-text-tertiary"
+                      >
+                        <span className="text-[9px] leading-none">×</span>
+                      </button>
+                    </div>
                   );
                 }
 
-                // Empty slot — click to save current color
                 return (
                   <button
                     key={i}
@@ -484,7 +520,6 @@ export default function ProfilePage() {
                     body: JSON.stringify({ dmPreferences: newPrefs }),
                   });
                 } catch {
-                  // silently revert on failure
                   setDmPrefs(dmPrefs);
                 } finally {
                   setDmSaving(false);
@@ -536,42 +571,9 @@ export default function ProfilePage() {
               </span>
             )}
           </div>
-
-          {/* ── Preferences ── */}
-          <div className="mt-4 pt-4 border-t border-[var(--border)]">
-            <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
-              Preferences
-            </div>
-            <div className="flex items-center justify-between py-1">
-              <div className="pr-3 min-w-0">
-                <div className="text-xs font-medium text-text-primary">Form Examples</div>
-                <div className="text-[11px] text-text-secondary mt-0.5">
-                  Show contextual hints in forms
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={showExamples}
-                onClick={() => (showExamples ? hideExamples() : enableExamples())}
-                className={`relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200 cursor-pointer ${
-                  showExamples
-                    ? "bg-lime/30"
-                    : "bg-bg-elevated border border-[var(--border)]"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
-                    showExamples
-                      ? "translate-x-4 bg-lime"
-                      : "translate-x-0 bg-text-tertiary"
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
         </div>
       </div>
+
     </div>
   );
 }

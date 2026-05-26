@@ -225,7 +225,6 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Reminders",     href: "/admin/reminders",      icon: "◆", Icon: IconBell },
     { label: "Credentials",   href: "/admin/credentials",    icon: "◍", Icon: IconKey },
     { label: "VPS Stats",     href: "/admin/vps",            icon: "◉", Icon: IconVps },
-    { label: "Audit Log",     href: "/admin/audit",          icon: "◌", Icon: IconAuditLog },
   ],
   DONOR: [
     { label: "My Donations", href: "/donor", icon: "◈", Icon: IconChart },
@@ -254,7 +253,20 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const items = navByRole[activeRole] || [];
+  const isSettings = pathname === "/profile" || pathname === "/admin/audit";
+  const isAdmin = roles.includes("ADMIN");
+
+  // Highest-privilege role for the brand link (ADMIN > DEV > DONOR)
+  const primaryRole: Role = isAdmin ? "ADMIN" : roles.includes("DEV") ? "DEV" : "DONOR";
+
+  // Settings page gets its own sidebar nav
+  const settingsNav = [
+    { label: "General", href: "/profile", icon: "◈", Icon: IconDashboardGrid },
+    ...(isAdmin ? [{ label: "Audit Log", href: "/admin/audit", icon: "◌", Icon: IconAuditLog }] : []),
+  ];
+
+  const items = isSettings ? settingsNav : (navByRole[activeRole] || []);
+  const sectionLabel = isSettings ? "SETTINGS" : activeRole;
 
   return (
     <>
@@ -311,7 +323,7 @@ export default function Sidebar({
           ) : (
             <>
               <Link
-                href={`/${activeRole.toLowerCase()}`}
+                href={`/${primaryRole.toLowerCase()}`}
                 style={{
                   color: "var(--text-primary)",
                   fontWeight: 800,
@@ -366,7 +378,7 @@ export default function Sidebar({
                 padding: "0 10px 8px",
               }}
             >
-              {activeRole}
+              {sectionLabel}
             </div>
           )}
 
@@ -469,7 +481,7 @@ export default function Sidebar({
         </nav>
 
         {/* ── Role switcher (expanded) ── */}
-        {!collapsed && roles.length > 1 && (
+        {!collapsed && !isSettings && roles.length > 1 && (
           <div
             style={{
               padding: "12px 12px 14px",
@@ -534,7 +546,7 @@ export default function Sidebar({
         )}
 
         {/* ── Role switcher (collapsed) ── */}
-        {collapsed && roles.length > 1 && (
+        {collapsed && !isSettings && roles.length > 1 && (
           <div
             style={{
               padding: "8px 6px 10px",

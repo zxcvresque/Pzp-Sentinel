@@ -429,10 +429,10 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                 className="flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-[10px] text-sm text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--text-primary)] transition-all duration-200"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-50">
-                  <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M5 20c0-3.31 3.13-6 7-6s7 2.69 7 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M19.14 15.7a1.5 1.5 0 00.3 1.65l.05.06a1.82 1.82 0 11-2.57 2.57l-.06-.06a1.5 1.5 0 00-1.65-.3 1.5 1.5 0 00-.91 1.37v.17a1.82 1.82 0 11-3.64 0v-.09A1.5 1.5 0 009.3 19.6a1.5 1.5 0 00-1.65.3l-.06.06a1.82 1.82 0 11-2.57-2.57l.06-.06a1.5 1.5 0 00.3-1.65 1.5 1.5 0 00-1.37-.91h-.17a1.82 1.82 0 110-3.64h.09A1.5 1.5 0 005.4 9.3a1.5 1.5 0 00-.3-1.65l-.06-.06a1.82 1.82 0 112.57-2.57l.06.06a1.5 1.5 0 001.65.3h.07a1.5 1.5 0 00.91-1.37v-.17a1.82 1.82 0 013.64 0v.09a1.5 1.5 0 00.91 1.37 1.5 1.5 0 001.65-.3l.06-.06a1.82 1.82 0 112.57 2.57l-.06.06a1.5 1.5 0 00-.3 1.65v.07a1.5 1.5 0 001.37.91h.17a1.82 1.82 0 010 3.64h-.09a1.5 1.5 0 00-1.37.91z" stroke="currentColor" strokeWidth="1.5" />
                 </svg>
-                Profile
+                Settings
               </Link>
               <button
                 onClick={handleLogout}
