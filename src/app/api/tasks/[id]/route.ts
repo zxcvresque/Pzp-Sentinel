@@ -69,12 +69,13 @@ export async function PATCH(
       message: `You have been assigned to: ${updated.title}. Assigned by ${user.name}.`,
       entityId: id,
       priority: "NORMAL",
+      actionUrl: "/tasks",
       telegramMessage: formatTgMessage(
         "📋 Task Assigned",
         updated.title,
         `Assigned by ${user.name}`,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[task] notify failed:", err));
   }
 
   return NextResponse.json({ task: updated });

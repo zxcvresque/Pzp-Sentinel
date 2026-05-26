@@ -89,12 +89,13 @@ export async function POST(req: NextRequest) {
     title: "New User Registered",
     message: `${newUser.name} (@${newUser.telegramUser}) has been registered with roles: ${newUser.roles.join(", ")}. Added by ${user.name}.`,
     priority: "HIGH",
+    actionUrl: "/admin/users",
     telegramMessage: formatTgMessage(
       "🆕 New User Registered",
       `${newUser.name} (@${newUser.telegramUser})`,
-      `Roles: ${newUser.roles.join(", ")} -- Added by ${user.name}`,
+      `Roles: ${newUser.roles.join(", ")} · Added by ${user.name}`,
     ),
-  }).catch(() => {});
+  }).catch((err) => console.error("[users] notifyAdmins failed:", err));
 
   return NextResponse.json({ user: newUser }, { status: 201 });
 }
@@ -162,12 +163,13 @@ export async function PATCH(req: NextRequest) {
       title: "Role Updated",
       message: `Your roles have been updated to ${updated.roles.join(", ")}. Changed by ${user.name}.`,
       priority: "HIGH",
+      actionUrl: "/profile",
       telegramMessage: formatTgMessage(
         "🛡️ Role Updated",
         `Your roles have been updated to ${updated.roles.join(", ")}`,
         `Changed by ${user.name}`,
       ),
-    }).catch(() => {});
+    }).catch((err) => console.error("[users] notify failed:", err));
   }
 
   return NextResponse.json({ user: updated });
