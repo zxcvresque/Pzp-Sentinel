@@ -314,6 +314,7 @@ export async function POST(req: NextRequest) {
           title: `New BMC ${isMembership ? "Membership" : "Monthly Support"}`,
           message: `$${amount}/mo from ${name}`,
           entityId: tx.id,
+          actionUrl: "/admin/transactions",
           telegramMessage: formatTgMessage(
             isMembership ? "🤝 New Membership" : "💛 New Monthly Support",
             `$${amount.toFixed(2)}/mo from ${name}`,
