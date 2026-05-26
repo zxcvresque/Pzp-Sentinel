@@ -195,10 +195,14 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  if (target.status === "ACTIVE") {
+  // Active users WITH roles must be deactivated first (safety check).
+  // Pending users (no roles) can be deleted directly — they never had access.
+  if (target.status === "ACTIVE" && target.roles.length > 0) {
     return NextResponse.json({ error: "Deactivate the user before deleting" }, { status: 400 });
   }
 
+  // Clean up related records before deleting
+  await prisma.notification.deleteMany({ where: { userId: id } });
   await prisma.user.delete({ where: { id } });
 
   await logAudit({

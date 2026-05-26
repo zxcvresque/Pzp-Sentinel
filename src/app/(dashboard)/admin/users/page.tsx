@@ -202,12 +202,17 @@ export default function UsersPage() {
       });
       if (res.ok) {
         setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+        setDeleteTarget(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to delete user");
+        setDeleteTarget(null);
       }
     } catch {
-      // silent
+      setError("Network error — could not delete user");
+      setDeleteTarget(null);
     }
     setDeleting(false);
-    setDeleteTarget(null);
   }
 
   const pendingUsers = users.filter((u) => u.roles.length === 0);
