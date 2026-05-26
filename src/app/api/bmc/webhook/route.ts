@@ -153,6 +153,7 @@ export async function POST(req: NextRequest) {
             title: "New BMC Donation",
             message: `$${amount} from ${name}${note}`,
             entityId: tx.id,
+            actionUrl: "/admin/transactions",
             telegramMessage: formatTgMessage(
               "☕ New Donation",
               `$${amount.toFixed(2)} from ${name}`,
