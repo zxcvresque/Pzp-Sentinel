@@ -651,6 +651,7 @@ export default function Sidebar({
           })}
           {items.length > 4 && (
             <button
+              data-tour="role-tabs"
               onClick={() => setMoreOpen(true)}
               style={{
                 display: "flex",
@@ -718,7 +719,7 @@ export default function Sidebar({
 
             {/* Role switcher — only shown when user has multiple roles */}
             {!isSettings && roles.length > 1 && (
-              <div data-tour="role-tabs" style={{ padding: "8px 16px 4px" }}>
+              <div style={{ padding: "8px 16px 4px" }}>
                 <p style={{ fontSize: 10, fontWeight: 500, color: "var(--text-tertiary)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
                   Switch View
                 </p>

@@ -57,10 +57,17 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
 
   const measure = useCallback(() => {
     if (!current) return;
-    const el = document.querySelector(current.target);
+    // querySelectorAll so we can pick the first *visible* match —
+    // e.g. desktop sidebar is display:none on mobile (zero-size) so we
+    // fall through to the mobile More button that shares the same data-tour.
+    const candidates = Array.from(document.querySelectorAll(current.target)) as Element[];
+    const el = candidates.find((e) => {
+      const r = getRect(e);
+      return r.width > 0 && r.height > 0;
+    }) ?? null;
     if (el) {
       const r = getRect(el);
-      // Element is hidden (display:none / zero layout) — skip just like missing
+      // Final guard: element must be inside the viewport bounds
       if (r.width === 0 && r.height === 0) {
         skip();
         return;

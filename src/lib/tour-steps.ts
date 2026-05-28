@@ -14,7 +14,7 @@ export const adminTourSteps: TourStep[] = [
   {
     target: "[data-tour='role-tabs']",
     title: "Switch Roles",
-    body: "You have multiple roles. Click these tabs to switch between Admin, Dev, and Donor views — each has its own dashboard and tools.",
+    body: "You have multiple roles — Admin, Dev, and Donor views each have their own dashboard. On desktop use the sidebar tabs; on mobile tap More (bottom right) → Switch View.",
     placement: "right",
   },
   {

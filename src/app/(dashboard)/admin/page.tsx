@@ -200,13 +200,13 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-start justify-between mb-8 gap-2">
         <h1 className="text-3xl font-extrabold">
           Treasury <span className="font-display text-lime">Overview</span>
         </h1>
-        <div data-tour="currency-toggle" className="flex items-center gap-3">
+        <div data-tour="currency-toggle" className="flex flex-col items-end gap-0.5 shrink-0 sm:flex-row sm:items-center sm:gap-3">
           {exchangeRate && (
-            <span className="font-mono text-[10px] text-text-tertiary transition-opacity duration-200" style={{ opacity: currency === "USD" ? 1 : 0 }}>
+            <span className="font-mono text-[10px] text-text-tertiary transition-opacity duration-200 sm:order-first" style={{ opacity: currency === "USD" ? 1 : 0 }}>
               1 USD = ₹{exchangeRate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
             </span>
           )}
