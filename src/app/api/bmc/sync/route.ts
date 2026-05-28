@@ -43,12 +43,12 @@ interface BmcExtrasResponse {
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function bmcFetch<T>(path: string, retries = 5): Promise<T> {
+async function bmcFetch<T>(path: string, retries = 2): Promise<T> {
   const token = process.env.BMC_TOKEN;
   if (!token) throw new Error("BMC_TOKEN not configured");
 
   for (let i = 0; i < retries; i++) {
-    if (i > 0) await delay(3000 * (i + 1)); // backoff: 6s, 9s, 12s, 15s
+    if (i > 0) await delay(10000); // wait 10s before single retry
 
     const res = await fetch(`${BMC_BASE}${path}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -56,13 +56,18 @@ async function bmcFetch<T>(path: string, retries = 5): Promise<T> {
     });
 
     if (res.status === 429) {
-      console.warn(`BMC rate limited, retry ${i + 1}/${retries}...`);
+      console.warn(`[BMC] Rate limited on ${path}, attempt ${i + 1}/${retries}`);
+      if (i === retries - 1) throw new Error("BMC rate limited — try again in a few minutes");
       continue;
+    }
+
+    if (res.status === 401) {
+      throw new Error("BMC token expired or invalid — regenerate at buymeacoffee.com/dashboard/developers");
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`BMC API ${res.status}: ${text.slice(0, 200)}`);
+      throw new Error(`BMC API error ${res.status}: ${text.slice(0, 200)}`);
     }
 
     return res.json() as Promise<T>;
@@ -115,7 +120,7 @@ export async function POST() {
   try {
     // Fetch sequentially to avoid BMC rate limits
     const supporters = await fetchAllSupporters();
-    await delay(1000); // breathing room between endpoints
+    await delay(2000); // breathing room between endpoints
     const extras = await fetchAllExtras();
 
     let synced = 0;

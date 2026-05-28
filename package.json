@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "dev:all": "concurrently --names next,bot --prefix-colors green,magenta --kill-others \"npm run dev\" \"npm run bot:dev\"",
     "bot:dev": "npx tsx src/bot-dev.ts",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:push": "npx prisma db push",

@@ -301,6 +301,15 @@ model LoginToken {
   createdAt  DateTime         @default(now())
 }
 
+model TrackedRepo {
+  id        String   @id @default(cuid())
+  name      String   // e.g. "Pzp-Sentinel"
+  fullName  String   @unique // e.g. "Spamverse/Pzp-Sentinel"
+  url       String
+  addedById String
+  createdAt DateTime @default(now())
+}
+
 model VpsServer {
   id          String   @id @default(cuid())
   name        String

@@ -79,14 +79,28 @@ export default function DashboardLayout({
     router.push(routes[role]);
   }
 
-  // Breadcrumb label derived from current pathname
-  const breadcrumb = pathname.startsWith("/admin")
-    ? "Admin / Treasury"
-    : pathname.startsWith("/dev")
-      ? "Dev / Board"
-      : pathname.startsWith("/donor")
-        ? "Donor / Overview"
-        : "Dashboard";
+  // Dynamic breadcrumb from pathname
+  const breadcrumbMap: Record<string, string> = {
+    "/admin": "Admin / Dashboard",
+    "/admin/transactions": "Admin / Transactions",
+    "/admin/services": "Admin / Services",
+    "/admin/donors": "Admin / Donors",
+    "/admin/users": "Admin / Users",
+    "/admin/reminders": "Admin / Reminders",
+    "/admin/credentials": "Admin / Credentials",
+    "/admin/vps": "Admin / VPS Stats",
+    "/admin/repos": "Admin / Repos",
+    "/admin/audit": "Settings / Audit Log",
+    "/dev": "Dev / Board",
+    "/dev/tasks": "Dev / My Tasks",
+    "/dev/gantt": "Dev / Gantt",
+    "/dev/vps": "Dev / VPS Stats",
+    "/dev/credentials": "Dev / Credentials",
+    "/donor": "Donor / Overview",
+    "/donor/receipts": "Donor / Receipts",
+    "/profile": "Settings / General",
+  };
+  const breadcrumb = breadcrumbMap[pathname] || pathname.split("/").filter(Boolean).join(" / ");
 
   if (!user) {
     return (
@@ -117,9 +131,26 @@ export default function DashboardLayout({
       />
       <div className="flex-1 flex flex-col overflow-x-hidden">
         <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)]" style={{ background: "rgba(17,17,22,0.6)", backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)" }}>
-          <span className="font-mono text-[11px] uppercase tracking-widest text-text-tertiary">
-            {breadcrumb}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {breadcrumb.split(" / ").map((seg, i, arr) => (
+              <span key={i} className="flex items-center gap-1.5">
+                {i > 0 && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-tertiary opacity-40">
+                    <path d="M3.5 2l3.5 3-3.5 3" />
+                  </svg>
+                )}
+                <span
+                  className="font-mono text-[11px] uppercase tracking-widest"
+                  style={{
+                    color: i === arr.length - 1 ? "var(--text-secondary)" : "var(--text-tertiary)",
+                    fontWeight: i === arr.length - 1 ? 500 : 400,
+                  }}
+                >
+                  {seg}
+                </span>
+              </span>
+            ))}
+          </div>
           <TopBar
             name={user.name}
             photoUrl={user.photoUrl}

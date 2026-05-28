@@ -7,7 +7,7 @@ import type { Role } from "@/generated/prisma/enums";
 import { getRoleColor } from "@/lib/role-colors";
 
 /* ------------------------------------------------------------------ */
-/*  SVG Icon components (inline, no library)                          */
+/*  SVG Icon components                                                */
 /* ------------------------------------------------------------------ */
 
 function IconDashboardGrid(props: React.SVGProps<SVGSVGElement>) {
@@ -37,16 +37,6 @@ function IconServer(props: React.SVGProps<SVGSVGElement>) {
       <rect x="2" y="11" width="14" height="5" rx="1.5" />
       <circle cx="5" cy="4.5" r="0.75" fill="currentColor" stroke="none" />
       <circle cx="5" cy="13.5" r="0.75" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function IconCreditCard(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="1.5" y="3.5" width="15" height="11" rx="2" />
-      <path d="M1.5 7.5h15" />
-      <path d="M5 11.5h3" />
     </svg>
   );
 }
@@ -115,17 +105,6 @@ function IconChart(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function IconDocument(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M5 2h6l4 4v9.5a1.5 1.5 0 01-1.5 1.5h-8A1.5 1.5 0 014 15.5v-12A1.5 1.5 0 015 2z" />
-      <path d="M11 2v4h4" />
-      <path d="M7 10h4" />
-      <path d="M7 13h2.5" />
-    </svg>
-  );
-}
-
 function IconKanban(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -176,6 +155,17 @@ function IconVps(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function IconGitRepo(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="9" cy="5" r="2" />
+      <circle cx="9" cy="13" r="2" />
+      <path d="M9 7v4" />
+      <path d="M13 5h-2" />
+    </svg>
+  );
+}
+
 function IconMore(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -194,16 +184,8 @@ function IconCollapse(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function IconExpand(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M5 3l4 4-4 4" />
-    </svg>
-  );
-}
-
 /* ------------------------------------------------------------------ */
-/*  Icon component type & nav item                                    */
+/*  Types & nav data                                                   */
 /* ------------------------------------------------------------------ */
 
 type SvgIcon = (props: React.SVGProps<SVGSVGElement>) => React.JSX.Element;
@@ -211,35 +193,36 @@ type SvgIcon = (props: React.SVGProps<SVGSVGElement>) => React.JSX.Element;
 interface NavItem {
   label: string;
   href: string;
-  icon: string;          // kept for interface compat
+  icon: string;
   Icon: SvgIcon;
 }
 
 const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
-    { label: "Dashboard",     href: "/admin",                icon: "◈", Icon: IconDashboardGrid },
-    { label: "Transactions",  href: "/admin/transactions",   icon: "₹", Icon: IconTransactions },
-    { label: "Services",      href: "/admin/services",       icon: "◎", Icon: IconServer },
-    { label: "Donors",        href: "/admin/donors",         icon: "◆", Icon: IconTrophy },
-    { label: "Users",         href: "/admin/users",          icon: "◉", Icon: IconUsers },
-    { label: "Reminders",     href: "/admin/reminders",      icon: "◆", Icon: IconBell },
-    { label: "Credentials",   href: "/admin/credentials",    icon: "◍", Icon: IconKey },
-    { label: "VPS Stats",     href: "/admin/vps",            icon: "◉", Icon: IconVps },
+    { label: "Dashboard",     href: "/admin",                icon: "", Icon: IconDashboardGrid },
+    { label: "Transactions",  href: "/admin/transactions",   icon: "", Icon: IconTransactions },
+    { label: "Services",      href: "/admin/services",       icon: "", Icon: IconServer },
+    { label: "Donors",        href: "/admin/donors",         icon: "", Icon: IconTrophy },
+    { label: "Users",         href: "/admin/users",          icon: "", Icon: IconUsers },
+    { label: "Reminders",     href: "/admin/reminders",      icon: "", Icon: IconBell },
+    { label: "Credentials",   href: "/admin/credentials",    icon: "", Icon: IconKey },
+    { label: "VPS Stats",     href: "/admin/vps",            icon: "", Icon: IconVps },
+    { label: "Repos",         href: "/admin/repos",          icon: "", Icon: IconGitRepo },
   ],
   DONOR: [
-    { label: "My Donations", href: "/donor", icon: "◈", Icon: IconChart },
+    { label: "My Donations", href: "/donor", icon: "", Icon: IconChart },
   ],
   DEV: [
-    { label: "Board",       href: "/dev",              icon: "◈", Icon: IconKanban },
-    { label: "My Tasks",    href: "/dev/tasks",        icon: "◎", Icon: IconChecklist },
-    { label: "Gantt",       href: "/dev/gantt",        icon: "◇", Icon: IconGantt },
-    { label: "VPS Stats",   href: "/dev/vps",          icon: "◉", Icon: IconVps },
-    { label: "Credentials", href: "/dev/credentials",  icon: "◍", Icon: IconKey },
+    { label: "Board",       href: "/dev",              icon: "", Icon: IconKanban },
+    { label: "My Tasks",    href: "/dev/tasks",        icon: "", Icon: IconChecklist },
+    { label: "Gantt",       href: "/dev/gantt",        icon: "", Icon: IconGantt },
+    { label: "VPS Stats",   href: "/dev/vps",          icon: "", Icon: IconVps },
+    { label: "Credentials", href: "/dev/credentials",  icon: "", Icon: IconKey },
   ],
 };
 
 /* ------------------------------------------------------------------ */
-/*  Sidebar component                                                 */
+/*  Sidebar component                                                  */
 /* ------------------------------------------------------------------ */
 
 export default function Sidebar({
@@ -256,45 +239,54 @@ export default function Sidebar({
   const isSettings = pathname === "/profile" || pathname === "/admin/audit";
   const isAdmin = roles.includes("ADMIN");
 
-  // Highest-privilege role for the brand link (ADMIN > DEV > DONOR)
   const primaryRole: Role = isAdmin ? "ADMIN" : roles.includes("DEV") ? "DEV" : "DONOR";
 
-  // Settings page gets its own sidebar nav
   const settingsNav = [
-    { label: "General", href: "/profile", icon: "◈", Icon: IconDashboardGrid },
-    ...(isAdmin ? [{ label: "Audit Log", href: "/admin/audit", icon: "◌", Icon: IconAuditLog }] : []),
+    { label: "General", href: "/profile", icon: "", Icon: IconDashboardGrid },
+    ...(isAdmin ? [{ label: "Audit Log", href: "/admin/audit", icon: "", Icon: IconAuditLog }] : []),
   ];
 
   const items = isSettings ? settingsNav : (navByRole[activeRole] || []);
-  const sectionLabel = isSettings ? "SETTINGS" : activeRole;
+  const sectionLabel = isSettings ? "Settings" : activeRole === "ADMIN" ? "Navigation" : activeRole === "DEV" ? "Navigation" : "Navigation";
+
+  const roleLabels: Record<string, string> = {
+    ADMIN: "Admin",
+    DEV: "Dev",
+    DONOR: "Donor",
+  };
 
   return (
     <>
       {/* ── Desktop sidebar ── */}
-      <aside
+      <div
+        className="hidden md:flex flex-shrink-0 sticky top-0 h-screen"
         style={{
-          background: "rgba(17,17,22,0.55)",
-          backdropFilter: "blur(40px) saturate(1.6)",
-          WebkitBackdropFilter: "blur(40px) saturate(1.6)",
-          borderRight: "1px solid var(--border)",
-          width: collapsed ? 60 : 232,
-          transition: "width 200ms cubic-bezier(.4,0,.2,1)",
+          width: collapsed ? 72 : 252,
+          transition: "width 250ms cubic-bezier(.4,0,.2,1)",
+          padding: "10px 0 10px 10px",
+        }}
+      >
+      <aside
+        className="flex flex-col w-full h-full overflow-hidden"
+        style={{
+          background: "var(--bg-deep)",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
           fontSize: 13,
         }}
-        className="hidden md:flex flex-col flex-shrink-0 sticky top-0 h-screen overflow-y-auto"
       >
         {/* ── Header / brand ── */}
         <div
           style={{
-            borderBottom: "1px solid var(--border)",
-            padding: collapsed ? "14px 8px" : "18px 20px",
+            padding: !collapsed ? "16px 16px 12px" : "14px 8px",
             display: "flex",
             alignItems: "center",
-            justifyContent: collapsed ? "center" : "space-between",
-            minHeight: 56,
+            justifyContent: !collapsed ? "space-between" : "center",
+            minHeight: 52,
+            transition: "padding 200ms ease",
           }}
         >
-          {collapsed ? (
+          {!!collapsed ? (
             <button
               onClick={() => setCollapsed(false)}
               title="Expand sidebar"
@@ -325,20 +317,39 @@ export default function Sidebar({
               <Link
                 href={`/${primaryRole.toLowerCase()}`}
                 style={{
-                  color: "var(--text-primary)",
-                  fontWeight: 800,
-                  fontSize: 16,
-                  letterSpacing: "0.05em",
-                  whiteSpace: "nowrap",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
                   textDecoration: "none",
                   lineHeight: 1,
                 }}
               >
-                {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
+                <img
+                  src="/logo-icon.png"
+                  alt="Sentinel"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    objectFit: "contain",
+                    borderRadius: 5,
+                  }}
+                />
+                <span
+                  style={{
+                    color: "var(--text-primary)",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    letterSpacing: "0.12em",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
+                </span>
               </Link>
               <button
                 onClick={() => setCollapsed(true)}
                 title="Collapse sidebar"
+                className="sidebar-collapse-btn"
                 style={{
                   color: "var(--text-tertiary)",
                   background: "none",
@@ -365,142 +376,18 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* ── Nav items ── */}
-        <nav style={{ flex: 1, padding: collapsed ? "10px 6px" : "10px 10px" }}>
-          {!collapsed && (
+        {/* ── Role tabs (like Claude's Chat / Cowork / Code) ── */}
+        {!isSettings && roles.length > 1 && !collapsed && (
+          <div style={{ padding: "0 12px 8px" }}>
             <div
               style={{
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: 9,
-                textTransform: "uppercase",
-                letterSpacing: "0.15em",
-                color: "var(--text-tertiary)",
-                padding: "0 10px 8px",
+                display: "flex",
+                gap: 2,
+                background: "var(--bg-deepest)",
+                borderRadius: 12,
+                padding: 4,
               }}
             >
-              {sectionLabel}
-            </div>
-          )}
-
-          {items.map((item, idx) => {
-            const active = pathname === item.href;
-            const { Icon } = item;
-
-            return (
-              <div key={item.href}>
-                {/* Separator between sections (after 4th item in admin, etc.) */}
-                {!collapsed && idx > 0 && idx % 4 === 0 && (
-                  <div
-                    style={{
-                      height: 1,
-                      background: "var(--border)",
-                      margin: "6px 10px 6px",
-                      opacity: 0.6,
-                    }}
-                  />
-                )}
-
-                {collapsed ? (
-                  /* ── Collapsed nav item ── */
-                  <Link
-                    href={item.href}
-                    title={item.label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "10px 0",
-                      borderRadius: 8,
-                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                      background: active ? "rgba(255,255,255,0.06)" : "transparent",
-                      transition: "all 150ms ease",
-                      textDecoration: "none",
-                      marginBottom: 2,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                        e.currentTarget.style.color = "var(--text-primary)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = "var(--text-secondary)";
-                      }
-                    }}
-                  >
-                    <Icon style={{ width: 20, height: 20 }} />
-                  </Link>
-                ) : (
-                  /* ── Expanded nav item ── */
-                  <Link
-                    href={item.href}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                      background: active ? "rgba(255,255,255,0.06)" : "transparent",
-                      textDecoration: "none",
-                      transition: "all 150ms ease",
-                      marginBottom: 1,
-                      fontSize: 13,
-                      fontWeight: active ? 500 : 400,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                        e.currentTarget.style.color = "var(--text-primary)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = "var(--text-secondary)";
-                      }
-                    }}
-                  >
-                    <Icon
-                      style={{
-                        width: 18,
-                        height: 18,
-                        flexShrink: 0,
-                        opacity: active ? 0.9 : 0.45,
-                        transition: "opacity 150ms",
-                      }}
-                    />
-                    <span>{item.label}</span>
-                  </Link>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* ── Role switcher (expanded) ── */}
-        {!collapsed && !isSettings && roles.length > 1 && (
-          <div
-            style={{
-              padding: "12px 12px 14px",
-              borderTop: "1px solid var(--border)",
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "var(--font-mono, monospace)",
-                fontSize: 9,
-                textTransform: "uppercase",
-                letterSpacing: "0.15em",
-                color: "var(--text-tertiary)",
-                padding: "0 6px 8px",
-              }}
-            >
-              Switch Role
-            </div>
-            <div style={{ display: "flex", gap: 6, padding: "0 4px" }}>
               {roles.map((role) => {
                 const isActive = role === activeRole;
                 const rc = getRoleColor(role);
@@ -511,33 +398,30 @@ export default function Sidebar({
                     style={{
                       flex: 1,
                       textAlign: "center",
-                      fontFamily: "var(--font-mono, monospace)",
-                      fontSize: 10,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                      padding: "6px 0",
-                      borderRadius: 20,
-                      border: isActive ? `1px solid ${rc.border}` : "1px solid var(--border)",
-                      background: isActive ? rc.bg : "transparent",
-                      color: isActive ? rc.text : "var(--text-secondary)",
-                      cursor: "pointer",
+                      fontSize: 12,
                       fontWeight: isActive ? 600 : 400,
+                      padding: "7px 0",
+                      borderRadius: 8,
+                      border: "none",
+                      cursor: "pointer",
+                      color: isActive ? rc.text : "var(--text-tertiary)",
+                      background: isActive ? rc.bg : "transparent",
+                      boxShadow: isActive ? `0 0 8px rgba(${rc.rgb},0.15)` : "none",
                       transition: "all 150ms ease",
+                      letterSpacing: "0.01em",
                     }}
                     onMouseEnter={(e) => {
                       if (!isActive) {
-                        e.currentTarget.style.borderColor = "var(--border-hover)";
-                        e.currentTarget.style.color = "var(--text-primary)";
+                        e.currentTarget.style.color = "var(--text-secondary)";
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isActive) {
-                        e.currentTarget.style.borderColor = "var(--border)";
-                        e.currentTarget.style.color = "var(--text-secondary)";
+                        e.currentTarget.style.color = "var(--text-tertiary)";
                       }
                     }}
                   >
-                    {role}
+                    {roleLabels[role] || role}
                   </button>
                 );
               })}
@@ -545,18 +429,9 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* ── Role switcher (collapsed) ── */}
-        {collapsed && !isSettings && roles.length > 1 && (
-          <div
-            style={{
-              padding: "8px 6px 10px",
-              borderTop: "1px solid var(--border)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              alignItems: "center",
-            }}
-          >
+        {/* ── Collapsed role switcher ── */}
+        {!isSettings && roles.length > 1 && !!collapsed && (
+          <div style={{ padding: "4px 8px 8px", display: "flex", flexDirection: "column", gap: 3, alignItems: "center" }}>
             {roles.map((role) => {
               const isActive = role === activeRole;
               const rc = getRoleColor(role);
@@ -566,31 +441,34 @@ export default function Sidebar({
                   onClick={() => onRoleSwitch(role)}
                   title={`Switch to ${role}`}
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    border: isActive ? `1.5px solid ${rc.border}` : "1.5px solid var(--border)",
-                    background: isActive ? rc.bg : "transparent",
-                    color: isActive ? rc.text : "var(--text-secondary)",
+                    width: 34,
+                    height: 28,
+                    borderRadius: 7,
+                    border: "none",
+                    background: isActive ? "var(--bg-card)" : "transparent",
+                    color: isActive ? rc.text : "var(--text-tertiary)",
                     cursor: "pointer",
                     fontFamily: "var(--font-mono, monospace)",
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: isActive ? 600 : 400,
                     transition: "all 150ms ease",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
+                    boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.3)" : "none",
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
                   }}
                   onMouseEnter={(e) => {
                     if (!isActive) {
-                      e.currentTarget.style.borderColor = "var(--border-hover)";
-                      e.currentTarget.style.color = "var(--text-primary)";
+                      e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                      e.currentTarget.style.color = "var(--text-secondary)";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!isActive) {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.color = "var(--text-secondary)";
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--text-tertiary)";
                     }
                   }}
                 >
@@ -600,12 +478,129 @@ export default function Sidebar({
             })}
           </div>
         )}
+
+        {/* ── Divider ── */}
+        <div style={{ height: 1, background: "var(--border)", margin: !collapsed ? "4px 16px" : "4px 8px", transition: "margin 200ms ease" }} />
+
+        {/* ── Section label ── */}
+        {!collapsed && (
+          <div
+            style={{
+              padding: "14px 20px 6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "var(--text-tertiary)",
+                letterSpacing: "0.01em",
+              }}
+            >
+              {sectionLabel}
+            </span>
+          </div>
+        )}
+
+        {/* ── Nav items ── */}
+        <nav style={{ flex: 1, padding: !collapsed ? "2px 8px" : "6px 6px", transition: "padding 200ms ease", overflowY: "auto" }}>
+          {items.map((item) => {
+            const active = pathname === item.href;
+            const { Icon } = item;
+
+            if (!!collapsed) {
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={item.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "9px 0",
+                    borderRadius: 8,
+                    color: active ? "var(--text-primary)" : "var(--text-tertiary)",
+                    background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                    transition: "all 150ms ease",
+                    textDecoration: "none",
+                    marginBottom: 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                      e.currentTarget.style.color = "var(--text-secondary)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) {
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--text-tertiary)";
+                    }
+                  }}
+                >
+                  <Icon style={{ width: 18, height: 18 }} />
+                </Link>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                  background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                  textDecoration: "none",
+                  transition: "all 150ms ease",
+                  marginBottom: 1,
+                  fontSize: 13,
+                  fontWeight: active ? 500 : 400,
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                    e.currentTarget.style.color = "var(--text-primary)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "var(--text-secondary)";
+                  }
+                }}
+              >
+                <Icon
+                  style={{
+                    width: 16,
+                    height: 16,
+                    flexShrink: 0,
+                    opacity: active ? 0.85 : 0.4,
+                    transition: "opacity 150ms",
+                  }}
+                />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
       </aside>
+      </div>
 
       {/* ── Mobile bottom bar ── */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50"
         style={{
+          background: "var(--bg-deep)",
           borderTop: "1px solid var(--border)",
           paddingBottom: "max(6px, env(safe-area-inset-bottom))",
         }}

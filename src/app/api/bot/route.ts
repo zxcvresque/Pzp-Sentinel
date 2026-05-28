@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bot } from "@/lib/bot";
+import { bot, fetchTelegramPhotoUrl } from "@/lib/bot";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/telegram-log";
 import { webhookCallback } from "grammy";
@@ -12,12 +12,20 @@ bot.command("start", async (ctx) => {
 
   if (!telegramId) return;
 
+  // Fetch profile photo from Telegram
+  const photoUrl = await fetchTelegramPhotoUrl(telegramId);
+
   let user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (user) {
     await prisma.user.update({
       where: { id: user.id },
-      data: { chatId },
+      data: {
+        chatId,
+        ...(photoUrl && { photoUrl }),
+        ...(username && { telegramUser: username }),
+        name: firstName || user.name,
+      },
     });
   }
 
@@ -32,6 +40,7 @@ bot.command("start", async (ctx) => {
         name: firstName,
         chatId,
         roles: [],
+        ...(photoUrl && { photoUrl }),
       },
     });
 

@@ -39,13 +39,17 @@ interface Project {
   taskCounts: Record<string, number>;
 }
 
-interface Commit {
-  sha: string;
-  message: string;
+interface ActivityItem {
+  id: string;
+  type: "push" | "pr" | "branch" | "release" | "issue" | "review" | "fork" | "star";
+  repo: string;
+  title: string;
   author: string;
+  avatar: string | null;
   date: string;
   url: string;
-  avatar: string | null;
+  sha?: string;
+  meta?: Record<string, unknown>;
 }
 
 function timeAgo(dateStr: string): string {
@@ -135,12 +139,11 @@ export default function DevDashboard() {
   const [projRepo, setProjRepo] = useState("");
   const [projSubmitting, setProjSubmitting] = useState(false);
 
-  // Git commits
-  const [commits, setCommits] = useState<Commit[]>([]);
-  const [commitsOpen, setCommitsOpen] = useState(false);
+  // Org-wide git activity
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [activityOpen, setActivityOpen] = useState(true);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
-  const selectedRepoUrl = selectedProject?.repoUrl || null;
 
   const fetchTasks = useCallback(() => {
     if (!selectedProjectId) return;
@@ -171,17 +174,13 @@ export default function DevDashboard() {
     fetchTasks();
   }, [fetchTasks]);
 
-  // Fetch commits when project changes
+  // Fetch org-wide git activity once on mount
   useEffect(() => {
-    if (!selectedRepoUrl) {
-      setCommits([]);
-      return;
-    }
-    fetch(`/api/github/commits?repoUrl=${encodeURIComponent(selectedRepoUrl)}`)
-      .then((r) => (r.ok ? r.json() : { commits: [] }))
-      .then((data) => setCommits(data.commits || []))
-      .catch(() => setCommits([]));
-  }, [selectedRepoUrl]);
+    fetch("/api/github/activity")
+      .then((r) => (r.ok ? r.json() : { activity: [] }))
+      .then((data) => setActivity(data.activity || []))
+      .catch(() => setActivity([]));
+  }, []);
 
   async function handleStatusChange(taskId: string, newStatus: string) {
     const prev = tasks;
@@ -365,12 +364,127 @@ export default function DevDashboard() {
     );
   }
 
+  // Activity panel — collapsible right sidebar on desktop, full-width on mobile
+  const activityPanel = (
+    <div
+      className={`rounded-xl border border-[var(--border)] overflow-hidden transition-all ${
+        activityOpen ? "lg:w-80 xl:w-96" : ""
+      }`}
+      style={{ background: "var(--bg-card)" }}
+    >
+      {/* Header */}
+      <button
+        onClick={() => setActivityOpen(!activityOpen)}
+        className="flex items-center gap-2.5 w-full px-4 py-3 text-left group"
+        style={{ background: "var(--bg-deep)" }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-lime shrink-0">
+          <circle cx="12" cy="12" r="3" />
+          <line x1="12" y1="3" x2="12" y2="9" />
+          <line x1="12" y1="15" x2="12" y2="21" />
+        </svg>
+        {activityOpen ? (
+          <>
+            <span className="text-sm font-semibold text-text-primary">
+              Recent Repo Activities
+            </span>
+            {activity.length > 0 && (
+              <span className="font-mono text-[10px] bg-lime/15 text-lime px-1.5 py-0.5 rounded-full">{activity.length}</span>
+            )}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-tertiary ml-auto hover:text-text-secondary transition-colors">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </>
+        ) : (
+          <>
+            <span className="text-sm font-semibold text-text-secondary whitespace-nowrap">Git Feed</span>
+            {activity.length > 0 && (
+              <span className="font-mono text-[10px] bg-lime/15 text-lime px-1.5 py-0.5 rounded-full">{activity.length}</span>
+            )}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-text-tertiary ml-auto shrink-0">
+              <path d="M5 3l6 5-6 5" />
+            </svg>
+          </>
+        )}
+      </button>
+
+      {/* Feed */}
+      {activityOpen && (
+        <div className="overflow-y-auto max-h-[70vh]">
+          {activity.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p className="text-text-secondary text-sm mb-1">No activity yet</p>
+              <p className="text-text-tertiary text-xs">
+                Admin needs to track repos for activity to appear.
+              </p>
+            </div>
+          ) : (
+            activity.slice(0, 30).map((item, i) => (
+              <a
+                key={item.id}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block px-4 py-3 hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+                style={{
+                  borderBottom:
+                    i < Math.min(activity.length, 30) - 1
+                      ? "1px solid var(--border)"
+                      : undefined,
+                }}
+              >
+                {/* Row 1: repo + time */}
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-xs font-semibold text-text-primary">{item.repo}</span>
+                  <span className="font-mono text-[10px] text-text-tertiary ml-auto shrink-0">
+                    {timeAgo(item.date)}
+                  </span>
+                </div>
+                {/* Row 2: type badge + commit message */}
+                <div className="flex items-start gap-2">
+                  <span className={`shrink-0 mt-0.5 font-mono text-[9px] uppercase tracking-[0.05em] px-1.5 py-0.5 rounded leading-none ${
+                    item.type === "push" ? "text-lime bg-lime/10" :
+                    item.type === "pr" ? (item.meta?.action === "merged" ? "text-violet bg-violet/10" : "text-blue bg-blue/10") :
+                    item.type === "branch" ? "text-amber bg-amber/10" :
+                    item.type === "release" ? "text-mint bg-mint/10" :
+                    item.type === "issue" ? "text-coral bg-coral/10" :
+                    item.type === "review" ? "text-violet bg-violet/10" :
+                    "text-text-tertiary"
+                  }`}>
+                    {item.type === "push" && item.sha ? item.sha :
+                     item.type === "pr" ? (item.meta?.action === "merged" ? "merged" : "PR") :
+                     item.type === "branch" ? "branch" :
+                     item.type === "release" ? "release" :
+                     item.type === "issue" ? "issue" :
+                     item.type === "review" ? "review" : "?"}
+                  </span>
+                  <p className="text-xs text-text-secondary leading-snug line-clamp-2 flex-1 min-w-0">
+                    {item.title}
+                  </p>
+                </div>
+                {/* Row 3: author */}
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  {item.avatar && (
+                    <img src={item.avatar} alt="" className="w-3.5 h-3.5 rounded-full" />
+                  )}
+                  <span className="text-[11px] text-text-tertiary">{item.author}</span>
+                </div>
+              </a>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   if (projects.length === 0) {
     return (
       <div>
         <h1 className="text-3xl font-extrabold mb-8">
           Project <span className="font-display text-lime">Board</span>
         </h1>
+        <div className="flex gap-4 items-start">
+        <div className="flex-1 min-w-0">
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No projects yet.</p>
           {!showProjectForm ? (
@@ -440,6 +554,9 @@ export default function DevDashboard() {
             </form>
           )}
         </div>
+        </div>
+        <div className="hidden lg:block shrink-0">{activityPanel}</div>
+        </div>
       </div>
     );
   }
@@ -460,7 +577,8 @@ export default function DevDashboard() {
   if (untagged.length > 0) tasksByTag["_untagged"] = untagged;
 
   return (
-    <div>
+    <div className="flex gap-4 items-start">
+      <div className="flex-1 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">
           Project <span className="font-display text-lime">Board</span>
@@ -659,79 +777,6 @@ export default function DevDashboard() {
             {submitting ? "Creating..." : "Create Task"}
           </button>
         </form>
-      )}
-
-      {/* ── Git Commits Feed ── */}
-      {selectedRepoUrl && commits.length > 0 && (
-        <div className="mb-4">
-          <button
-            onClick={() => setCommitsOpen(!commitsOpen)}
-            className="flex items-center gap-2.5 w-full text-left group mb-2"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-tertiary shrink-0">
-              <circle cx="12" cy="12" r="3" />
-              <line x1="12" y1="3" x2="12" y2="9" />
-              <line x1="12" y1="15" x2="12" y2="21" />
-            </svg>
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary group-hover:text-text-secondary transition-colors">
-              Latest Commits
-            </span>
-            <span className="font-mono text-[10px] text-text-tertiary">{commits.length}</span>
-            {!commitsOpen && commits[0] && (
-              <span className="text-xs text-text-tertiary truncate mx-2 flex-1 hidden sm:inline">
-                {commits[0].message}
-                <span className="ml-2 font-mono text-[10px]">{timeAgo(commits[0].date)}</span>
-              </span>
-            )}
-            <span className="font-mono text-[10px] text-text-tertiary ml-auto shrink-0">
-              {commitsOpen ? "▾" : "▸"}
-            </span>
-          </button>
-          {commitsOpen && (
-            <div
-              className="rounded-xl border border-[var(--border)] overflow-hidden"
-              style={{ background: "var(--bg-card)" }}
-            >
-              {commits.slice(0, 10).map((c, i) => (
-                <a
-                  key={c.sha + i}
-                  href={c.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-[rgba(255,255,255,0.02)] transition-colors"
-                  style={{
-                    borderBottom:
-                      i < Math.min(commits.length, 10) - 1
-                        ? "1px solid var(--border)"
-                        : undefined,
-                  }}
-                >
-                  <code className="font-mono text-[11px] text-lime shrink-0">
-                    {c.sha}
-                  </code>
-                  <span className="text-xs text-text-secondary truncate flex-1 min-w-0">
-                    {c.message}
-                  </span>
-                  <span className="text-[11px] text-text-tertiary shrink-0 hidden sm:inline">
-                    {c.author}
-                  </span>
-                  <span className="font-mono text-[10px] text-text-tertiary shrink-0">
-                    {timeAgo(c.date)}
-                  </span>
-                </a>
-              ))}
-              <a
-                href={selectedRepoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block px-4 py-2 text-center font-mono text-[10px] text-lime hover:text-lime/80 transition-colors"
-                style={{ background: "var(--bg-deep)", borderTop: "1px solid var(--border)" }}
-              >
-                View on GitHub →
-              </a>
-            </div>
-          )}
-        </div>
       )}
 
       <div className="flex items-center gap-2 mb-4">
@@ -1103,6 +1148,8 @@ export default function DevDashboard() {
         </div>,
         document.body,
       )}
+      </div>
+      <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
     </div>
   );
 }
