@@ -9,8 +9,8 @@ export default function PublicPage() {
 
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6">
         <h1
-          className="text-5xl sm:text-7xl font-extrabold text-white select-none mb-4 whitespace-nowrap"
-          style={{ letterSpacing: "0.05em" }}
+          className="text-3xl sm:text-5xl lg:text-7xl font-extrabold text-white select-none mb-4 whitespace-nowrap"
+          style={{ letterSpacing: "0.05em", fontSize: "clamp(1.4rem, 7vw, 4.5rem)" }}
         >
           {"Ｓ ☰ ＮＴＩＮ ☰ Ｌ"}
         </h1>
