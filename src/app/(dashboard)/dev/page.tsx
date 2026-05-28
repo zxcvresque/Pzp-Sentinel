@@ -556,7 +556,7 @@ export default function DevDashboard() {
           )}
         </div>
         </div>
-        <div className="hidden lg:block shrink-0">{activityPanel}</div>
+        <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
         </div>
       </div>
     );
@@ -1150,7 +1150,12 @@ export default function DevDashboard() {
         document.body,
       )}
       </div>
-      <div data-tour="activity-panel" className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
+      {/* Mobile Git Feed — shown below kanban on small screens */}
+      <div data-tour="activity-panel" className="block lg:hidden mt-4">
+        {activityPanel}
+      </div>
+      {/* Desktop Git Feed — sticky sidebar */}
+      <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
       <PageTour pageKey="dev-board" />
     </div>
   );
