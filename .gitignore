@@ -27,6 +27,7 @@
 .DS_Store
 *.pem
 sentinel-secrets.html
+CLAUDE.md
 
 # uploads (user-generated content)
 
