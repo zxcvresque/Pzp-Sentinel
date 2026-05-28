@@ -237,6 +237,7 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const isSettings = pathname === "/profile" || pathname === "/admin/audit";
   const isAdmin = roles.includes("ADMIN");
 
@@ -650,6 +651,7 @@ export default function Sidebar({
           })}
           {items.length > 4 && (
             <button
+              onClick={() => setMoreOpen(true)}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -660,7 +662,7 @@ export default function Sidebar({
                 fontSize: 9,
                 textTransform: "uppercase",
                 letterSpacing: "0.05em",
-                color: "var(--text-tertiary)",
+                color: moreOpen ? "var(--text-primary)" : "var(--text-tertiary)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
@@ -672,6 +674,81 @@ export default function Sidebar({
           )}
         </div>
       </nav>
+
+      {/* ── Mobile "More" sheet ── */}
+      {items.length > 4 && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="md:hidden"
+            onClick={() => setMoreOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 55,
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(4px)",
+              WebkitBackdropFilter: "blur(4px)",
+              opacity: moreOpen ? 1 : 0,
+              pointerEvents: moreOpen ? "auto" : "none",
+              transition: "opacity 250ms ease",
+            }}
+          />
+
+          {/* Sheet */}
+          <div
+            className="md:hidden"
+            style={{
+              position: "fixed",
+              left: 0,
+              right: 0,
+              zIndex: 60,
+              bottom: moreOpen ? 56 : -400,
+              transition: "bottom 300ms cubic-bezier(0.4,0,0.2,1)",
+              background: "var(--bg-deep)",
+              borderTop: "1px solid var(--border)",
+              borderRadius: "18px 18px 0 0",
+              paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+            }}
+          >
+            {/* Handle */}
+            <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-hover)" }} />
+            </div>
+
+            {/* Remaining nav items */}
+            <div style={{ padding: "4px 12px 8px" }}>
+              {items.slice(4).map((item) => {
+                const active = pathname === item.href;
+                const { Icon } = item;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreOpen(false)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: "13px 16px",
+                      borderRadius: 12,
+                      color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                      textDecoration: "none",
+                      fontSize: 14,
+                      fontWeight: active ? 500 : 400,
+                      marginBottom: 2,
+                    }}
+                  >
+                    <Icon style={{ width: 20, height: 20, flexShrink: 0, opacity: active ? 0.85 : 0.45 }} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
