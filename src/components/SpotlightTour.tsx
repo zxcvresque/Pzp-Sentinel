@@ -54,11 +54,14 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
     if (!current) return;
     const el = document.querySelector(current.target);
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      // Small delay for scroll to settle
+      // Use instant scroll so the element is at its final position immediately,
+      // then double-rAF to let the browser commit layout before measuring.
+      el.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "nearest" });
       requestAnimationFrame(() => {
-        setRect(getRect(el));
-        setVisible(true);
+        requestAnimationFrame(() => {
+          setRect(getRect(el));
+          setVisible(true);
+        });
       });
     } else {
       // Target not found — skip to next
@@ -122,18 +125,22 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
   };
 
   const gap = 14;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   if (placement === "bottom") {
     tooltipStyle.top = rect.bottom + gap;
-    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, window.innerWidth - 356);
+    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, vw - 356);
   } else if (placement === "top") {
-    tooltipStyle.bottom = window.innerHeight - rect.top + gap;
-    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, window.innerWidth - 356);
+    tooltipStyle.bottom = vh - rect.top + gap;
+    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, vw - 356);
   } else if (placement === "right") {
-    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, window.innerHeight - 200);
-    tooltipStyle.left = rect.right + gap;
+    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, vh - 200);
+    tooltipStyle.left = clamp(rect.right + gap, 16, vw - 356);
   } else {
-    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, window.innerHeight - 200);
-    tooltipStyle.right = window.innerWidth - rect.left + gap;
+    // left
+    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, vh - 200);
+    const leftEdge = rect.left - gap - 340;
+    tooltipStyle.left = clamp(leftEdge, 16, vw - 356);
   }
 
   return createPortal(
@@ -141,11 +148,13 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
       {/* Overlay with spotlight cutout */}
       <svg
         style={{ position: "fixed", inset: 0, width: "100%", height: "100%", zIndex: 10000 }}
+        viewBox={`0 0 ${vw} ${vh}`}
+        preserveAspectRatio="none"
         onClick={onFinish}
       >
         <defs>
-          <mask id="spotlight-mask">
-            <rect width="100%" height="100%" fill="white" />
+          <mask id="sentinel-spotlight-mask">
+            <rect width={vw} height={vh} fill="white" />
             <rect
               x={spotX}
               y={spotY}
@@ -157,13 +166,13 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
           </mask>
         </defs>
         <rect
-          width="100%"
-          height="100%"
+          width={vw}
+          height={vh}
           fill="rgba(0,0,0,0.7)"
-          mask="url(#spotlight-mask)"
+          mask="url(#sentinel-spotlight-mask)"
           style={{ transition: "all 300ms ease" }}
         />
-        {/* Spotlight border glow */}
+        {/* Spotlight border glow — rendered outside the mask so it's always visible */}
         <rect
           x={spotX}
           y={spotY}
