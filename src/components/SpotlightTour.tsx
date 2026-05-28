@@ -50,10 +50,21 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
 
   const current = steps[step];
 
+  const skip = useCallback(() => {
+    if (step < steps.length - 1) setStep((s) => s + 1);
+    else onFinish();
+  }, [step, steps.length, onFinish]);
+
   const measure = useCallback(() => {
     if (!current) return;
     const el = document.querySelector(current.target);
     if (el) {
+      const r = getRect(el);
+      // Element is hidden (display:none / zero layout) — skip just like missing
+      if (r.width === 0 && r.height === 0) {
+        skip();
+        return;
+      }
       // Use instant scroll so the element is at its final position immediately,
       // then double-rAF to let the browser commit layout before measuring.
       el.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "nearest" });
@@ -65,13 +76,9 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
       });
     } else {
       // Target not found — skip to next
-      if (step < steps.length - 1) {
-        setStep((s) => s + 1);
-      } else {
-        onFinish();
-      }
+      skip();
     }
-  }, [current, step, steps.length, onFinish]);
+  }, [current, skip]);
 
   useEffect(() => {
     if (!active) {

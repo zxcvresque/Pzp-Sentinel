@@ -716,6 +716,46 @@ export default function Sidebar({
               <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-hover)" }} />
             </div>
 
+            {/* Role switcher — only shown when user has multiple roles */}
+            {!isSettings && roles.length > 1 && (
+              <div data-tour="role-tabs" style={{ padding: "8px 16px 4px" }}>
+                <p style={{ fontSize: 10, fontWeight: 500, color: "var(--text-tertiary)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Switch View
+                </p>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {roles.map((role) => {
+                    const isActive = role === activeRole;
+                    const rc = getRoleColor(role);
+                    return (
+                      <button
+                        key={role}
+                        onClick={() => { onRoleSwitch(role); setMoreOpen(false); }}
+                        style={{
+                          flex: 1,
+                          padding: "9px 0",
+                          borderRadius: 10,
+                          border: isActive ? `1px solid ${rc.text}33` : "1px solid var(--border)",
+                          background: isActive ? rc.bg : "transparent",
+                          color: isActive ? rc.text : "var(--text-tertiary)",
+                          fontSize: 12,
+                          fontWeight: isActive ? 600 : 400,
+                          cursor: "pointer",
+                          transition: "all 150ms ease",
+                        }}
+                      >
+                        {roleLabels[role] || role}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Divider if both role switcher and nav items shown */}
+            {!isSettings && roles.length > 1 && (
+              <div style={{ height: 1, background: "var(--border)", margin: "10px 16px 4px" }} />
+            )}
+
             {/* Remaining nav items */}
             <div style={{ padding: "4px 12px 8px" }}>
               {items.slice(4).map((item) => {
