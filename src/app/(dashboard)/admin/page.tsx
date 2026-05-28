@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import PageTour from "@/components/PageTour";
 
 interface Transaction {
   id: string;
@@ -203,7 +204,7 @@ export default function AdminDashboard() {
         <h1 className="text-3xl font-extrabold">
           Treasury <span className="font-display text-lime">Overview</span>
         </h1>
-        <div className="flex items-center gap-3">
+        <div data-tour="currency-toggle" className="flex items-center gap-3">
           {exchangeRate && (
             <span className="font-mono text-[10px] text-text-tertiary transition-opacity duration-200" style={{ opacity: currency === "USD" ? 1 : 0 }}>
               1 USD = ₹{exchangeRate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
@@ -247,7 +248,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div data-tour="stat-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {/* Balance */}
         <div className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
@@ -678,7 +679,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div>
+      <div data-tour="recent-transactions">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
           Recent Transactions
         </h2>
@@ -756,6 +757,7 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+      <PageTour pageKey="admin-dashboard" />
     </div>
   );
 }

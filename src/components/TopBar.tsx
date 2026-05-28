@@ -157,7 +157,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           50% { opacity: 0.5; }
         }
       `}</style>
-      <div ref={notifRef} className="relative z-50">
+      <div ref={notifRef} className="relative z-50" data-tour="notifications">
         <button
           onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
           className="relative w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] bg-[var(--bg-deep)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] hover:bg-[var(--bg-elevated)] transition-all duration-200"
@@ -318,7 +318,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
       </div>
 
       {/* ── Profile ── */}
-      <div ref={profileRef} className="relative z-50">
+      <div ref={profileRef} className="relative z-50" data-tour="profile">
         <button
           onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
           className="group relative w-9 h-9 rounded-full overflow-hidden transition-all duration-200 flex items-center justify-center"

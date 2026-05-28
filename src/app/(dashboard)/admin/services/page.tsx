@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import PageTour from "@/components/PageTour";
 
 interface ColumnDef {
   key: string;
@@ -274,7 +275,7 @@ export default function ServicesPage() {
 
       {/* Stats bar — only shows when there are paid services */}
       {paidServices.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div data-tour="service-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <div className="card p-5">
             <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Active Subscriptions</div>
             <div className="text-3xl font-extrabold text-mint">{activeCount}</div>
@@ -549,7 +550,7 @@ export default function ServicesPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div data-tour="service-catalog" className="space-y-8">
           {Object.entries(grouped).map(([categoryName, items]) => (
             <div key={categoryName}>
               <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
@@ -665,6 +666,7 @@ export default function ServicesPage() {
           ))}
         </div>
       )}
+      <PageTour pageKey="admin-services" />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from "react";
 import Dropdown from "@/components/Dropdown";
+import PageTour from "@/components/PageTour";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -491,7 +492,7 @@ export default function GanttPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div data-tour="gantt-header" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">
           Gantt <span className="font-display text-lime">Timeline</span>
         </h1>
@@ -780,6 +781,7 @@ export default function GanttPage() {
         </div>
       ) : (
         <div
+          data-tour="gantt-chart"
           ref={scrollRef}
           className="overflow-x-auto rounded-xl border border-[var(--border)]"
           style={{ background: "var(--bg-void)" }}
@@ -1049,6 +1051,7 @@ export default function GanttPage() {
           50% { box-shadow: 0 0 12px rgba(248,113,113,0.35); }
         }
       `}</style>
+      <PageTour pageKey="dev-gantt" />
     </div>
   );
 }

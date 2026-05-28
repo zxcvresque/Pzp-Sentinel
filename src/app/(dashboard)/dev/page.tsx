@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface Member {
   id: string;
@@ -583,7 +584,7 @@ export default function DevDashboard() {
         <h1 className="text-3xl font-extrabold">
           Project <span className="font-display text-lime">Board</span>
         </h1>
-        <div className="flex items-center gap-3">
+        <div data-tour="board-actions" className="flex items-center gap-3">
           <Dropdown
             value={selectedProjectId}
             options={projects.map((p) => ({ value: p.id, label: p.name }))}
@@ -819,7 +820,7 @@ export default function DevDashboard() {
           ))}
         </div>
       ) : groupMode === "status" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div data-tour="kanban-board" className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           {COLUMNS.map((col) => {
             const colTasks = tasksByStatus[col.key];
             return (
@@ -1149,7 +1150,8 @@ export default function DevDashboard() {
         document.body,
       )}
       </div>
-      <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
+      <div data-tour="activity-panel" className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
+      <PageTour pageKey="dev-board" />
     </div>
   );
 }

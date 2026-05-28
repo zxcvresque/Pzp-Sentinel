@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { getRoleColor } from "@/lib/role-colors";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface User {
   id: string;
@@ -537,6 +538,7 @@ export default function UsersPage() {
           Manage <span className="font-display text-lime">Users</span>
         </h1>
         <button
+          data-tour="add-user"
           onClick={() => setShowForm(!showForm)}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
@@ -678,7 +680,7 @@ export default function UsersPage() {
       ) : (
         <>
           {activeUsers.length > 0 && (
-            <div className="mb-8">
+            <div data-tour="users-table" className="mb-8">
               <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
                 Active Members ({activeUsers.length})
               </h2>
@@ -733,6 +735,7 @@ export default function UsersPage() {
           )}
         </>
       )}
+      <PageTour pageKey="admin-users" />
     </div>
   );
 }

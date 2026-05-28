@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import SpotlightTour from "@/components/SpotlightTour";
+import { getTourSteps } from "@/lib/tour-steps";
 import type { Role } from "@/generated/prisma/enums";
 
 interface UserData {
@@ -43,6 +45,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [user, setUser] = useState<UserData | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("ADMIN");
+  const [tourActive, setTourActive] = useState(false);
+  const [tourToast, setTourToast] = useState(false);
 
   // Fetch user data once on mount only
   useEffect(() => {
@@ -60,6 +64,26 @@ export default function DashboardLayout({
       .catch(() => router.push("/login"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Show tour on first visit
+  useEffect(() => {
+    if (!user) return;
+    const key = `sentinel_tour_seen_${user.id}`;
+    if (!localStorage.getItem(key)) {
+      // Small delay so the page renders first
+      const timer = setTimeout(() => setTourActive(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
+  function handleTourFinish() {
+    setTourActive(false);
+    if (user) {
+      localStorage.setItem(`sentinel_tour_seen_${user.id}`, "1");
+      setTourToast(true);
+      setTimeout(() => setTourToast(false), 6000);
+    }
+  }
 
   // Derive activeRole from pathname whenever it changes — no re-fetch
   useEffect(() => {
@@ -138,7 +162,7 @@ export default function DashboardLayout({
       />
       <div className="flex-1 flex flex-col overflow-x-hidden">
         <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)]" style={{ background: "rgba(17,17,22,0.6)", backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)" }}>
-          <div className="flex items-center gap-1.5">
+          <div data-tour="breadcrumb" className="flex items-center gap-1.5">
             {breadcrumb.split(" / ").map((seg, i, arr) => (
               <span key={i} className="flex items-center gap-1.5">
                 {i > 0 && (
@@ -172,6 +196,76 @@ export default function DashboardLayout({
         </main>
       </div>
       <div className="grain" />
+      <SpotlightTour
+        steps={getTourSteps(activeRole)}
+        active={tourActive}
+        onFinish={handleTourFinish}
+      />
+
+      {/* Tour reminder toast */}
+      {tourToast && (
+        <div
+          className="animate-fade-in"
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            background: "var(--bg-card)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            padding: "12px 20px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            maxWidth: 420,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--lime)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4" />
+            <path d="M12 8h.01" />
+          </svg>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+            You can replay the tour anytime from{" "}
+            <button
+              onClick={() => { setTourToast(false); router.push("/profile"); }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--lime)",
+                fontWeight: 600,
+                cursor: "pointer",
+                padding: 0,
+                fontSize: 13,
+                textDecoration: "underline",
+                textUnderlineOffset: 2,
+              }}
+            >
+              Settings
+            </button>
+          </span>
+          <button
+            onClick={() => setTourToast(false)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-tertiary)",
+              cursor: "pointer",
+              padding: 4,
+              marginLeft: 4,
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

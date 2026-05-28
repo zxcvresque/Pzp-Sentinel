@@ -317,6 +317,7 @@ export default function Sidebar({
             <>
               <Link
                 href={`/${primaryRole.toLowerCase()}`}
+                data-tour="brand"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -379,7 +380,7 @@ export default function Sidebar({
 
         {/* ── Role tabs (like Claude's Chat / Cowork / Code) ── */}
         {!isSettings && roles.length > 1 && !collapsed && (
-          <div style={{ padding: "0 12px 8px" }}>
+          <div data-tour="role-tabs" style={{ padding: "0 12px 8px" }}>
             <div
               style={{
                 display: "flex",
@@ -520,7 +521,7 @@ export default function Sidebar({
         )}
 
         {/* ── Nav items ── */}
-        <nav style={{ flex: 1, padding: !collapsed ? "2px 8px" : "6px 6px", transition: "padding 200ms ease", overflowY: "auto" }}>
+        <nav data-tour="nav" style={{ flex: 1, padding: !collapsed ? "2px 8px" : "6px 6px", transition: "padding 200ms ease", overflowY: "auto" }}>
           {items.map((item) => {
             const active = pathname === item.href;
             const { Icon } = item;

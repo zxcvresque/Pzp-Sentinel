@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface Transaction {
   id: string;
@@ -167,6 +168,7 @@ export default function DonorDashboard() {
           </p>
         </div>
         <button
+          data-tour="new-donation"
           onClick={() => {
             setShowForm(!showForm);
             setFormError("");
@@ -178,7 +180,7 @@ export default function DonorDashboard() {
       </div>
 
       {/* Stats summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Total Contributed
@@ -333,7 +335,7 @@ export default function DonorDashboard() {
 
       {/* Filter tabs */}
       {transactions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div data-tour="donation-history" className="flex flex-wrap items-center gap-2 mb-4">
           {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
             <button
               key={s}
@@ -420,6 +422,7 @@ export default function DonorDashboard() {
           ))}
         </div>
       )}
+      <PageTour pageKey="donor-overview" />
     </div>
   );
 }

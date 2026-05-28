@@ -117,6 +117,79 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      <style>{`
+        @keyframes tg-shine {
+          0% { transform: translateX(-100%) skewX(-15deg); }
+          100% { transform: translateX(250%) skewX(-15deg); }
+        }
+        .tg-btn {
+          position: relative;
+          overflow: hidden;
+        }
+        .tg-btn::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 35%;
+          height: 100%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,0.2),
+            transparent
+          );
+          transform: translateX(-100%) skewX(-15deg);
+          pointer-events: none;
+        }
+        .tg-btn:hover::after {
+          animation: tg-shine 0.5s ease forwards;
+        }
+        .tg-btn:hover {
+          box-shadow:
+            0 6px 20px rgba(42,171,238,0.4),
+            inset 0 1px 0 rgba(255,255,255,0.2) !important;
+          transform: translateY(-1px) scale(1.01);
+        }
+        .tg-btn:active {
+          transform: translateY(0) scale(0.98) !important;
+        }
+        .tg-btn > * {
+          position: relative;
+          z-index: 1;
+        }
+        .glass-btn {
+          position: relative;
+          overflow: hidden;
+        }
+        .glass-btn::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 40%;
+          height: 100%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255,255,255,0.15),
+            transparent
+          );
+          transform: translateX(-100%) skewX(-15deg);
+          pointer-events: none;
+        }
+        .glass-btn:hover::after {
+          animation: tg-shine 0.6s ease forwards;
+        }
+        .glass-btn:hover {
+          background: rgba(255,255,255,0.16) !important;
+          border-color: rgba(255,255,255,0.25) !important;
+          transform: translateY(-1px);
+        }
+        .glass-btn:active {
+          transform: translateY(0) scale(0.97) !important;
+        }
+      `}</style>
       <img
         src="/login-bg.png"
         alt=""
@@ -189,7 +262,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={handleTelegramLogin}
                 disabled={loading || waitingForBot}
-                className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-25 disabled:cursor-not-allowed"
+                className="tg-btn w-full flex items-center justify-center gap-3 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-25 disabled:cursor-not-allowed"
                 style={{
                   background: "linear-gradient(135deg, #2AABEE 0%, #229ED9 100%)",
                   color: "#fff",
@@ -358,7 +431,7 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
           <button
             type="submit"
             disabled={loading || !telegramId}
-            className="w-full mt-5 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-25 disabled:cursor-not-allowed"
+            className="glass-btn w-full mt-5 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-25 disabled:cursor-not-allowed"
             style={btnStyle}
           >
             {loading ? (
@@ -424,7 +497,7 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
           <button
             type="submit"
             disabled={loading || otp.length !== 6}
-            className="w-full mt-5 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-25 disabled:cursor-not-allowed"
+            className="glass-btn w-full mt-5 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-25 disabled:cursor-not-allowed"
             style={btnStyle}
           >
             {loading ? (

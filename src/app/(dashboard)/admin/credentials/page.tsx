@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface UserRef {
   id: string;
@@ -199,6 +200,7 @@ export default function CredentialsPage() {
             </span>
           )}
           <button
+            data-tour="add-credential"
             onClick={() => (showForm ? resetForm() : setShowForm(true))}
             className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
           >
@@ -318,7 +320,7 @@ export default function CredentialsPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div data-tour="credential-list" className="space-y-8">
           {Object.entries(grouped).map(([platformName, creds]) => (
             <div key={platformName}>
               <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-3">
@@ -431,6 +433,7 @@ export default function CredentialsPage() {
           ))}
         </div>
       )}
+      <PageTour pageKey="admin-credentials" />
     </div>
   );
 }

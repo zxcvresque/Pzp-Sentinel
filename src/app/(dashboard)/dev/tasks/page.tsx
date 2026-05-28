@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
+import PageTour from "@/components/PageTour";
 
 interface Tag {
   id: string;
@@ -225,7 +226,7 @@ export default function DevTasksPage() {
       </div>
 
       {/* Task count summary */}
-      <div className="flex flex-wrap items-center gap-4 mb-5">
+      <div data-tour="task-summary" className="flex flex-wrap items-center gap-4 mb-5">
         <span className="font-mono text-xs text-text-secondary">
           <span className="text-text-primary font-semibold">{totalCount}</span> task{totalCount !== 1 ? "s" : ""} total
         </span>
@@ -243,7 +244,7 @@ export default function DevTasksPage() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div data-tour="task-filters" className="flex flex-wrap items-center gap-2 mb-4">
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
           Group
         </span>
@@ -408,6 +409,7 @@ export default function DevTasksPage() {
           ))}
         </div>
       )}
+      <PageTour pageKey="dev-tasks" />
     </div>
   );
 }

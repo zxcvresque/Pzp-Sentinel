@@ -576,6 +576,45 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* ── Replay Tour ── */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary mb-1">Guided Tour</h3>
+            <p className="text-xs text-text-tertiary">Walk through Sentinel&apos;s interface step by step</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (user) {
+                  // Clear all page-specific tours
+                  const keys = Object.keys(localStorage).filter(
+                    (k) => k.startsWith(`sentinel_page_tour_${user.id}_`)
+                  );
+                  keys.forEach((k) => localStorage.removeItem(k));
+                  // Redirect to trigger them again on next visit
+                  window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`;
+                }
+              }}
+              className="bg-violet/10 text-violet font-semibold px-4 py-2 rounded-lg text-xs hover:bg-violet/20 transition-colors"
+            >
+              Reset Page Tours
+            </button>
+            <button
+              onClick={() => {
+                if (user) {
+                  localStorage.removeItem(`sentinel_tour_seen_${user.id}`);
+                  window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`;
+                }
+              }}
+              className="bg-lime/10 text-lime font-semibold px-4 py-2 rounded-lg text-xs hover:bg-lime/20 transition-colors"
+            >
+              Replay Main Tour
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }

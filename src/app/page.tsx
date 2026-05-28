@@ -19,9 +19,46 @@ export default function PublicPage() {
           PzP Finance &amp; Developers Hub
         </p>
 
+        <style>{`
+          @keyframes glass-shine {
+            0% { transform: translateX(-100%) skewX(-15deg); }
+            100% { transform: translateX(250%) skewX(-15deg); }
+          }
+          .signin-btn {
+            position: relative;
+            overflow: hidden;
+          }
+          .signin-btn::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 40%;
+            height: 100%;
+            background: linear-gradient(
+              90deg,
+              transparent,
+              rgba(255,255,255,0.15),
+              transparent
+            );
+            transform: translateX(-100%) skewX(-15deg);
+          }
+          .signin-btn:hover::after {
+            animation: glass-shine 0.6s ease forwards;
+          }
+          .signin-btn:hover {
+            background: rgba(255,255,255,0.14) !important;
+            border-color: rgba(255,255,255,0.25) !important;
+            color: #fff !important;
+            transform: translateY(-1px);
+          }
+          .signin-btn:active {
+            transform: translateY(0) scale(0.97) !important;
+          }
+        `}</style>
         <a
           href="/login"
-          className="group inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 hover:scale-[1.03] active:scale-[0.97]"
+          className="signin-btn group inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 active:scale-[0.97]"
           style={{
             background: "rgba(255,255,255,0.1)",
             border: "1px solid rgba(255,255,255,0.15)",

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface Transaction {
   id: string;
@@ -302,6 +303,7 @@ export default function TransactionsPage() {
             Export CSV
           </button>
           <button
+            data-tour="log-transaction"
             onClick={startCreate}
             className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
           >
@@ -444,7 +446,7 @@ export default function TransactionsPage() {
         </form>
       )}
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div data-tour="tx-filters" className="flex flex-wrap gap-2 mb-4">
         {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
           <button
             key={s}
@@ -764,6 +766,7 @@ export default function TransactionsPage() {
         document.body
       )}
 
+      <PageTour pageKey="admin-transactions" />
     </div>
   );
 }
