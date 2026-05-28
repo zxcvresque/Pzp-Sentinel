@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 /**
  * TgUser — reusable inline user display with Telegram profile photo + clickable name.
  *
@@ -49,16 +51,9 @@ export default function TgUser({
   const initial = name.charAt(0).toUpperCase();
   const bg = color || pickColor(name);
   const fontSize = Math.max(9, Math.round(size * 0.42));
+  const [imgError, setImgError] = useState(false);
 
-  const avatar = photoUrl ? (
-    <img
-      src={photoUrl}
-      alt={name}
-      className="rounded-full object-cover flex-shrink-0"
-      style={{ width: size, height: size }}
-      referrerPolicy="no-referrer"
-    />
-  ) : (
+  const fallback = (
     <span
       className="rounded-full flex items-center justify-center flex-shrink-0 font-bold select-none"
       style={{
@@ -71,6 +66,19 @@ export default function TgUser({
     >
       {initial}
     </span>
+  );
+
+  const avatar = photoUrl && !imgError ? (
+    <img
+      src={photoUrl}
+      alt={name}
+      className="rounded-full object-cover flex-shrink-0"
+      style={{ width: size, height: size }}
+      referrerPolicy="no-referrer"
+      onError={() => setImgError(true)}
+    />
+  ) : (
+    fallback
   );
 
   const content = (

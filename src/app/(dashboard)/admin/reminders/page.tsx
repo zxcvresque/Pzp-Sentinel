@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface Reminder {
   id: string;
@@ -38,6 +39,10 @@ export default function RemindersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [message, setMessage] = useState("");
   const [frequency, setFrequency] = useState("ONCE");
@@ -124,12 +129,17 @@ export default function RemindersPage() {
     setSubmitting(false);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this reminder?")) return;
-
-    const res = await fetch(`/api/reminders/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setReminders((prev) => prev.filter((r) => r.id !== id));
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/reminders/${deleteTarget}`, { method: "DELETE" });
+      if (res.ok) {
+        setReminders((prev) => prev.filter((r) => r.id !== deleteTarget));
+      }
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   }
 
@@ -145,6 +155,17 @@ export default function RemindersPage() {
 
   return (
     <div>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        title="Delete this reminder?"
+        message="This cannot be undone"
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           Bot <span className="font-display text-lime">Reminders</span>
@@ -318,7 +339,7 @@ export default function RemindersPage() {
                   Edit
                 </button>
                 <button
-                  onClick={() => handleDelete(rem.id)}
+                  onClick={() => setDeleteTarget(rem.id)}
                   className="px-3 py-1 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
                 >
                   Delete

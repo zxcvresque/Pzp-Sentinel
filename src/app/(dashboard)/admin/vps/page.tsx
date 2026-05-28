@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -143,10 +144,10 @@ function UsageBar({
 
 function ApprovedServerCard({
   server,
-  onDelete,
+  onDeleteRequest,
 }: {
   server: Server;
-  onDelete: (id: string) => void;
+  onDeleteRequest: (id: string, name: string) => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
@@ -173,7 +174,7 @@ function ApprovedServerCard({
             }}
           />
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)] truncate">
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">
               {server.name}
             </h3>
             <span className="text-xs text-[var(--text-tertiary)]">
@@ -194,13 +195,10 @@ function ApprovedServerCard({
             {server.status}
           </span>
           <button
-            onClick={() => {
-              if (window.confirm(`Delete server "${server.name}"?`)) {
-                onDelete(server.id);
-              }
-            }}
+            onClick={() => onDeleteRequest(server.id, server.name)}
             className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--coral)] hover:bg-[rgba(248,113,113,0.08)] transition-colors"
             title="Delete server"
+            aria-label="Delete server"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
               <path
@@ -394,12 +392,12 @@ function ApprovedServerCard({
 function PendingServerCard({
   server,
   onApprove,
-  onReject,
+  onRejectRequest,
   approving,
 }: {
   server: Server;
   onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onRejectRequest: (id: string, name: string) => void;
   approving: string | null;
 }) {
   const isProcessing = approving === server.id;
@@ -420,7 +418,7 @@ function PendingServerCard({
             }}
           />
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)] truncate">
+            <h3 className="text-base font-semibold text-[var(--text-primary)]">
               {server.name}
             </h3>
             <span className="text-xs text-[var(--text-tertiary)]">
@@ -501,11 +499,7 @@ function PendingServerCard({
           {isProcessing ? "Approving..." : "Approve"}
         </button>
         <button
-          onClick={() => {
-            if (window.confirm(`Reject server "${server.name}"?`)) {
-              onReject(server.id);
-            }
-          }}
+          onClick={() => onRejectRequest(server.id, server.name)}
           disabled={isProcessing}
           className="flex-1 font-mono text-xs px-4 py-2.5 rounded-lg transition-colors disabled:opacity-40"
           style={{
@@ -671,18 +665,33 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
             <p className="text-xs text-[var(--coral)]">{error}</p>
           )}
 
-          {/* Row 4: Submit */}
-          <button
-            type="submit"
-            disabled={submitting || !canSubmit}
-            className="font-mono text-xs px-4 py-2.5 rounded-lg transition-colors self-start disabled:opacity-40"
-            style={{
-              color: "var(--bg-deep)",
-              background: "var(--lime)",
-            }}
-          >
-            {submitting ? "Creating..." : "Create Server"}
-          </button>
+          {/* Row 4: Submit + Cancel */}
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting || !canSubmit}
+              className="font-mono text-xs px-4 py-2.5 rounded-lg transition-colors disabled:opacity-40"
+              style={{
+                color: "var(--bg-deep)",
+                background: "var(--lime)",
+              }}
+            >
+              {submitting ? "Creating..." : "Create Server"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+              className="font-mono text-xs px-4 py-2.5 rounded-lg transition-colors disabled:opacity-40"
+              style={{
+                color: "var(--text-secondary)",
+                background: "transparent",
+                border: "1px solid var(--border)",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
         </form>
       )}
     </>
@@ -764,6 +773,15 @@ export default function AdminVpsPage() {
   const [tokenDisplay, setTokenDisplay] = useState<{ name: string; token: string } | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
 
+  // Confirm dialog state
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    id: string;
+    name: string;
+    action: "delete" | "reject";
+    loading: boolean;
+  }>({ open: false, id: "", name: "", action: "delete", loading: false });
+
   const fetchServers = useCallback(async () => {
     try {
       const res = await fetch("/api/vps?all=true");
@@ -835,6 +853,24 @@ export default function AdminVpsPage() {
     }
   }
 
+  function requestDelete(id: string, name: string) {
+    setConfirmState({ open: true, id, name, action: "delete", loading: false });
+  }
+
+  function requestReject(id: string, name: string) {
+    setConfirmState({ open: true, id, name, action: "reject", loading: false });
+  }
+
+  async function handleConfirm() {
+    setConfirmState((s) => ({ ...s, loading: true }));
+    if (confirmState.action === "delete") {
+      await handleDelete(confirmState.id);
+    } else {
+      await handleReject(confirmState.id);
+    }
+    setConfirmState({ open: false, id: "", name: "", action: "delete", loading: false });
+  }
+
   function handleCreated(token: string) {
     setTokenDisplay({ name: "New Server", token });
     fetchServers();
@@ -874,6 +910,17 @@ export default function AdminVpsPage() {
 
   return (
     <div className="pb-20 md:pb-0">
+      <ConfirmDialog
+        open={confirmState.open}
+        onClose={() => setConfirmState((s) => ({ ...s, open: false }))}
+        onConfirm={handleConfirm}
+        title={confirmState.action === "delete" ? `Delete "${confirmState.name}"?` : `Reject "${confirmState.name}"?`}
+        message="This cannot be undone"
+        confirmLabel={confirmState.action === "delete" ? "Delete" : "Reject"}
+        variant="danger"
+        loading={confirmState.loading}
+      />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-3xl font-extrabold">
@@ -945,7 +992,7 @@ export default function AdminVpsPage() {
                 key={server.id}
                 server={server}
                 onApprove={handleApprove}
-                onReject={handleReject}
+                onRejectRequest={requestReject}
                 approving={approving}
               />
             ))}
@@ -973,7 +1020,7 @@ export default function AdminVpsPage() {
               <ApprovedServerCard
                 key={server.id}
                 server={server}
-                onDelete={handleDelete}
+                onDeleteRequest={requestDelete}
               />
             ))}
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface ColumnDef {
   key: string;
@@ -72,6 +73,10 @@ export default function ServicesPage() {
   const [subStatus, setSubStatus] = useState("ACTIVE");
 
   const [saving, setSaving] = useState(false);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchServices = () => {
     fetch("/api/services")
@@ -176,10 +181,16 @@ export default function ServicesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this service?")) return;
-    await fetch(`/api/services/${id}`, { method: "DELETE" });
-    fetchServices();
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/services/${deleteTarget}`, { method: "DELETE" });
+      fetchServices();
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   // column helpers
@@ -236,6 +247,17 @@ export default function ServicesPage() {
 
   return (
     <div>
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete this service?"
+        message="This cannot be undone"
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           Service <span className="font-display text-lime">Catalog</span>
@@ -593,7 +615,7 @@ export default function ServicesPage() {
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(svc.id)}
+                            onClick={() => setDeleteTarget(svc.id)}
                             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20"
                           >
                             Delete

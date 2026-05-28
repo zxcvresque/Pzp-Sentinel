@@ -63,6 +63,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [avatarImgError, setAvatarImgError] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +163,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           className="relative w-9 h-9 rounded-full flex items-center justify-center border border-[var(--border)] bg-[var(--bg-deep)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:border-[var(--border-hover)] hover:bg-[var(--bg-elevated)] transition-all duration-200"
           style={hasHighPriority ? { color: "var(--coral)", animation: "bell-pulse 2s ease-in-out infinite" } : undefined}
           title="Notifications"
+          aria-label="Notifications"
         >
           <svg
             width="18"
@@ -321,6 +323,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
           onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
           className="group relative w-9 h-9 rounded-full overflow-hidden transition-all duration-200 flex items-center justify-center"
           title={name}
+          aria-label="Profile menu"
           style={{
             boxShadow: "0 0 0 1.5px var(--border)",
           }}
@@ -333,12 +336,13 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
               "0 0 0 1.5px var(--border)";
           }}
         >
-          {photoUrl ? (
+          {photoUrl && !avatarImgError ? (
             <img
               src={photoUrl}
               alt={name}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
+              onError={() => setAvatarImgError(true)}
             />
           ) : (
             <span
@@ -369,12 +373,13 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     boxShadow: "0 0 0 1.5px var(--border)",
                   }}
                 >
-                  {photoUrl ? (
+                  {photoUrl && !avatarImgError ? (
                     <img
                       src={photoUrl}
                       alt={name}
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
+                      onError={() => setAvatarImgError(true)}
                     />
                   ) : (
                     <span

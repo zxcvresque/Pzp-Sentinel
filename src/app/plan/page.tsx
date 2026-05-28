@@ -93,6 +93,15 @@ export default function PlanBoard() {
   const [portal, setPortal] = useState<string>("ALL");
   const [phase, setPhase] = useState<number>(0);
 
+  // Mobile-responsive styles injected via a style tag
+  const mobileStyles = `
+    @media (max-width: 640px) {
+      .plan-header { padding: 16px !important; }
+      .plan-filters { gap: 6px !important; margin-top: 12px !important; }
+      .plan-kanban { grid-template-columns: 1fr !important; padding: 16px !important; gap: 24px !important; }
+    }
+  `;
+
   const filtered = FEATURES.filter((f) => {
     if (portal !== "ALL" && f.portal !== portal) return false;
     if (phase !== 0 && f.phase !== phase) return false;
@@ -107,8 +116,10 @@ export default function PlanBoard() {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-void)", color: "var(--text-primary)" }}>
+      <style>{mobileStyles}</style>
       {/* ── Header ── */}
       <header
+        className="plan-header"
         style={{
           borderBottom: "1px solid var(--border)",
           padding: "20px 28px",
@@ -142,7 +153,7 @@ export default function PlanBoard() {
         </div>
 
         {/* Filters */}
-        <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+        <div className="plan-filters" style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           {/* Portal filter */}
           {PORTALS.map((p) => {
             const active = portal === p;
@@ -203,6 +214,7 @@ export default function PlanBoard() {
 
       {/* ── Kanban columns ── */}
       <div
+        className="plan-kanban"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",

@@ -192,6 +192,7 @@ type SvgIcon = (props: React.SVGProps<SVGSVGElement>) => React.JSX.Element;
 
 interface NavItem {
   label: string;
+  shortLabel: string;
   href: string;
   icon: string;
   Icon: SvgIcon;
@@ -199,25 +200,25 @@ interface NavItem {
 
 const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
-    { label: "Dashboard",     href: "/admin",                icon: "", Icon: IconDashboardGrid },
-    { label: "Transactions",  href: "/admin/transactions",   icon: "", Icon: IconTransactions },
-    { label: "Services",      href: "/admin/services",       icon: "", Icon: IconServer },
-    { label: "Donors",        href: "/admin/donors",         icon: "", Icon: IconTrophy },
-    { label: "Users",         href: "/admin/users",          icon: "", Icon: IconUsers },
-    { label: "Reminders",     href: "/admin/reminders",      icon: "", Icon: IconBell },
-    { label: "Credentials",   href: "/admin/credentials",    icon: "", Icon: IconKey },
-    { label: "VPS Stats",     href: "/admin/vps",            icon: "", Icon: IconVps },
-    { label: "Repos",         href: "/admin/repos",          icon: "", Icon: IconGitRepo },
+    { label: "Dashboard",     shortLabel: "Home",    href: "/admin",                icon: "", Icon: IconDashboardGrid },
+    { label: "Transactions",  shortLabel: "Txns",    href: "/admin/transactions",   icon: "", Icon: IconTransactions },
+    { label: "Services",      shortLabel: "Svc",     href: "/admin/services",       icon: "", Icon: IconServer },
+    { label: "Donors",        shortLabel: "Donors",  href: "/admin/donors",         icon: "", Icon: IconTrophy },
+    { label: "Users",         shortLabel: "Users",   href: "/admin/users",          icon: "", Icon: IconUsers },
+    { label: "Reminders",     shortLabel: "Remind",  href: "/admin/reminders",      icon: "", Icon: IconBell },
+    { label: "Credentials",   shortLabel: "Creds",   href: "/admin/credentials",    icon: "", Icon: IconKey },
+    { label: "VPS Stats",     shortLabel: "VPS",     href: "/admin/vps",            icon: "", Icon: IconVps },
+    { label: "Repos",         shortLabel: "Repos",   href: "/admin/repos",          icon: "", Icon: IconGitRepo },
   ],
   DONOR: [
-    { label: "My Donations", href: "/donor", icon: "", Icon: IconChart },
+    { label: "My Donations", shortLabel: "Donate", href: "/donor", icon: "", Icon: IconChart },
   ],
   DEV: [
-    { label: "Board",       href: "/dev",              icon: "", Icon: IconKanban },
-    { label: "My Tasks",    href: "/dev/tasks",        icon: "", Icon: IconChecklist },
-    { label: "Gantt",       href: "/dev/gantt",        icon: "", Icon: IconGantt },
-    { label: "VPS Stats",   href: "/dev/vps",          icon: "", Icon: IconVps },
-    { label: "Credentials", href: "/dev/credentials",  icon: "", Icon: IconKey },
+    { label: "Board",       shortLabel: "Board",  href: "/dev",              icon: "", Icon: IconKanban },
+    { label: "My Tasks",    shortLabel: "Tasks",  href: "/dev/tasks",        icon: "", Icon: IconChecklist },
+    { label: "Gantt",       shortLabel: "Gantt",  href: "/dev/gantt",        icon: "", Icon: IconGantt },
+    { label: "VPS Stats",   shortLabel: "VPS",    href: "/dev/vps",          icon: "", Icon: IconVps },
+    { label: "Credentials", shortLabel: "Creds",  href: "/dev/credentials",  icon: "", Icon: IconKey },
   ],
 };
 
@@ -241,9 +242,9 @@ export default function Sidebar({
 
   const primaryRole: Role = isAdmin ? "ADMIN" : roles.includes("DEV") ? "DEV" : "DONOR";
 
-  const settingsNav = [
-    { label: "General", href: "/profile", icon: "", Icon: IconDashboardGrid },
-    ...(isAdmin ? [{ label: "Audit Log", href: "/admin/audit", icon: "", Icon: IconAuditLog }] : []),
+  const settingsNav: NavItem[] = [
+    { label: "General",   shortLabel: "General", href: "/profile",      icon: "", Icon: IconDashboardGrid },
+    ...(isAdmin ? [{ label: "Audit Log", shortLabel: "Audit", href: "/admin/audit", icon: "", Icon: IconAuditLog }] : []),
   ];
 
   const items = isSettings ? settingsNav : (navByRole[activeRole] || []);
@@ -642,7 +643,7 @@ export default function Sidebar({
                 }}
               >
                 <Icon style={{ width: 20, height: 20 }} />
-                <span style={{ fontWeight: active ? 500 : 400 }}>{item.label.substring(0, 6)}</span>
+                <span style={{ fontWeight: active ? 500 : 400 }}>{item.shortLabel}</span>
               </Link>
             );
           })}

@@ -121,6 +121,7 @@ export default function ProfilePage() {
 
   const [themeSaved, setThemeSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [themeError, setThemeError] = useState("");
+  const [avatarImgError, setAvatarImgError] = useState(false);
 
   const handleThemeChange = useCallback(
     async (hex: string) => {
@@ -234,12 +235,13 @@ export default function ProfilePage() {
         <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[var(--border)] bg-bg-deep flex items-center justify-center shrink-0">
-              {user.photoUrl ? (
+              {user.photoUrl && !avatarImgError ? (
                 <img
                   src={user.photoUrl}
                   alt={user.name}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
+                  onError={() => setAvatarImgError(true)}
                 />
               ) : (
                 <span className="text-base font-bold text-text-secondary">

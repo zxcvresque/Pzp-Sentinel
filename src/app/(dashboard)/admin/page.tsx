@@ -319,7 +319,7 @@ export default function AdminDashboard() {
             >
               {stats?.runwayMonths !== null && stats?.runwayMonths !== undefined
                 ? `${stats.runwayMonths} month${stats.runwayMonths !== 1 ? "s" : ""}`
-                : "Infinite"}
+                : "—"}
             </span>
             <span className="text-text-tertiary text-[10px] font-mono">runway</span>
           </div>

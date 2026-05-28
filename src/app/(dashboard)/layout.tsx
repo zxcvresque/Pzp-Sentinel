@@ -44,6 +44,7 @@ export default function DashboardLayout({
   const [user, setUser] = useState<UserData | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("ADMIN");
 
+  // Fetch user data once on mount only
   useEffect(() => {
     fetch("/api/auth/me")
       .then((res) => {
@@ -55,19 +56,25 @@ export default function DashboardLayout({
         if (data.user.themeColor) {
           applyThemeColor(data.user.themeColor);
         }
-        const roleFromPath = pathname.startsWith("/admin")
-          ? "ADMIN"
-          : pathname.startsWith("/dev")
-            ? "DEV"
-            : "DONOR";
-        if (data.user.roles.includes(roleFromPath)) {
-          setActiveRole(roleFromPath as Role);
-        } else {
-          setActiveRole(data.user.roles[0]);
-        }
       })
       .catch(() => router.push("/login"));
-  }, [router, pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Derive activeRole from pathname whenever it changes — no re-fetch
+  useEffect(() => {
+    if (!user) return;
+    const roleFromPath = pathname.startsWith("/admin")
+      ? "ADMIN"
+      : pathname.startsWith("/dev")
+        ? "DEV"
+        : "DONOR";
+    if (user.roles.includes(roleFromPath as Role)) {
+      setActiveRole(roleFromPath as Role);
+    } else {
+      setActiveRole(user.roles[0]);
+    }
+  }, [pathname, user]);
 
   function handleRoleSwitch(role: Role) {
     setActiveRole(role);

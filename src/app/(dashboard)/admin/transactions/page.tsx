@@ -281,11 +281,11 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-3xl font-extrabold">
           All <span className="font-display text-lime">Transactions</span>
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => {
               const params = new URLSearchParams();
@@ -444,7 +444,7 @@ export default function TransactionsPage() {
         </form>
       )}
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
         {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
           <button
             key={s}
@@ -458,7 +458,7 @@ export default function TransactionsPage() {
             {s}
           </button>
         ))}
-        <span className="mx-1 border-r border-[var(--border)]" />
+        <span className="hidden sm:block mx-1 border-r border-[var(--border)]" />
         {["ALL", "IN", "OUT"].map((d) => (
           <button
             key={d}
