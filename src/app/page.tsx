@@ -1,11 +1,15 @@
 export default function PublicPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
-      <img
-        src="/login-bg.png"
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-      />
+      <picture>
+        <source media="(max-width: 767px)" srcSet="/mobile-landing-page.png" />
+        <img
+          src="/login-bg.png"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectPosition: "center top" }}
+        />
+      </picture>
 
       <div className="flex-1 flex flex-col items-center justify-center relative z-10 px-6">
         <h1

@@ -190,11 +190,15 @@ export default function LoginPage() {
           transform: translateY(0) scale(0.97) !important;
         }
       `}</style>
-      <img
-        src="/login-bg.png"
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-      />
+      <picture>
+        <source media="(max-width: 767px)" srcSet="/mobile-landing-page.png" />
+        <img
+          src="/login-bg.png"
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectPosition: "center top" }}
+        />
+      </picture>
 
       <div className="w-full max-w-[400px] px-6 relative z-10">
         {/* Logo */}
