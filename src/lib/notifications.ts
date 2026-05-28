@@ -23,6 +23,18 @@ export function formatTgMessage(heading: string, bodyBold: string, details?: str
   return msg;
 }
 
+/** Map a relative action path to a human-readable Mini App button label */
+function deriveBtnLabel(actionUrl?: string): string {
+  if (!actionUrl) return "Open Sentinel";
+  if (actionUrl.includes("transaction")) return "View Transactions";
+  if (actionUrl.includes("credential"))  return "View Credentials";
+  if (actionUrl.includes("users"))       return "View Users";
+  if (actionUrl.includes("task"))        return "My Tasks";
+  if (actionUrl === "/profile")          return "Open Profile";
+  if (actionUrl === "/donor")            return "My Donations";
+  return "Open Sentinel";
+}
+
 /**
  * Unified notification: creates an in-app DB record and optionally sends a Telegram DM.
  *
@@ -38,10 +50,12 @@ export async function notify(data: {
   entityId?: string;
   priority?: "LOW" | "NORMAL" | "HIGH";
   telegramMessage?: string;
-  /** Relative path (e.g. "/admin/transactions") — becomes an inline "Open Sentinel" button */
+  /** Relative path (e.g. "/admin/transactions") — becomes an inline Mini App button */
   actionUrl?: string;
+  /** Override the button label (default: "Open Sentinel") */
+  actionLabel?: string;
 }) {
-  const { userId, type, title, message, entityId, priority = "NORMAL", telegramMessage, actionUrl } = data;
+  const { userId, type, title, message, entityId, priority = "NORMAL", telegramMessage, actionUrl, actionLabel } = data;
 
   // 1. Create in-app notification
   const notification = await prisma.notification.create({
@@ -63,8 +77,11 @@ export async function notify(data: {
     if (user?.chatId && dmBot && (hasPref || isHighPriority)) {
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";
+      // Derive a readable label from the destination path if none given
+      const btnLabel = actionLabel ?? deriveBtnLabel(actionUrl);
+      // Use web_app so it opens inside the Mini App overlay, not the in-app browser
       const replyMarkup = actionUrl
-        ? { inline_keyboard: [[{ text: "Open Sentinel →", url: `${baseUrl}${actionUrl}` }]] }
+        ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${actionUrl}` } }]] }
         : undefined;
       await dmBot.api.sendMessage(user.chatId, tgText, {
         parse_mode: "HTML",
