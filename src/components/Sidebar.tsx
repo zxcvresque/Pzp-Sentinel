@@ -649,7 +649,7 @@ export default function Sidebar({
               </Link>
             );
           })}
-          {items.length > 4 && (
+          {(items.length > 4 || (!isSettings && roles.length > 1)) && (
             <button
               data-tour="role-tabs"
               onClick={() => setMoreOpen(true)}
@@ -677,7 +677,7 @@ export default function Sidebar({
       </nav>
 
       {/* ── Mobile "More" sheet ── */}
-      {items.length > 4 && (
+      {(items.length > 4 || (!isSettings && roles.length > 1)) && (
         <>
           {/* Backdrop */}
           <div
@@ -752,8 +752,8 @@ export default function Sidebar({
               </div>
             )}
 
-            {/* Divider if both role switcher and nav items shown */}
-            {!isSettings && roles.length > 1 && (
+            {/* Divider if both role switcher and extra nav items shown */}
+            {!isSettings && roles.length > 1 && items.length > 4 && (
               <div style={{ height: 1, background: "var(--border)", margin: "10px 16px 4px" }} />
             )}
 
