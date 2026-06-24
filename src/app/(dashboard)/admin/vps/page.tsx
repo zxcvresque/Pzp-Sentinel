@@ -570,8 +570,8 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       setNotes("");
       setOpen(false);
       onCreated(data.server?.token ?? data.token);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create server");
     } finally {
       setSubmitting(false);
     }
@@ -784,13 +784,13 @@ export default function AdminVpsPage() {
 
   const fetchServers = useCallback(async () => {
     try {
-      const res = await fetch("/api/vps?all=true");
+      const res = await fetch("/api/vps?all=true", { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch VPS data");
       const data = await res.json();
       setServers(data.servers || []);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to fetch VPS data");
     } finally {
       setLoading(false);
     }
@@ -798,9 +798,12 @@ export default function AdminVpsPage() {
 
   /* Fetch servers + 30s polling */
   useEffect(() => {
-    fetchServers();
+    const initial = setTimeout(() => fetchServers(), 0);
     const interval = setInterval(() => fetchServers(), 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
   }, [fetchServers]);
 
   async function handleDelete(id: string) {

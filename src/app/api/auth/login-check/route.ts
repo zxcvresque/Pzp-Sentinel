@@ -3,15 +3,18 @@ import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { fetchTelegramPhotoUrl } from "@/lib/bot";
 
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/auth/login-check?nonce=xxx
  * Poll this endpoint to check if the bot has verified the nonce.
- * Once verified → set JWT cookie and return redirect path.
+ * Once verified, set the JWT cookie and return the redirect path.
  */
 export async function GET(req: NextRequest) {
+  const noStore = { headers: { "Cache-Control": "no-store" } };
   const nonce = req.nextUrl.searchParams.get("nonce");
   if (!nonce) {
-    return NextResponse.json({ error: "Missing nonce" }, { status: 400 });
+    return NextResponse.json({ error: "Missing nonce" }, { status: 400, ...noStore });
   }
 
   const loginToken = await prisma.loginToken.findUnique({
@@ -19,36 +22,31 @@ export async function GET(req: NextRequest) {
   });
 
   if (!loginToken) {
-    return NextResponse.json({ error: "Invalid nonce" }, { status: 404 });
+    return NextResponse.json({ error: "Invalid nonce" }, { status: 404, ...noStore });
   }
 
-  // Expired
   if (loginToken.expiresAt < new Date()) {
-    // Clean up
     await prisma.loginToken.delete({ where: { id: loginToken.id } }).catch(() => {});
-    return NextResponse.json({ status: "expired" }, { status: 410 });
+    return NextResponse.json({ status: "expired" }, { status: 410, ...noStore });
   }
 
-  // Still waiting for bot verification
   if (loginToken.status === "PENDING") {
-    return NextResponse.json({ status: "pending" });
+    return NextResponse.json({ status: "pending" }, noStore);
   }
 
-  // Verified — find user, issue JWT
   const telegramId = loginToken.telegramId!;
   const user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return NextResponse.json({ error: "User not found" }, { status: 404, ...noStore });
   }
 
-  // Clean up the used token
   await prisma.loginToken.delete({ where: { id: loginToken.id } }).catch(() => {});
 
   if (user.status === "INACTIVE") {
     return NextResponse.json(
       { error: "Your account has been deactivated." },
-      { status: 403 },
+      { status: 403, ...noStore },
     );
   }
 
@@ -59,17 +57,8 @@ export async function GET(req: NextRequest) {
         awaitingRole: true,
         status: "no_role",
       },
-      { status: 403 },
+      { status: 403, ...noStore },
     );
-  }
-
-  // Refresh profile photo
-  const botPhoto = await fetchTelegramPhotoUrl(telegramId).catch(() => null);
-  if (botPhoto && botPhoto !== user.photoUrl) {
-    await prisma.user.update({
-      where: { telegramId },
-      data: { photoUrl: botPhoto },
-    }).catch(() => {});
   }
 
   const token = await signToken({ userId: user.id, roles: user.roles });
@@ -81,7 +70,7 @@ export async function GET(req: NextRequest) {
     status: "verified",
     user: { id: user.id, name: user.name, roles: user.roles },
     redirect,
-  });
+  }, noStore);
 
   response.cookies.set("token", token, {
     httpOnly: true,
@@ -90,6 +79,16 @@ export async function GET(req: NextRequest) {
     maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
+
+  fetchTelegramPhotoUrl(telegramId)
+    .then((botPhoto) => {
+      if (!botPhoto || botPhoto === user.photoUrl) return null;
+      return prisma.user.update({
+        where: { telegramId },
+        data: { photoUrl: botPhoto },
+      });
+    })
+    .catch(() => {});
 
   return response;
 }

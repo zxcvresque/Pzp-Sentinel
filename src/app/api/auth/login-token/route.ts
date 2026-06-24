@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/auth/login-token
  * Generate a login nonce. The frontend opens a deep link to the bot
@@ -15,5 +17,8 @@ export async function POST() {
     data: { nonce, expiresAt },
   });
 
-  return NextResponse.json({ nonce });
+  return NextResponse.json(
+    { nonce },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

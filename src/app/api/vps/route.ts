@@ -3,6 +3,8 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,7 +45,10 @@ export async function GET() {
     lastSeen: s.lastSeen.toISOString(),
   }));
 
-  return NextResponse.json({ servers: result });
+  return NextResponse.json(
+    { servers: result },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(req: NextRequest) {
