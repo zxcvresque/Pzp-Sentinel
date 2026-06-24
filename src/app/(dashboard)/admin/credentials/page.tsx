@@ -313,7 +313,7 @@ export default function CredentialsPage() {
       )}
 
       {credentials.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div data-tour="credential-list" className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No credentials stored yet.</p>
           <p className="text-text-tertiary text-sm">
             Add platform credentials and assign access to developers.
@@ -329,9 +329,9 @@ export default function CredentialsPage() {
               <div className="space-y-3">
                 {creds.map((cred) => (
                   <div key={cred.id} className="card p-5">
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
                           <span className="text-sm font-semibold">{cred.label}</span>
                           {cred.revisions.length > 0 && (
                             <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-amber/10 text-amber">
@@ -339,7 +339,7 @@ export default function CredentialsPage() {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mb-3">
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
                           <button
                             onClick={() => toggleReveal(cred.id)}
                             className="font-mono text-xs px-3 py-1.5 rounded-lg bg-bg-deep border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
@@ -347,7 +347,7 @@ export default function CredentialsPage() {
                             {revealed.has(cred.id) ? "Hide" : "Reveal"}
                           </button>
                           {revealed.has(cred.id) && (
-                            <code className="font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
+                            <code className="max-w-full font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
                               {cred.value}
                             </code>
                           )}
@@ -363,7 +363,7 @@ export default function CredentialsPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                         <button
                           onClick={() => startEdit(cred)}
                           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
@@ -389,10 +389,19 @@ export default function CredentialsPage() {
                             key={rev.id}
                             className="bg-bg-deep rounded-lg p-4 border border-amber/20"
                           >
-                            <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div className="flex-1 min-w-0">
-                                <div className="text-xs text-text-secondary mb-1 flex items-center gap-1">
-                                  By <TgUser name={rev.createdBy.name} telegramUser={rev.createdBy.telegramUser} photoUrl={rev.createdBy.photoUrl} size={18} /> · {new Date(rev.createdAt).toLocaleString()}
+                                <div className="mb-3 flex flex-col gap-1 text-xs text-text-secondary sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+                                  <span className="flex min-w-0 items-center gap-1">
+                                    <span className="shrink-0">By</span>
+                                    <TgUser name={rev.createdBy.name} telegramUser={rev.createdBy.telegramUser} photoUrl={rev.createdBy.photoUrl} size={18} />
+                                  </span>
+                                  <span className="font-mono text-[10px] text-text-tertiary">
+                                    {new Date(rev.createdAt).toLocaleString(undefined, {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    })}
+                                  </span>
                                 </div>
                                 <div className="text-sm mb-1">
                                   <span className="text-text-tertiary">Platform:</span>{" "}
@@ -407,7 +416,7 @@ export default function CredentialsPage() {
                                   <code className="font-mono text-lime">{rev.value}</code>
                                 </div>
                               </div>
-                              <div className="flex gap-2 shrink-0">
+                              <div className="flex w-full justify-end gap-2 sm:w-auto sm:shrink-0">
                                 <button
                                   onClick={() => handleReview(rev.id, "approve", cred.id)}
                                   className="px-3 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"

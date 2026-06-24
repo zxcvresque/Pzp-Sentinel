@@ -55,12 +55,15 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState<"INR" | "USD">("INR");
   const currencyRef = useRef(currency);
-  currencyRef.current = currency;
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
   const [bmcSyncing, setBmcSyncing] = useState(false);
   const [bmcResult, setBmcResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    currencyRef.current = currency;
+  }, [currency]);
 
   // Fetch dashboard data — called on mount and every 30s for live updates
   const fetchDashboard = (isBackground = false) => {
@@ -86,7 +89,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchDashboard();
+    const initialFetch = setTimeout(() => fetchDashboard(), 0);
     // Poll every 30s for live webhook updates, using ref to read latest currency
     const interval = setInterval(() => {
       const curr = currencyRef.current;
@@ -105,7 +108,10 @@ export default function AdminDashboard() {
         })
         .catch(() => {});
     }, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -248,9 +254,9 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div data-tour="stat-cards" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {/* Balance */}
-        <div className="stat-card card p-5">
+        <div data-tour="stat-cards" className="stat-card card p-5">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
             Total Balance
           </div>

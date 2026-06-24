@@ -274,9 +274,8 @@ export default function ServicesPage() {
       </div>
 
       {/* Stats bar — only shows when there are paid services */}
-      {paidServices.length > 0 && (
-        <div data-tour="service-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <div className="card p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div data-tour="service-stats" className="card p-5">
             <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Active Subscriptions</div>
             <div className="text-3xl font-extrabold text-mint">{activeCount}</div>
           </div>
@@ -288,8 +287,7 @@ export default function ServicesPage() {
             <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">Total Services</div>
             <div className="text-3xl font-extrabold">{services.length}</div>
           </div>
-        </div>
-      )}
+      </div>
 
       {showForm && (
         <div className="card p-6 mb-8">
@@ -543,7 +541,7 @@ export default function ServicesPage() {
       )}
 
       {services.length === 0 && !showForm ? (
-        <div className="card p-8 text-center">
+        <div data-tour="service-catalog" className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No services catalogued yet.</p>
           <p className="text-text-tertiary text-sm">
             Click &quot;Add Service&quot; above to start tracking what the community uses.

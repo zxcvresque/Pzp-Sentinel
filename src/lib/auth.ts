@@ -7,6 +7,7 @@ if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required");
 }
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
+export const SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
 
 export interface JwtPayload {
   userId: string;
@@ -16,7 +17,7 @@ export interface JwtPayload {
 export async function signToken(payload: JwtPayload): Promise<string> {
   return new SignJWT(payload as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
+    .setExpirationTime("24h")
     .sign(JWT_SECRET);
 }
 

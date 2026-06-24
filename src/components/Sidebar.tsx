@@ -615,6 +615,7 @@ export default function Sidebar({
       {/* ── Mobile bottom bar ── */}
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-50"
+        data-tour="nav"
         style={{
           background: "var(--bg-deep)",
           borderTop: "1px solid var(--border)",

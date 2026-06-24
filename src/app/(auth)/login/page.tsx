@@ -4,6 +4,53 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 const BOT_USERNAME = "TheSentinelRobot";
 
+interface TelegramWebApp {
+  initData?: string;
+  ready?: () => void;
+  expand?: () => void;
+}
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: TelegramWebApp;
+    };
+  }
+}
+
+function dashboardForRoles(roles: string[] = []) {
+  if (roles.includes("ADMIN")) return "/admin";
+  if (roles.includes("DEV")) return "/dev";
+  return "/donor";
+}
+
+function getTelegramWebApp() {
+  if (typeof window === "undefined") return undefined;
+  return window.Telegram?.WebApp;
+}
+
+function loadTelegramWebAppScript() {
+  if (getTelegramWebApp()) return Promise.resolve();
+
+  return new Promise<void>((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      "script[data-telegram-web-app]",
+    );
+    if (existing) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-web-app.js";
+    script.async = true;
+    script.dataset.telegramWebApp = "true";
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+}
+
 export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -11,8 +58,79 @@ export default function LoginPage() {
   const [nonce, setNonce] = useState("");
   const [waitingForBot, setWaitingForBot] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
+  const [isTelegramMiniApp, setIsTelegramMiniApp] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const verifiedRef = useRef(false);
+
+  const verifyMiniAppSession = useCallback(async (initData: string) => {
+    if (!initData || verifiedRef.current) return;
+
+    setError("");
+    setAwaitingRole(false);
+    setWaitingForBot(false);
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAwaitingRole(Boolean(data.awaitingRole));
+        setError(data.error || "Telegram sign-in failed. Please reopen Sentinel from Telegram.");
+        return;
+      }
+
+      verifiedRef.current = true;
+      window.location.href = data.redirect || dashboardForRoles(data.user?.roles);
+    } catch {
+      setError("Telegram sign-in failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Existing valid sessions should go straight to the dashboard for 24 hours.
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.user?.roles) return;
+        window.location.href = dashboardForRoles(data.user.roles);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Telegram Mini App path: use signed initData instead of opening a bot deep link.
+  useEffect(() => {
+    let cancelled = false;
+
+    loadTelegramWebAppScript().then(() => {
+      if (cancelled) return;
+      const webApp = getTelegramWebApp();
+      const initData = webApp?.initData;
+      if (!initData) return;
+
+      setIsTelegramMiniApp(true);
+      webApp.ready?.();
+      webApp.expand?.();
+
+      verifyMiniAppSession(initData);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [verifyMiniAppSession]);
 
   // Generate a nonce and navigate to bot deep link
   const handleTelegramLogin = useCallback(async () => {
@@ -21,6 +139,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      const webApp = getTelegramWebApp();
+      const initData = webApp?.initData;
+      if (initData) {
+        setIsTelegramMiniApp(true);
+        await verifyMiniAppSession(initData);
+        return;
+      }
+
       const res = await fetch("/api/auth/login-token", { method: "POST" });
       const data = await res.json();
 
@@ -46,7 +172,7 @@ export default function LoginPage() {
       setError("Something went wrong. Please try again.");
       setLoading(false);
     }
-  }, []);
+  }, [verifyMiniAppSession]);
 
   // Poll for verification once we have a nonce
   useEffect(() => {
@@ -282,7 +408,7 @@ export default function LoginPage() {
                 >
                   <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
                 </svg>
-                Login with Telegram
+                {isTelegramMiniApp ? "Continue with Telegram" : "Login with Telegram"}
               </button>
 
               {error && (

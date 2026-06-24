@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
-import { signToken, highestRole } from "@/lib/auth";
+import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { fetchTelegramPhotoUrl } from "@/lib/bot";
 
 function validateInitData(initData: string, botToken: string): Record<string, string> | null {
@@ -93,6 +93,13 @@ export async function POST(req: NextRequest) {
     }, { status: 403 });
   }
 
+  if (user.status === "INACTIVE") {
+    return NextResponse.json(
+      { error: "Your account has been deactivated." },
+      { status: 403 },
+    );
+  }
+
   const token = await signToken({ userId: user.id, roles: user.roles });
   const role = highestRole(user.roles);
   const redirect = role === "ADMIN" ? "/admin" : role === "DEV" ? "/dev" : "/donor";
@@ -107,7 +114,7 @@ export async function POST(req: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
 

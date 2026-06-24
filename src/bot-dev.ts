@@ -324,11 +324,19 @@ bot.command("start", async (ctx) => {
       );
 
       // Send confirmation with inline button
+      const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
       await ctx.reply(
         `<blockquote><b>✅ Login Verified</b></blockquote>\n` +
         `<b>${authUser.name}</b>, you've been signed in on the web.\n\n` +
         `<i>You can close this chat and return to Sentinel.</i>`,
-        { parse_mode: "HTML" },
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
+            ],
+          },
+        },
       );
 
       logAuditEvent({
@@ -350,7 +358,7 @@ bot.command("start", async (ctx) => {
     return;
   }
 
-  let user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
+  const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
   // Always refresh profile photo on /start
   const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId, firstName);

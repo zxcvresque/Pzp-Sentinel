@@ -454,13 +454,16 @@ export default function GanttPage() {
   /* ── Detect mobile viewport ── */
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
-    setIsMobile(mq.matches);
+    const initialCheck = setTimeout(() => setIsMobile(mq.matches), 0);
     const handler = (e: MediaQueryListEvent) => {
       setIsMobile(e.matches);
       setExpandedId(null);
     };
     mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    return () => {
+      clearTimeout(initialCheck);
+      mq.removeEventListener("change", handler);
+    };
   }, []);
 
   /* ── Loading skeleton ── */
@@ -507,7 +510,7 @@ export default function GanttPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div data-tour="gantt-chart" className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No tasks to display.</p>
           <p className="text-text-tertiary text-sm">
             Tasks with dates assigned to you will appear here as timeline bars.

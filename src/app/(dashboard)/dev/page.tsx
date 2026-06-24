@@ -172,7 +172,8 @@ export default function DevDashboard() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
+    const timer = setTimeout(fetchTasks, 0);
+    return () => clearTimeout(timer);
   }, [fetchTasks]);
 
   // Fetch org-wide git activity once on mount
@@ -375,6 +376,7 @@ export default function DevDashboard() {
     >
       {/* Header */}
       <button
+        data-tour="activity-panel"
         onClick={() => setActivityOpen(!activityOpen)}
         className="flex items-center gap-2.5 w-full px-4 py-3 text-left group"
         style={{ background: "var(--bg-deep)" }}
@@ -484,12 +486,13 @@ export default function DevDashboard() {
         <h1 className="text-3xl font-extrabold mb-8">
           Project <span className="font-display text-lime">Board</span>
         </h1>
-        <div className="flex gap-4 items-start">
+        <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
         <div className="flex-1 min-w-0">
-        <div className="card p-8 text-center">
+        <div data-tour="kanban-board" className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No projects yet.</p>
           {!showProjectForm ? (
             <button
+              data-tour="board-actions"
               onClick={() => setShowProjectForm(true)}
               className="bg-lime text-bg-void font-semibold px-5 py-2 rounded-full text-sm hover:bg-lime/90 transition-colors mt-2"
             >
@@ -556,8 +559,10 @@ export default function DevDashboard() {
           )}
         </div>
         </div>
+        <div className="block lg:hidden mt-4">{activityPanel}</div>
         <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
         </div>
+        <PageTour pageKey="dev-board" />
       </div>
     );
   }
@@ -578,7 +583,7 @@ export default function DevDashboard() {
   if (untagged.length > 0) tasksByTag["_untagged"] = untagged;
 
   return (
-    <div className="flex gap-4 items-start">
+    <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
       <div className="flex-1 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">
@@ -1151,7 +1156,7 @@ export default function DevDashboard() {
       )}
       </div>
       {/* Mobile Git Feed — shown below kanban on small screens */}
-      <div data-tour="activity-panel" className="block lg:hidden mt-4">
+      <div className="block lg:hidden mt-4">
         {activityPanel}
       </div>
       {/* Desktop Git Feed — sticky sidebar */}

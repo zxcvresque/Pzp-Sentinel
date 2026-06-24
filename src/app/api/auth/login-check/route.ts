@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { signToken, highestRole } from "@/lib/auth";
+import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { fetchTelegramPhotoUrl } from "@/lib/bot";
 
 /**
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
 

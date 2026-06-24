@@ -23,6 +23,9 @@ async function main() {
   await prisma.trackedRepo.deleteMany();
   await prisma.loginToken.deleteMany();
   await prisma.tag.deleteMany();
+  await prisma.user.deleteMany({
+    where: { telegramId: { not: "1800754304" } },
+  });
 
   console.log("All tables cleared.");
 

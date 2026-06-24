@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 /* ------------------------------------------------------------------ */
@@ -35,7 +35,16 @@ function getRect(el: Element): DOMRect {
 }
 
 function clamp(val: number, min: number, max: number) {
+  if (max < min) return min;
   return Math.max(min, Math.min(max, val));
+}
+
+function getViewportSize() {
+  const vv = window.visualViewport;
+  return {
+    width: vv?.width ?? window.innerWidth,
+    height: vv?.height ?? window.innerHeight,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -46,14 +55,31 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [visible, setVisible] = useState(false);
+  const [tooltipSize, setTooltipSize] = useState({ width: 0, height: 0 });
+  const [measureTick, setMeasureTick] = useState(0);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const targetRetryRef = useRef(0);
+  const targetRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const current = steps[step];
 
+  const finishTour = useCallback(() => {
+    if (targetRetryTimerRef.current) clearTimeout(targetRetryTimerRef.current);
+    targetRetryRef.current = 0;
+    setStep(0);
+    setVisible(false);
+    setTooltipSize({ width: 0, height: 0 });
+    onFinish();
+  }, [onFinish]);
+
   const skip = useCallback(() => {
+    if (targetRetryTimerRef.current) clearTimeout(targetRetryTimerRef.current);
+    targetRetryRef.current = 0;
+    setVisible(false);
+    setTooltipSize({ width: 0, height: 0 });
     if (step < steps.length - 1) setStep((s) => s + 1);
-    else onFinish();
-  }, [step, steps.length, onFinish]);
+    else finishTour();
+  }, [step, steps.length, finishTour]);
 
   const measure = useCallback(() => {
     if (!current) return;
@@ -66,6 +92,7 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
       return r.width > 0 && r.height > 0;
     }) ?? null;
     if (el) {
+      targetRetryRef.current = 0;
       const r = getRect(el);
       // Final guard: element must be inside the viewport bounds
       if (r.width === 0 && r.height === 0) {
@@ -74,7 +101,12 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
       }
       // Use instant scroll so the element is at its final position immediately,
       // then double-rAF to let the browser commit layout before measuring.
-      el.scrollIntoView({ behavior: "instant" as ScrollBehavior, block: "nearest" });
+      const isMobile = window.innerWidth < 768;
+      el.scrollIntoView({
+        behavior: "instant" as ScrollBehavior,
+        block: isMobile ? "center" : "nearest",
+        inline: "nearest",
+      });
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setRect(getRect(el));
@@ -82,44 +114,93 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
         });
       });
     } else {
-      // Target not found — skip to next
+      // Async pages often render tour targets after the page shell. Retry briefly
+      // so loading content does not make a whole tour disappear.
+      if (targetRetryRef.current < 12) {
+        targetRetryRef.current += 1;
+        if (targetRetryTimerRef.current) clearTimeout(targetRetryTimerRef.current);
+        targetRetryTimerRef.current = setTimeout(() => {
+          setMeasureTick((tick) => tick + 1);
+        }, 200);
+        return;
+      }
+
+      // Target still not found — skip to next
+      targetRetryRef.current = 0;
       skip();
     }
   }, [current, skip]);
 
   useEffect(() => {
-    if (!active) {
-      setStep(0);
-      setVisible(false);
-      return;
-    }
-    setVisible(false);
+    if (!active) return;
     const timer = setTimeout(measure, 300);
-    return () => clearTimeout(timer);
-  }, [active, step, measure]);
+    return () => {
+      clearTimeout(timer);
+      if (targetRetryTimerRef.current) clearTimeout(targetRetryTimerRef.current);
+    };
+  }, [active, step, measure, measureTick]);
 
-  // Re-measure on resize
+  // Re-measure on resize and viewport changes
   useEffect(() => {
     if (!active) return;
-    const handleResize = () => measure();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    let frame = 0;
+    const handleViewportChange = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.visualViewport?.addEventListener("resize", handleViewportChange);
+    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+    };
   }, [active, measure]);
 
   // Keyboard navigation
   useEffect(() => {
     if (!active) return;
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onFinish();
+      if (e.key === "Escape") finishTour();
       if (e.key === "ArrowRight" || e.key === "Enter") {
-        if (step < steps.length - 1) setStep((s) => s + 1);
-        else onFinish();
+        if (step < steps.length - 1) {
+          targetRetryRef.current = 0;
+          setVisible(false);
+          setTooltipSize({ width: 0, height: 0 });
+          setStep((s) => s + 1);
+        } else {
+          finishTour();
+        }
       }
-      if (e.key === "ArrowLeft" && step > 0) setStep((s) => s - 1);
+      if (e.key === "ArrowLeft" && step > 0) {
+        targetRetryRef.current = 0;
+        setVisible(false);
+        setTooltipSize({ width: 0, height: 0 });
+        setStep((s) => s - 1);
+      }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [active, step, steps.length, onFinish]);
+  }, [active, step, steps.length, finishTour]);
+
+  useLayoutEffect(() => {
+    if (!active || !visible || !rect || !tooltipRef.current) return;
+    const next = tooltipRef.current.getBoundingClientRect();
+    setTooltipSize((prev) => {
+      if (
+        Math.abs(prev.width - next.width) < 1 &&
+        Math.abs(prev.height - next.height) < 1
+      ) {
+        return prev;
+      }
+      return { width: next.width, height: next.height };
+    });
+  }, [active, visible, rect, step, current?.title, current?.body]);
 
   if (!active || !visible || !rect) return null;
 
@@ -131,31 +212,73 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
 
   // Tooltip positioning
   const placement = current.placement || "bottom";
+  const { width: vw, height: vh } = getViewportSize();
+  const isMobile = vw < 768;
+  const edge = isMobile ? 12 : 16;
+  const gap = isMobile ? 10 : 14;
+  const mobileBottomReserve = isMobile ? 76 : 16;
+  const topLimit = edge;
+  const bottomLimit = Math.max(topLimit + 160, vh - mobileBottomReserve);
+  const availableHeight = Math.max(160, bottomLimit - topLimit);
+  const tooltipW = Math.max(220, Math.min(340, vw - edge * 2));
+  const measuredH = tooltipSize.height || (isMobile ? 190 : 176);
+  const tooltipH = Math.min(measuredH, availableHeight);
+  const maxLeft = Math.max(edge, vw - edge - tooltipW);
+
+  const centeredLeft = clamp(rect.left + rect.width / 2 - tooltipW / 2, edge, maxLeft);
+  const centeredTop = clamp(rect.top + rect.height / 2 - tooltipH / 2, topLimit, bottomLimit - tooltipH);
+  const space = {
+    bottom: bottomLimit - rect.bottom - gap,
+    top: rect.top - topLimit - gap,
+    right: vw - edge - rect.right - gap,
+    left: rect.left - edge - gap,
+  };
+  const positions: Record<NonNullable<TourStep["placement"]>, React.CSSProperties> = {
+    bottom: {
+      top: clamp(rect.bottom + gap, topLimit, bottomLimit - tooltipH),
+      left: centeredLeft,
+    },
+    top: {
+      top: clamp(rect.top - gap - tooltipH, topLimit, bottomLimit - tooltipH),
+      left: centeredLeft,
+    },
+    right: {
+      top: centeredTop,
+      left: clamp(rect.right + gap, edge, maxLeft),
+    },
+    left: {
+      top: centeredTop,
+      left: clamp(rect.left - gap - tooltipW, edge, maxLeft),
+    },
+  };
+
+  const fits = {
+    bottom: space.bottom >= tooltipH,
+    top: space.top >= tooltipH,
+    right: space.right >= tooltipW,
+    left: space.left >= tooltipW,
+  };
+
+  const fallbackOrder: NonNullable<TourStep["placement"]>[] =
+    placement === "top" || placement === "bottom"
+      ? [placement, placement === "top" ? "bottom" : "top", "right", "left"]
+      : [placement, placement === "left" ? "right" : "left", "bottom", "top"];
+  const bestFallback = isMobile
+    ? space.bottom >= space.top
+      ? "bottom"
+      : "top"
+    : (Object.entries(space).sort(([, a], [, b]) => b - a)[0]?.[0] as NonNullable<TourStep["placement"]> | undefined) ?? placement;
+  const resolvedPlacement = fallbackOrder.find((p) => fits[p]) ?? bestFallback;
   const tooltipStyle: React.CSSProperties = {
     position: "fixed",
     zIndex: 10002,
-    maxWidth: 340,
-    width: "max-content",
+    width: tooltipW,
+    maxWidth: `calc(100vw - ${edge * 2}px)`,
+    maxHeight: availableHeight,
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
+    ...positions[resolvedPlacement],
   };
-
-  const gap = 14;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  if (placement === "bottom") {
-    tooltipStyle.top = rect.bottom + gap;
-    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, vw - 356);
-  } else if (placement === "top") {
-    tooltipStyle.bottom = vh - rect.top + gap;
-    tooltipStyle.left = clamp(rect.left + rect.width / 2 - 170, 16, vw - 356);
-  } else if (placement === "right") {
-    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, vh - 200);
-    tooltipStyle.left = clamp(rect.right + gap, 16, vw - 356);
-  } else {
-    // left
-    tooltipStyle.top = clamp(rect.top + rect.height / 2 - 60, 16, vh - 200);
-    const leftEdge = rect.left - gap - 340;
-    tooltipStyle.left = clamp(leftEdge, 16, vw - 356);
-  }
 
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 10000 }}>
@@ -164,7 +287,7 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
         style={{ position: "fixed", inset: 0, width: "100%", height: "100%", zIndex: 10000 }}
         viewBox={`0 0 ${vw} ${vh}`}
         preserveAspectRatio="none"
-        onClick={onFinish}
+        onClick={finishTour}
       >
         <defs>
           <mask id="sentinel-spotlight-mask">
@@ -274,7 +397,12 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {step > 0 && (
             <button
-              onClick={() => setStep((s) => s - 1)}
+              onClick={() => {
+                targetRetryRef.current = 0;
+                setVisible(false);
+                setTooltipSize({ width: 0, height: 0 });
+                setStep((s) => s - 1);
+              }}
               style={{
                 padding: "7px 14px",
                 borderRadius: 8,
@@ -300,8 +428,14 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
           )}
           <button
             onClick={() => {
-              if (step < steps.length - 1) setStep((s) => s + 1);
-              else onFinish();
+              if (step < steps.length - 1) {
+                targetRetryRef.current = 0;
+                setVisible(false);
+                setTooltipSize({ width: 0, height: 0 });
+                setStep((s) => s + 1);
+              } else {
+                finishTour();
+              }
             }}
             style={{
               padding: "7px 18px",
@@ -320,7 +454,7 @@ export default function SpotlightTour({ steps, onFinish, active }: SpotlightTour
             {step < steps.length - 1 ? "Next" : "Got it!"}
           </button>
           <button
-            onClick={onFinish}
+            onClick={finishTour}
             style={{
               padding: "7px 10px",
               borderRadius: 8,

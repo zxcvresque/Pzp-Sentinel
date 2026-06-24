@@ -365,7 +365,7 @@ export default function DonorDashboard() {
 
       {/* Transaction list */}
       {filteredTransactions.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div data-tour="donation-history" className="card p-8 text-center">
           <p className="text-text-secondary mb-2">
             {statusFilter === "ALL"
               ? "No donations yet."
