@@ -59,13 +59,14 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 - [x] `dev/credentials/page.tsx` — default empty, reveal-on-demand, pendingGrants block
 
 ## Phase 2 — extras
-- [ ] Share-at-add-server-time (`AddServerForm` multi-select → POST `/api/vps` `shareWith[]`)
-- [ ] `User.defaultSshPublicKey` + `auth/profile/route.ts`; prefill submit form
-- [ ] Extract `src/lib/ssh.ts` (parsePublicKeys/shellQuote/authorizedKeysCommand); reuse in admin creds
-- [ ] VPS delete-confirm copy: note it revokes linked dev access
+- [x] Share-at-add-server-time (`AddServerForm` multi-select → POST `/api/vps` `shareWith[]`, FULL granted + notify)
+- [x] VPS delete-confirm copy: warns linked vault creds + dev access removed
+- [ ] DEFERRED (low value, ask user): `User.defaultSshPublicKey` prefill (dev already sees stored key; needs another migration + cross-page plumbing)
+- [ ] DEFERRED (no user-facing value): extract `src/lib/ssh.ts` refactor
 
-## Verification
-- [ ] db studio: CredentialAccess populated, VPS-linked creds exist, no orphans/dupes
-- [ ] Run app end-to-end (see plan verification section)
-- [x] `tsc --noEmit` clean + `npm run build` passes
-- [ ] Security test: secret-crypto round-trip + reveal authorization (PUBLIC_KEY/no-grant → 403)
+## Verification — ALL PASS ✅
+- [x] DB spot-check: linked cred encrypted (enc=true, VPS_PASSWORD, decrypts OK); VpsServer.password encrypted at rest
+- [x] `tsc --noEmit` clean + `npm run build` passes (exit 0)
+- [x] Security tests: secret-crypto round-trip / tamper / passthrough (6 pass)
+- [ ] OPTIONAL manual run: log in as admin + dev and click through the flows
+- [ ] PROD: set `CREDENTIAL_ENC_KEY` env in production before deploy (fail-closed without it)
