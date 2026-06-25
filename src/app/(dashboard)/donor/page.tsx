@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import DonateReminderCard from "@/components/DonateReminderCard";
 
 interface Transaction {
   id: string;
@@ -203,6 +204,9 @@ export default function DonorDashboard() {
           <div className="text-xl font-bold text-mint">{approvedCount}</div>
         </div>
       </div>
+
+      {/* Donation reminder cadence */}
+      <DonateReminderCard />
 
       {/* Success banner */}
       {success && (

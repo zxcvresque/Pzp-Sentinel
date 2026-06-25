@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { logTransactionReview } from "@/lib/telegram-log";
+import { logTransactionReview, postToGroupGeneral } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
+import { groupThanks, dmThanks } from "@/lib/donation-thanks";
 
 export async function POST(
   req: NextRequest,
@@ -94,22 +95,38 @@ export async function POST(
     appreciation = getAppreciation(Number(updated.amount), avg);
   }
 
-  // In-app notification + Telegram DM for the donor
+  const isDonation = updated.type === "DONATION" && updated.direction === "IN";
+  const amountNum = Number(updated.amount);
+
+  // In-app notification + Telegram DM for the donor (tiered personal thanks for donations)
   if (updated.fromUserId) {
+    const donorName = updated.fromUser?.name ?? "there";
+    const dmText = isDonation
+      ? dmThanks(donorName, amountNum, updated.currency)
+      : formatTgMessage(
+          "✅ Transaction Approved",
+          `${updated.currency} ${updated.amount} approved`,
+          appreciation,
+        );
     notify({
       userId: updated.fromUserId,
       type: "TX_APPROVED",
-      title: "Donation Approved",
-      message: `Your donation of ${updated.currency} ${updated.amount} has been approved. ${appreciation}`,
+      title: isDonation ? "Thank you for your donation! 💛" : "Transaction Approved",
+      message: `Your donation of ${updated.currency} ${updated.amount} has been approved. ${appreciation}`.trim(),
       entityId: id,
       priority: "NORMAL",
       actionUrl: "/donor",
-      telegramMessage: formatTgMessage(
-        "✅ Transaction Approved",
-        `${updated.currency} ${updated.amount} approved`,
-        appreciation,
-      ),
+      telegramMessage: dmText,
     }).catch((err) => console.error("[approve] notify failed:", err));
+  }
+
+  // Public thank-you in the group's General topic (donations only).
+  if (isDonation) {
+    const tgUser = updated.fromUser?.telegramUser?.replace(/^@/, "");
+    const handle = tgUser ? `@${tgUser}` : (updated.fromUser?.name ?? "A generous supporter");
+    postToGroupGeneral(groupThanks(handle, amountNum, updated.currency)).catch((err) =>
+      console.error("[approve] group thanks failed:", err),
+    );
   }
 
   return NextResponse.json({ transaction: updated });

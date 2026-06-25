@@ -4,6 +4,7 @@ import { PrismaClient } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { logAuditEvent } from "./lib/telegram-log";
+import { donateReminderMessage } from "./lib/donation-thanks";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -606,6 +607,55 @@ async function checkServiceExpiry() {
   }
 }
 
+// ── Donor donate-reminders ─────────────────────────────────────────────
+const DONATE_REMINDER_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // every 6h
+const CADENCE_DAYS: Record<string, number> = { WEEKLY: 7, BIWEEKLY: 14, MONTHLY: 30 };
+
+async function checkDonateReminders() {
+  console.log("[donate-reminder] Running donor reminder check...");
+  try {
+    const now = new Date();
+    const donors = await dbRetry(() =>
+      prisma.user.findMany({
+        where: {
+          roles: { has: "DONOR" },
+          status: "ACTIVE",
+          donateReminderCadence: { not: "OFF" },
+          chatId: { not: null },
+        },
+        select: {
+          id: true,
+          name: true,
+          chatId: true,
+          donateReminderCadence: true,
+          lastDonateReminderAt: true,
+        },
+      }),
+    );
+
+    let sent = 0;
+    for (const d of donors) {
+      const days = CADENCE_DAYS[d.donateReminderCadence] ?? 30;
+      const dueMs = days * 24 * 60 * 60 * 1000;
+      if (d.lastDonateReminderAt && now.getTime() - d.lastDonateReminderAt.getTime() < dueMs) continue;
+      if (!d.chatId) continue;
+      try {
+        await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name), { parse_mode: "HTML" });
+        sent++;
+      } catch (e) {
+        console.error(`[donate-reminder] DM failed for ${d.id}:`, (e as Error).message);
+      }
+      // Stamp so the next nudge waits a full cadence interval.
+      await dbRetry(() =>
+        prisma.user.update({ where: { id: d.id }, data: { lastDonateReminderAt: now } }),
+      ).catch(() => {});
+    }
+    console.log(`[donate-reminder] Done. ${sent} reminder(s) sent of ${donors.length} eligible donor(s).`);
+  } catch (err) {
+    console.error("[donate-reminder] Check failed:", err);
+  }
+}
+
 (async () => {
   await bot.api.deleteWebhook();
   console.log("Sentinel bot starting in polling mode...");
@@ -619,6 +669,13 @@ async function checkServiceExpiry() {
         setInterval(checkServiceExpiry, EXPIRY_CHECK_INTERVAL);
       }, 10_000);
       console.log("[expiry] Scheduled — first check in 10s, then every 24h");
+
+      // Donor donate-reminders: first check after 20s, then every 6h
+      setTimeout(() => {
+        checkDonateReminders();
+        setInterval(checkDonateReminders, DONATE_REMINDER_CHECK_INTERVAL);
+      }, 20_000);
+      console.log("[donate-reminder] Scheduled — first check in 20s, then every 6h");
     },
   });
 })();

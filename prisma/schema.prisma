@@ -23,6 +23,13 @@ enum Currency {
   USD
 }
 
+enum DonateCadence {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  OFF
+}
+
 enum PaymentMethod {
   UPI
   BMC
@@ -125,6 +132,10 @@ model User {
   credentialsReviewed  Credential[]  @relation("CredReviewedBy")
   credentialAccess     CredentialAccess[] @relation("CredAccessUser")
   notifications        Notification[]
+
+  // Donor donate-reminder settings (default monthly; OFF disables nudges).
+  donateReminderCadence DonateCadence @default(MONTHLY)
+  lastDonateReminderAt  DateTime?
 }
 
 model Transaction {

@@ -28,6 +28,16 @@ async function sendToTopic(topic: Topic, text: string) {
   }
 }
 
+/** Post to the group's General topic (no thread id) — used for public donor thank-yous. */
+export async function postToGroupGeneral(text: string) {
+  if (!GROUP_ID) return;
+  try {
+    await bot.api.sendMessage(GROUP_ID, text, { parse_mode: "HTML" });
+  } catch {
+    // TG delivery failed — non-blocking
+  }
+}
+
 async function sendPhotoToTopic(topic: Topic, fileId: string, caption: string) {
   if (!GROUP_ID) return;
   const threadId = topicMap[topic];
