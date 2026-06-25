@@ -60,6 +60,12 @@ BOT_WEBHOOK_SECRET=your-webhook-secret
 # Auth
 JWT_SECRET=your-jwt-secret
 
+# Secrets-at-rest encryption (32-byte key, base64). REQUIRED in production.
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# IMPORTANT: use the SAME value across environments that share a database —
+# changing it makes already-encrypted credential/VPS secrets unreadable.
+CREDENTIAL_ENC_KEY=your-32-byte-base64-key
+
 # App
 WEBAPP_URL=https://sentinel.piratezparty.com
 
@@ -68,6 +74,11 @@ TG_GROUP_ID=your-group-id
 TG_TOPIC_AUDIT=topic-id
 TG_TOPIC_TRANSACTIONS=topic-id
 TG_TOPIC_SCREENSHOTS=topic-id
+
+# Donations group for public donation thank-yous (optional). If unset, thank-yous
+# fall back to TG_GROUP_ID's General topic (testing). Omit the topic id for General.
+TG_DONATION_GROUP_ID=your-donation-group-id
+TG_DONATION_TOPIC_ID=
 
 # GitHub Audit Logs
 GITHUB_LOGS_TOKEN=your-github-pat
@@ -131,7 +142,7 @@ To replace an existing BMC account on the VPS:
 cd ~/Sentinel
 nano .env
 # replace BMC_TOKEN and BMC_WEBHOOK_SECRET only
-pm2 restart sentinel
+pm2 restart sentinel-web
 pm2 save
 ```
 
@@ -162,6 +173,7 @@ npm run bot:dev    # Telegram bot (separate terminal)
 | `npm run db:seed` | Seed database with default users + tags |
 | `npm run db:push` | Push Prisma schema to database |
 | `npm run db:generate` | Regenerate Prisma client |
+| `npm test` | Run unit tests (Vitest) |
 
 ---
 
@@ -251,10 +263,30 @@ graph LR
 ```bash
 npx prisma db push       # Sync schema
 npx prisma generate      # Regenerate client
-rm -rf .next             # Clear Turbopack cache after prisma generate
+rm -rf .next             # Clear build cache after prisma generate
 ```
 
-Schema: 12 models, 17 enums. Seed data includes default users and 8 color-coded task tags.
+Schema: 13 models, 19 enums. Seed data includes default users and 8 color-coded task tags.
+
+### Deploying updates
+
+Production serves the **compiled `.next` build**, so a bare `git pull` keeps serving the old bundle. You must rebuild **and** restart both PM2 processes:
+
+```bash
+cd ~/Sentinel
+git pull
+npm ci
+npx prisma generate
+rm -rf .next
+npm run build
+pm2 restart sentinel-web sentinel-bot
+pm2 save
+```
+
+- `sentinel-web` — the Next.js app (web + API routes)
+- `sentinel-bot` — the grammY bot (donation thank-yous, donor reminders, service-expiry alerts)
+
+> If a change still isn't visible, confirm Cloudflare isn't caching HTML: `curl -sI https://sentinel.piratezparty.com/ | grep -i cf-cache-status` should be `DYNAMIC` (not `HIT`). Only `/_next/static/*` should be edge-cached.
 
 ---
 
@@ -280,12 +312,13 @@ Users can hold multiple roles. The sidebar switches context per role, with setti
 - Transaction approval/rejection workflow with receipt photo viewing
 - CSV export for all transactions
 - Service registry with dynamic columns
-- Credential vault with revision history and dev assignment (propose/approve flow)
+- Credential vault — AES-256-GCM encrypted at rest, per-dev access levels (public-key vs full), audited reveals, and VPS secrets auto-linked from the server
 - User management with role assignment and status control
 - Reminders with role-based targeting
 - VPS server monitoring — live CPU, RAM, disk, network metrics from bash agents with 30s refresh
 - Server approval flow for dev-requested VPS nodes
 - Donor leaderboard
+- Automatic donation thank-yous — public post in the donations group (@mention, tiered by amount) + personal DM; admin-recorded donations are flagged as on-behalf
 - Full audit log with GitHub-backed immutable history
 - Buy Me a Coffee integration — webhook receiver + manual sync for all BMC event types
 
@@ -295,8 +328,8 @@ Users can hold multiple roles. The sidebar switches context per role, with setti
 - Task management with priority levels, subtasks, deadlines, and color-coded tags
 - 8 tags: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
 - Gantt chart view for timeline planning
-- VPS stats (read-only monitoring + request new servers pending admin approval)
-- Credential access with propose/approve workflow
+- VPS stats (read-only monitoring + request new servers pending admin approval); request SSH access by submitting your own public key — an admin installs it and the server password/private key is never shared
+- Credential access — public-key (your installed key shown for reference) or full (reveal the secret); propose/approve workflow for credentials you own
 
 ### Donor — Contributions
 
@@ -305,6 +338,8 @@ Users can hold multiple roles. The sidebar switches context per role, with setti
 - Status tracking across pending, approved, and rejected states
 - 3 stat cards: total contributed, pending count, approved count
 - Appreciation messages on approval (5 normal + 5 generous thresholds based on average donation)
+- Tiered public thank-you in the donations group + a personal DM when a donation is approved
+- Donate reminders via DM — default monthly (around the 5th), adjustable to weekly / every 2 weeks / off from Profile (donor-only)
 
 ### Telegram Integration
 
@@ -318,7 +353,8 @@ Users can hold multiple roles. The sidebar switches context per role, with setti
 
 ### Platform-Wide
 
-- Immutable audit log backed by GitHub commits (Sentinel-Logs repo)
+- Immutable audit log backed by GitHub commits (Sentinel-Logs repo) + a Telegram audit-topic mirror for credential events
+- Secrets encrypted at rest (AES-256-GCM): credential values and VPS passwords/keys
 - Buy Me a Coffee webhook integration — supports payments, extras, memberships, commissions, wishlists, refunds, cancellations
 - Multi-currency with live USD/INR exchange rate
 - Custom accent color with 3 saveable preset slots
