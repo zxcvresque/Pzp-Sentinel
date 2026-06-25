@@ -15,6 +15,13 @@
 - [x] Add load-average health colors and a legend.
 - [x] Add weekly/monthly VPS metric averages for CPU, RAM, disk, and load.
 - [x] Replace runtime PNG assets with WebP assets for production.
+- [x] Add labeled VPS server fields for name, username, password/key, IP, tags, SSH port, provider, and notes.
+- [x] Store VPS username, SSH port, SSH key file metadata, and colored tags as first-class server data.
+- [x] Collapse VPS averages behind compact pills by default.
+- [x] Keep VPS SSH key uploads in Telegram with a 5MB limit.
+- [x] Add dev SSH public-key storage and manual authorized_keys install command for safe VPS sharing.
+- [x] Keep shared/dev VPS views free of passwords and private-key download links.
+- [ ] Update the existing production `Pzp Netcup` row back to its IPv4 address.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.
 - [ ] Verify BMC sync/webhook in production.

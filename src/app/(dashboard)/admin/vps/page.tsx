@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 /* ------------------------------------------------------------------ */
@@ -13,7 +14,13 @@ interface Server {
   provider: string;
   ip: string;
   platform: string;
+  username: string;
+  sshPort: number;
   password?: string;
+  sshKeyFileUrl?: string | null;
+  sshKeyFileName?: string | null;
+  accessPublicKeys?: string | null;
+  tags: string[];
   notes: string;
   approved: boolean;
   addedById: string;
@@ -99,6 +106,52 @@ function shellQuote(value: string): string {
 
 function sshTarget(user: string, ip: string): string {
   return ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+}
+
+function sshPortFlag(port: number): string {
+  return port && port !== 22 ? `-p ${port} ` : "";
+}
+
+function tagStyle(tag: string): CSSProperties {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i += 1) {
+    hash = (hash * 31 + tag.charCodeAt(i)) % 360;
+  }
+  const hue = hash || 184;
+  return {
+    color: `hsl(${hue}, 82%, 72%)`,
+    background: `hsla(${hue}, 70%, 48%, 0.12)`,
+    border: `1px solid hsla(${hue}, 70%, 58%, 0.28)`,
+  };
+}
+
+function parseTagsInput(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 12);
+}
+
+function parsePublicKeys(value?: string | null): string[] {
+  return String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function authorizedKeysCommand(username: string, keys: string[]): string {
+  const home = username === "root" ? "/root" : `/home/${username}`;
+  const quotedKeys = keys.map(shellQuote).join(" ");
+  return [
+    `sudo install -d -m 700 -o ${shellQuote(username)} -g ${shellQuote(username)} ${shellQuote(`${home}/.ssh`)}`,
+    `printf '%s\\n' ${quotedKeys} | sudo tee -a ${shellQuote(`${home}/.ssh/authorized_keys`)} >/dev/null`,
+    `sudo chown ${shellQuote(username)}:${shellQuote(username)} ${shellQuote(`${home}/.ssh/authorized_keys`)}`,
+    `sudo chmod 600 ${shellQuote(`${home}/.ssh/authorized_keys`)}`,
+  ].join("\n");
 }
 
 function parseLoadAvg(loadAvg: string): number[] {
@@ -229,16 +282,24 @@ function ApprovedServerCard({
   const [copiedPw, setCopiedPw] = useState(false);
   const [copiedSsh, setCopiedSsh] = useState(false);
   const [copiedSshPass, setCopiedSshPass] = useState(false);
+  const [copiedKeysCommand, setCopiedKeysCommand] = useState(false);
+  const [showAverages, setShowAverages] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
 
   const ramPct = m.ramTotal > 0 ? (m.ramUsage / m.ramTotal) * 100 : 0;
   const diskPct = m.diskTotal > 0 ? (m.diskUsage / m.diskTotal) * 100 : 0;
-  const sshUser = extractSshUser(server.notes);
-  const sshBase = `ssh ${sshTarget(sshUser, server.ip)}`;
+  const sshUser = server.username || extractSshUser(server.notes);
+  const sshPort = server.sshPort || 22;
+  const sshBase = `ssh ${sshPortFlag(sshPort)}${sshTarget(sshUser, server.ip)}`;
+  const sshWithKey = server.sshKeyFileName
+    ? `ssh -i ${shellQuote(server.sshKeyFileName)} ${sshPortFlag(sshPort)}${sshTarget(sshUser, server.ip)}`
+    : sshBase;
   const sshPass = server.password
     ? `sshpass -p ${shellQuote(server.password)} ${sshBase}`
     : sshBase;
+  const publicKeys = parsePublicKeys(server.accessPublicKeys);
+  const keysCommand = publicKeys.length > 0 ? authorizedKeysCommand(sshUser, publicKeys) : "";
   const load = loadStatus(server.loadAvg);
 
   const specEntries = Object.entries(server.specs ?? {});
@@ -264,6 +325,19 @@ function ApprovedServerCard({
             <span className="text-xs text-[var(--text-tertiary)]">
               {server.provider}
             </span>
+            {(server.tags ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(server.tags ?? []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                    style={tagStyle(tag)}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -297,9 +371,9 @@ function ApprovedServerCard({
       </div>
 
       {/* IP Address + Platform */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div
-          className="min-w-0 rounded-lg px-3 py-2"
+          className="col-span-2 min-w-0 rounded-lg px-3 py-2"
           style={{ background: "var(--bg-deep)" }}
         >
           <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
@@ -309,9 +383,31 @@ function ApprovedServerCard({
             {server.ip || "—"}
           </span>
         </div>
+        <div
+          className="min-w-0 rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            Username
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)] break-all">
+            {sshUser}
+          </span>
+        </div>
+        <div
+          className="min-w-0 rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            SSH Port
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {sshPort}
+          </span>
+        </div>
         {server.platform && (
           <div
-            className="min-w-0 rounded-lg px-3 py-2"
+            className="col-span-2 min-w-0 rounded-lg px-3 py-2 sm:col-span-1"
             style={{ background: "var(--bg-deep)" }}
           >
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
@@ -375,13 +471,13 @@ function ApprovedServerCard({
           SSH
         </span>
         <code className="block min-w-0 break-all rounded bg-[var(--bg-card)] px-2 py-1.5 font-mono text-xs text-[var(--text-secondary)]">
-          {sshBase}
+          {server.sshKeyFileName ? sshWithKey : sshBase}
         </code>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {
-              navigator.clipboard.writeText(sshBase);
+              navigator.clipboard.writeText(server.sshKeyFileName ? sshWithKey : sshBase);
               setCopiedSsh(true);
               setTimeout(() => setCopiedSsh(false), 2000);
             }}
@@ -393,6 +489,18 @@ function ApprovedServerCard({
           >
             {copiedSsh ? "Copied SSH" : "Copy SSH"}
           </button>
+          {server.sshKeyFileUrl && (
+            <a
+              href={server.sshKeyFileUrl}
+              className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+              style={{
+                color: "var(--text-secondary)",
+                background: "var(--bg-card)",
+              }}
+            >
+              Download key
+            </a>
+          )}
           {server.password && (
             <button
               type="button"
@@ -412,6 +520,40 @@ function ApprovedServerCard({
           )}
         </div>
       </div>
+
+      {publicKeys.length > 0 && (
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Dev access keys
+            </span>
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--mint)] bg-[rgba(52,211,153,0.08)]">
+              {publicKeys.length} key{publicKeys.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+            Password/private key stays admin-only. Install these public keys on the VPS, then share only host, port, and username.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(keysCommand);
+              setCopiedKeysCommand(true);
+              setTimeout(() => setCopiedKeysCommand(false), 2000);
+            }}
+            className="mt-2 font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+            style={{
+              color: copiedKeysCommand ? "var(--mint)" : "var(--text-secondary)",
+              background: "var(--bg-card)",
+            }}
+          >
+            {copiedKeysCommand ? "Copied install command" : "Copy install command"}
+          </button>
+        </div>
+      )}
 
       {/* Specs */}
       {specEntries.length > 0 && (
@@ -449,14 +591,35 @@ function ApprovedServerCard({
       </div>
 
       <div
-        className="rounded-lg px-3 py-2.5 space-y-2"
+        className="rounded-lg px-3 py-2"
         style={{ background: "var(--bg-deep)" }}
       >
-        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block">
-          Averages
-        </span>
-        <AverageRow label="7 day" summary={server.history?.week} />
-        <AverageRow label="30 day" summary={server.history?.month} />
+        <button
+          type="button"
+          onClick={() => setShowAverages((v) => !v)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            Averages
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--mint)] bg-[rgba(52,211,153,0.08)]">
+              7 day
+            </span>
+            <span className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--lime)] bg-[rgba(111,209,215,0.08)]">
+              30 day
+            </span>
+            <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
+              {showAverages ? "Hide" : "Show"}
+            </span>
+          </span>
+        </button>
+        {showAverages && (
+          <div className="mt-2 space-y-2">
+            <AverageRow label="7 day" summary={server.history?.week} />
+            <AverageRow label="30 day" summary={server.history?.month} />
+          </div>
+        )}
       </div>
 
       {/* Network I/O */}
@@ -578,6 +741,19 @@ function PendingServerCard({
             <span className="text-xs text-[var(--text-tertiary)]">
               {server.provider || "No provider"}
             </span>
+            {(server.tags ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(server.tags ?? []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                    style={tagStyle(tag)}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <span
@@ -592,21 +768,43 @@ function PendingServerCard({
       </div>
 
       {/* IP Address + Platform */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div
-          className="rounded-lg px-3 py-2"
+          className="col-span-2 rounded-lg px-3 py-2"
           style={{ background: "var(--bg-deep)" }}
         >
           <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
             IP Address
           </span>
-          <span className="font-mono text-sm text-[var(--text-primary)]">
+          <span className="block min-w-0 break-all font-mono text-xs leading-relaxed text-[var(--text-primary)] sm:text-sm">
             {server.ip || "—"}
+          </span>
+        </div>
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            Username
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)] break-all">
+            {server.username || "root"}
+          </span>
+        </div>
+        <div
+          className="rounded-lg px-3 py-2"
+          style={{ background: "var(--bg-deep)" }}
+        >
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            SSH Port
+          </span>
+          <span className="font-mono text-sm text-[var(--text-primary)]">
+            {server.sshPort || 22}
           </span>
         </div>
         {server.platform && (
           <div
-            className="rounded-lg px-3 py-2"
+            className="col-span-2 rounded-lg px-3 py-2 sm:col-span-1"
             style={{ background: "var(--bg-deep)" }}
           >
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
@@ -679,17 +877,52 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
   const [provider, setProvider] = useState("");
   const [ip, setIp] = useState("");
   const [platform, setPlatform] = useState("");
+  const [username, setUsername] = useState("root");
+  const [sshPort, setSshPort] = useState("22");
   const [password, setPassword] = useState("");
+  const [sshKeyFile, setSshKeyFile] = useState<File | null>(null);
+  const [sshKeyFileName, setSshKeyFileName] = useState("");
+  const [accessPublicKeys, setAccessPublicKeys] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const canSubmit = name.trim() && platform.trim() && ip.trim() && password.trim();
+  const parsedPort = Number(sshPort);
+  const tags = parseTagsInput(tagsInput);
+  const hasAuth = Boolean(password.trim() || sshKeyFile);
+  const canSubmit = Boolean(
+    name.trim() &&
+    ip.trim() &&
+    username.trim() &&
+    Number.isInteger(parsedPort) &&
+    parsedPort > 0 &&
+    parsedPort <= 65535 &&
+    hasAuth,
+  );
 
   const inputClass =
-    "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary text-sm focus:outline-none focus:border-[var(--border-active)] transition-colors";
+    "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2.5 text-text-primary placeholder:text-text-tertiary text-sm focus:outline-none focus:border-[var(--border-active)] transition-colors";
+  const labelClass =
+    "block font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] mb-1";
+  const sectionClass =
+    "font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]";
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function uploadKeyFile(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("/api/vps/key-upload", { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to upload SSH key file");
+    }
+    return {
+      url: String(data.url ?? ""),
+      fileName: String(data.fileName ?? file.name),
+    };
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
 
@@ -697,6 +930,11 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
     setError("");
 
     try {
+      let uploadedKey: { url: string; fileName: string } | null = null;
+      if (sshKeyFile) {
+        uploadedKey = await uploadKeyFile(sshKeyFile);
+      }
+
       const res = await fetch("/api/vps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -705,7 +943,13 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           provider: provider.trim(),
           ip: ip.trim(),
           platform: platform.trim(),
+          username: username.trim(),
+          sshPort: parsedPort,
           password: password.trim(),
+          sshKeyFileUrl: uploadedKey?.url ?? "",
+          sshKeyFileName: uploadedKey?.fileName ?? sshKeyFileName,
+          accessPublicKeys: accessPublicKeys.trim(),
+          tags,
           notes: notes.trim(),
         }),
       });
@@ -720,7 +964,13 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       setProvider("");
       setIp("");
       setPlatform("");
+      setUsername("root");
+      setSshPort("22");
       setPassword("");
+      setSshKeyFile(null);
+      setSshKeyFileName("");
+      setAccessPublicKeys("");
+      setTagsInput("");
       setNotes("");
       setOpen(false);
       onCreated(data.server?.token ?? data.token);
@@ -752,68 +1002,172 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       </button>
 
       {open && (
-        <form onSubmit={handleSubmit} className="card p-4 sm:p-6 flex flex-col gap-4 col-span-full">
+        <form onSubmit={handleSubmit} className="card p-4 sm:p-5 flex flex-col gap-4 col-span-full">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
               New Server
             </span>
           </div>
 
-          {/* Row 1: Name, Platform, IP Address */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <input
-              type="text"
-              placeholder="Server name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className={inputClass}
-            />
-            <input
-              type="text"
-              placeholder="Oracle, Netcup, Hetzner..."
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
-              required
-              className={inputClass}
-            />
-            <input
-              type="text"
-              placeholder="xxx.xxx.xxx.xxx"
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              required
-              className={inputClass}
-            />
+          <div className="space-y-3">
+            <span className={sectionClass}>Connection</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+              <label className="xl:col-span-3">
+                <span className={labelClass}>Name for the server</span>
+                <input
+                  type="text"
+                  placeholder="Pzp Netcup"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-3">
+                <span className={labelClass}>IP address</span>
+                <input
+                  type="text"
+                  placeholder="IPv4 or IPv6"
+                  value={ip}
+                  onChange={(e) => setIp(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-2">
+                <span className={labelClass}>Username</span>
+                <input
+                  type="text"
+                  placeholder="root"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-2">
+                <span className={labelClass}>SSH port</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={sshPort}
+                  onChange={(e) => setSshPort(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-2">
+                <span className={labelClass}>Platform</span>
+                <input
+                  type="text"
+                  placeholder="Netcup, Oracle..."
+                  value={platform}
+                  onChange={(e) => setPlatform(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+            </div>
           </div>
 
-          {/* Row 2: Provider, Password */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="text"
-              placeholder="Who provided it?"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className={inputClass}
-            />
-            <input
-              type="password"
-              placeholder="SSH password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className={inputClass}
-            />
+          <div className="space-y-3">
+            <span className={sectionClass}>Access</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+              <label className="xl:col-span-4">
+                <span className={labelClass}>Password</span>
+                <input
+                  type="password"
+                  placeholder="SSH password, if using password login"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-4">
+                <span className={labelClass}>SSH key file</span>
+                <input
+                  type="file"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file && file.size > 5 * 1024 * 1024) {
+                      setError("SSH key file must be 5MB or smaller");
+                      e.currentTarget.value = "";
+                      return;
+                    }
+                    setError("");
+                    setSshKeyFile(file);
+                    setSshKeyFileName(file?.name ?? "");
+                  }}
+                  className={`${inputClass} file:mr-3 file:rounded file:border-0 file:bg-[var(--bg-card)] file:px-2 file:py-1 file:font-mono file:text-[10px] file:uppercase file:text-[var(--text-secondary)]`}
+                />
+                <span className="mt-1 block text-[10px] text-[var(--text-tertiary)]">
+                  Optional. Stored in Telegram as a document. Max 5MB.
+                </span>
+              </label>
+              <label className="xl:col-span-4">
+                <span className={labelClass}>Tags</span>
+                <input
+                  type="text"
+                  placeholder="prod, netcup, donated"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  className={inputClass}
+                />
+                {tags.length > 0 && (
+                  <span className="mt-1.5 flex flex-wrap gap-1.5">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                        style={tagStyle(tag)}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </label>
+              <label className="xl:col-span-12">
+                <span className={labelClass}>Dev SSH public keys</span>
+                <textarea
+                  placeholder="Paste one ssh-ed25519 or ssh-rsa public key per line"
+                  value={accessPublicKeys}
+                  onChange={(e) => setAccessPublicKeys(e.target.value)}
+                  rows={2}
+                  className={`${inputClass} resize-none`}
+                />
+                <span className="mt-1 block text-[10px] text-[var(--text-tertiary)]">
+                  These are safe-to-share public keys. Sentinel will show an install command; passwords/private keys stay hidden unless explicitly copied by an admin.
+                </span>
+              </label>
+            </div>
           </div>
 
-          {/* Row 3: Notes */}
-          <textarea
-            placeholder="Any additional notes..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className={`${inputClass} resize-none`}
-          />
+          <div className="space-y-3">
+            <span className={sectionClass}>Ownership</span>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label>
+                <span className={labelClass}>Who provided it?</span>
+                <input
+                  type="text"
+                  placeholder="Provider, donor, or account owner"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className={labelClass}>Additional notes</span>
+                <textarea
+                  placeholder="Purpose, limits, renewal context..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className={`${inputClass} resize-none`}
+                />
+              </label>
+            </div>
+          </div>
 
           {error && (
             <p className="text-xs text-[var(--coral)]">{error}</p>
@@ -830,7 +1184,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
                 background: "var(--lime)",
               }}
             >
-              {submitting ? "Creating..." : "Create Server"}
+              {submitting ? (sshKeyFile ? "Uploading..." : "Creating...") : "Create Server"}
             </button>
             <button
               type="button"

@@ -12,6 +12,9 @@ interface Server {
   provider: string;
   ip: string;
   platform: string;
+  username: string;
+  sshPort: number;
+  tags: string[];
   notes: string;
   specs: Record<string, string>;
   status: "online" | "offline";
@@ -64,6 +67,27 @@ function formatUptime(seconds: number): string {
 
 function formatGB(gb: number): string {
   return gb >= 100 ? gb.toFixed(0) : gb.toFixed(1);
+}
+
+function sshTarget(user: string, ip: string): string {
+  return ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+}
+
+function sshPortFlag(port: number): string {
+  return port && port !== 22 ? `-p ${port} ` : "";
+}
+
+function tagStyle(tag: string): React.CSSProperties {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i += 1) {
+    hash = (hash * 31 + tag.charCodeAt(i)) % 360;
+  }
+  const hue = hash || 184;
+  return {
+    color: `hsl(${hue}, 82%, 72%)`,
+    background: `hsla(${hue}, 70%, 48%, 0.12)`,
+    border: `1px solid hsla(${hue}, 70%, 58%, 0.28)`,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,11 +164,15 @@ function UsageBar({
 /* ------------------------------------------------------------------ */
 
 function ServerCard({ server }: { server: Server }) {
+  const [copiedSsh, setCopiedSsh] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
 
   const ramPct = m.ramTotal > 0 ? (m.ramUsage / m.ramTotal) * 100 : 0;
   const diskPct = m.diskTotal > 0 ? (m.diskUsage / m.diskTotal) * 100 : 0;
+  const sshUser = server.username || "root";
+  const sshPort = server.sshPort || 22;
+  const sshCommand = `ssh ${sshPortFlag(sshPort)}${sshTarget(sshUser, server.ip)}`;
 
   const specEntries = Object.entries(server.specs ?? {});
 
@@ -170,6 +198,19 @@ function ServerCard({ server }: { server: Server }) {
             <span className="text-xs text-[var(--text-tertiary)]">
               {server.provider}
             </span>
+            {(server.tags ?? []).length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(server.tags ?? []).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                    style={tagStyle(tag)}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <span
@@ -214,6 +255,41 @@ function ServerCard({ server }: { server: Server }) {
       </div>
 
       {/* Specs — dynamic from JSON */}
+      <div
+        className="rounded-lg px-3 py-2"
+        style={{ background: "var(--bg-deep)" }}
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-1">
+          SSH
+        </span>
+        <code className="block min-w-0 break-all rounded bg-[var(--bg-card)] px-2 py-1.5 font-mono text-xs text-[var(--text-secondary)]">
+          {sshCommand}
+        </code>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <span className="rounded bg-[var(--bg-card)] px-2 py-1 font-mono text-[10px] uppercase text-[var(--text-tertiary)]">
+            user {sshUser}
+          </span>
+          <span className="rounded bg-[var(--bg-card)] px-2 py-1 font-mono text-[10px] uppercase text-[var(--text-tertiary)]">
+            port {sshPort}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(sshCommand);
+              setCopiedSsh(true);
+              setTimeout(() => setCopiedSsh(false), 2000);
+            }}
+            className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+            style={{
+              color: copiedSsh ? "var(--mint)" : "var(--text-secondary)",
+              background: "var(--bg-card)",
+            }}
+          >
+            {copiedSsh ? "Copied SSH" : "Copy SSH"}
+          </button>
+        </div>
+      </div>
+
       {specEntries.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {specEntries.map(([label, value]) => (
@@ -375,8 +451,8 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
         setOpen(false);
       }, 3000);
       onRequested();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to submit request");
     } finally {
       setSubmitting(false);
     }
@@ -519,8 +595,8 @@ export default function VpsPage() {
       const data = await res.json();
       setServers(data.servers || []);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to fetch VPS data");
     } finally {
       setLoading(false);
     }
@@ -528,9 +604,12 @@ export default function VpsPage() {
 
   /* Fetch servers + 30s polling */
   useEffect(() => {
-    fetchServers();
+    const initial = setTimeout(() => fetchServers(), 0);
     const interval = setInterval(() => fetchServers(), 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
   }, [fetchServers]);
 
   if (loading) {

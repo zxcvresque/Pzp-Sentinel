@@ -32,7 +32,7 @@ export async function GET(
       return new NextResponse(null, { status: 404 });
     }
 
-    // Download the actual image bytes
+    // Download the actual file bytes
     const photoRes = await fetch(
       `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`,
     );
@@ -43,7 +43,16 @@ export async function GET(
 
     const buffer = await photoRes.arrayBuffer();
     const ext = fileData.result.file_path.split(".").pop() || "jpg";
-    const contentType = ext === "png" ? "image/png" : "image/jpeg";
+    const contentType =
+      ext === "png"
+        ? "image/png"
+        : ext === "webp"
+          ? "image/webp"
+          : ext === "gif"
+            ? "image/gif"
+            : ext === "jpg" || ext === "jpeg"
+              ? "image/jpeg"
+              : "application/octet-stream";
 
     return new NextResponse(buffer, {
       headers: {

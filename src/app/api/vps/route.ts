@@ -20,6 +20,19 @@ function pct(used: number, total: number) {
   return total > 0 ? (used / total) * 100 : 0;
 }
 
+function normalizeTags(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((tag) => String(tag).trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function normalizeSshPort(value: unknown) {
+  const port = Number(value);
+  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 22;
+}
+
 async function metricSummary(serverId: string, since: Date) {
   const [aggregate, samples] = await Promise.all([
     prisma.vpsMetric.aggregate({
@@ -80,8 +93,18 @@ export async function GET() {
     provider: s.provider,
     ip: s.ip,
     platform: s.platform,
+    username: s.username || "root",
+    sshPort: s.sshPort || 22,
     notes: s.notes,
-    ...(isAdmin ? { password: s.password } : {}),
+    tags: s.tags,
+    sshKeyFileName: s.sshKeyFileName,
+    ...(isAdmin
+      ? {
+          password: s.password,
+          sshKeyFileUrl: s.sshKeyFileUrl,
+          accessPublicKeys: s.accessPublicKeys,
+        }
+      : {}),
     specs: s.specs,
     approved: s.approved,
     addedById: s.addedById,
@@ -117,9 +140,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { name, provider, ip, platform, password, notes } = await req.json();
-  if (!name || !platform || !ip || !password) {
-    return NextResponse.json({ error: "Name, platform, IP, and password are required" }, { status: 400 });
+  const {
+    name,
+    provider,
+    ip,
+    platform,
+    username,
+    sshPort,
+    password,
+    sshKeyFileUrl,
+    sshKeyFileName,
+    accessPublicKeys,
+    tags,
+    notes,
+  } = await req.json();
+  const cleanName = String(name ?? "").trim();
+  const cleanIp = String(ip ?? "").trim();
+  const cleanUsername = String(username ?? "root").trim() || "root";
+  const cleanPassword = String(password ?? "").trim();
+  const cleanSshKeyFileUrl = String(sshKeyFileUrl ?? "").trim();
+  const cleanSshKeyFileName = String(sshKeyFileName ?? "").trim();
+
+  if (!cleanName || !cleanIp || !cleanUsername || (!cleanPassword && !cleanSshKeyFileUrl)) {
+    return NextResponse.json(
+      { error: "Name, IP, username, and either password or SSH key file are required" },
+      { status: 400 },
+    );
   }
 
   const isAdmin = hasRole(user.roles, "ADMIN");
@@ -127,12 +173,18 @@ export async function POST(req: NextRequest) {
 
   const server = await prisma.vpsServer.create({
     data: {
-      name,
-      provider: provider || "",
-      ip: ip || "",
-      platform: platform || "",
-      password: password || "",
-      notes: notes || "",
+      name: cleanName,
+      provider: String(provider ?? "").trim(),
+      ip: cleanIp,
+      platform: String(platform ?? "").trim(),
+      username: cleanUsername,
+      sshPort: normalizeSshPort(sshPort),
+      password: cleanPassword,
+      sshKeyFileUrl: cleanSshKeyFileUrl || null,
+      sshKeyFileName: cleanSshKeyFileName || null,
+      accessPublicKeys: String(accessPublicKeys ?? "").trim(),
+      tags: normalizeTags(tags),
+      notes: String(notes ?? "").trim(),
       token,
       approved: isAdmin,
       addedById: user.id,

@@ -317,7 +317,13 @@ model VpsServer {
   provider    String   @default("")
   ip          String   @default("")
   platform    String   @default("")
+  username    String   @default("root")
+  sshPort     Int      @default(22)
   password    String   @default("")
+  sshKeyFileUrl  String?
+  sshKeyFileName String?
+  accessPublicKeys String @default("")
+  tags        String[] @default([])
   notes       String   @default("")
   specs       Json     @default("{}")
   cpuUsage    Float    @default(0)
