@@ -15,9 +15,23 @@ interface Credential {
   id: string;
   platform: string;
   label: string;
-  value: string;
-  assignees: UserRef[];
+  status: string;
+  accessLevel: "PUBLIC_KEY" | "FULL" | null;
+  granted: boolean;
+  devPublicKey: string | null;
+  vpsServer?: { id: string; name: string } | null;
+  credKind?: string | null;
   createdBy: UserRef;
+}
+
+interface PendingGrant {
+  id: string;
+  platform: string;
+  label: string;
+  accessLevel: "PUBLIC_KEY" | "FULL" | null;
+  granted: boolean;
+  devPublicKey: string | null;
+  vpsServer?: { id: string; name: string } | null;
 }
 
 interface PendingCred {
@@ -32,9 +46,11 @@ interface PendingCred {
 
 export default function DevCredentialsPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [pendingGrants, setPendingGrants] = useState<PendingGrant[]>([]);
   const [pending, setPending] = useState<PendingCred[]>([]);
   const [loading, setLoading] = useState(true);
-  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
+  const [revealError, setRevealError] = useState<Record<string, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [editingParentId, setEditingParentId] = useState<string | null>(null);
 
@@ -49,18 +65,32 @@ export default function DevCredentialsPage() {
       .then((r) => r.json())
       .then((data) => {
         setCredentials(data.credentials || []);
+        setPendingGrants(data.pendingGrants || []);
         setPending(data.pending || []);
       })
       .finally(() => setLoading(false));
   }, []);
 
-  function toggleReveal(id: string) {
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // Reveal goes through the audited chokepoint endpoint — the value is never
+  // shipped in the list response.
+  async function toggleReveal(id: string) {
+    if (revealedValues[id] !== undefined) {
+      setRevealedValues((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    setRevealError((prev) => ({ ...prev, [id]: "" }));
+    const res = await fetch(`/api/credentials/${id}/reveal`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      setRevealedValues((prev) => ({ ...prev, [id]: data.value }));
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setRevealError((prev) => ({ ...prev, [id]: d.error || "Cannot reveal" }));
+    }
   }
 
   function startPropose(cred: Credential) {
@@ -121,6 +151,7 @@ export default function DevCredentialsPage() {
     if (ok) {
       const fresh = await fetch("/api/credentials").then((r) => r.json());
       setCredentials(fresh.credentials || []);
+      setPendingGrants(fresh.pendingGrants || []);
       setPending(fresh.pending || []);
       resetForm();
     }
@@ -238,6 +269,41 @@ export default function DevCredentialsPage() {
         </form>
       )}
 
+      {pendingGrants.length > 0 && (
+        <div className="mb-8">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-amber mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber animate-pulse" />
+            Awaiting Admin Grant ({pendingGrants.length})
+          </h2>
+          <div className="space-y-2">
+            {pendingGrants.map((p) => (
+              <div key={p.id} className="card p-4 border-l-2 border-l-amber">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium">{p.platform}</span>
+                    <span className="text-text-tertiary mx-2">/</span>
+                    <span className="text-sm text-text-secondary">{p.label}</span>
+                    {p.vpsServer && (
+                      <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-violet/10 text-violet ml-2">
+                        🔗 {p.vpsServer.name}
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-amber/10 text-amber">
+                    {p.accessLevel === "PUBLIC_KEY" ? "Key install pending" : "Awaiting grant"}
+                  </span>
+                </div>
+                {p.devPublicKey && (
+                  <code className="mt-2 block break-all rounded bg-bg-deep px-2 py-1.5 font-mono text-[11px] text-text-secondary">
+                    {p.devPublicKey}
+                  </code>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {pending.length > 0 && (
         <div className="mb-8">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-amber mb-3 flex items-center gap-2">
@@ -270,9 +336,9 @@ export default function DevCredentialsPage() {
 
       {credentials.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No credentials assigned to you yet.</p>
+          <p className="text-text-secondary mb-2">No credentials shared with you yet.</p>
           <p className="text-text-tertiary text-sm">
-            An admin will assign platform credentials when you need access.
+            Request access from the VPS page, or an admin will share credentials when you need them.
           </p>
         </div>
       ) : (
@@ -283,48 +349,80 @@ export default function DevCredentialsPage() {
                 {platformName}
               </h2>
               <div className="space-y-3">
-                {creds.map((cred) => (
-                  <div key={cred.id} className="card p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold mb-2">{cred.label}</div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <button
-                            onClick={() => toggleReveal(cred.id)}
-                            className="font-mono text-xs px-3 py-1.5 rounded-lg bg-bg-deep border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
-                          >
-                            {revealed.has(cred.id) ? "Hide" : "Reveal"}
-                          </button>
-                          {revealed.has(cred.id) && (
-                            <code className="font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
-                              {cred.value}
-                            </code>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap text-xs text-text-tertiary">
-                          <span className="flex items-center gap-1">Added by <TgUser name={cred.createdBy.name} telegramUser={cred.createdBy.telegramUser} photoUrl={cred.createdBy.photoUrl} size={18} /></span>
-                          {cred.assignees.length > 1 && (
-                            <>
-                              <span className="opacity-30">|</span>
-                              <span>
-                                Shared with{" "}
-                                {cred.assignees
-                                  .map((a) => a.name)
-                                  .join(", ")}
+                {creds.map((cred) => {
+                  const isFull = cred.accessLevel === "FULL";
+                  const canPropose = isFull && !cred.vpsServer;
+                  return (
+                    <div key={cred.id} className="card p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className="text-sm font-semibold">{cred.label}</span>
+                            {cred.vpsServer && (
+                              <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-violet/10 text-violet">
+                                🔗 VPS: {cred.vpsServer.name}
                               </span>
-                            </>
+                            )}
+                            <span
+                              className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded"
+                              style={{
+                                color: isFull ? "var(--coral)" : "var(--mint)",
+                                background: isFull ? "rgba(248,113,113,0.1)" : "rgba(52,211,153,0.1)",
+                              }}
+                            >
+                              {isFull ? "Full access" : "Public-key access"}
+                            </span>
+                          </div>
+
+                          {isFull ? (
+                            <div className="flex items-center gap-2 mb-3 flex-wrap">
+                              <button
+                                onClick={() => toggleReveal(cred.id)}
+                                className="font-mono text-xs px-3 py-1.5 rounded-lg bg-bg-deep border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
+                              >
+                                {revealedValues[cred.id] !== undefined ? "Hide" : "Reveal"}
+                              </button>
+                              {revealedValues[cred.id] !== undefined && (
+                                <code className="font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
+                                  {revealedValues[cred.id]}
+                                </code>
+                              )}
+                              {revealError[cred.id] && (
+                                <span className="text-xs text-coral">{revealError[cred.id]}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="mb-3">
+                              <p className="text-[11px] text-text-tertiary leading-relaxed mb-1">
+                                Your SSH key is installed on this server — use your matching private key to connect. The password / private key is never shared.
+                              </p>
+                              {cred.devPublicKey && (
+                                <code className="block break-all rounded bg-bg-deep px-2 py-1.5 font-mono text-[11px] text-text-secondary border border-[var(--border)]">
+                                  {cred.devPublicKey}
+                                </code>
+                              )}
+                            </div>
                           )}
+
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-text-tertiary">
+                            <span className="flex items-center gap-1">
+                              Added by{" "}
+                              <TgUser name={cred.createdBy.name} telegramUser={cred.createdBy.telegramUser} photoUrl={cred.createdBy.photoUrl} size={18} />
+                            </span>
+                          </div>
                         </div>
+                        {canPropose && (
+                          <button
+                            onClick={() => startPropose(cred)}
+                            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors shrink-0"
+                          >
+                            Propose Update
+                          </button>
+                        )}
                       </div>
-                      <button
-                        onClick={() => startPropose(cred)}
-                        className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors shrink-0"
-                      >
-                        Propose Update
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
