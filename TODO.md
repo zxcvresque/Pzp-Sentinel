@@ -41,7 +41,15 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 - [x] Edit schema (enum + CredentialAccess + Credential/User/VpsServer relations) → `db push` (--accept-data-loss) → `generate` ✅
 - [x] Write + run `prisma/backfill-cred-access.ts` (0 pairs; 1 VPS server → 1 linked "Root Password" credential)
 - [x] `src/lib/vps-credentials.ts` — `syncVpsCredentials(server, createdById)` (upsert, delete-if-empty, logCredentialAction)
-- [ ] `/api/vps` POST → sync after create; PATCH approve → sync; verify DELETE cascade
+
+### Security hardening (mid-build)
+- [x] `src/lib/secret-crypto.ts` (AES-256-GCM, `enc:v1:` format, fail-closed encrypt, legacy plaintext passthrough); `CREDENTIAL_ENC_KEY` in `.env` + `.env.example`
+- [x] Encrypt write paths (syncVpsCredentials) + one-time `prisma/encrypt-existing-secrets.ts` (encrypted 1 cred + 1 server)
+- [x] Telegram audit mirror: `logCredentialAction` → also `logAuditEvent` (TG_TOPIC_AUDIT); emoji map extended. Never re-sends SSH file.
+- [ ] Audited **reveal** chokepoint endpoint (with PATCH below)
+
+### Remaining Phase 1
+- [ ] `/api/vps` POST → sync after create; PATCH approve → sync; encrypt password/sshKeyFileUrl on write; admin GET decrypt; verify DELETE cascade
 - [ ] `/api/credentials` GET admin (accesses + vpsServer) · GET dev (value-omission + pendingGrants) · POST admin (accesses[], force-choice)
 - [ ] `/api/credentials/[id]` PATCH (reconcile access, notify on granted false→true, VPS write-back) · DELETE (cascade)
 - [ ] Access-request route — dev POST {devPublicKey}, granted:false, notifyAdmins

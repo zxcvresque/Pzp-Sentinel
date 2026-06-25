@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { logCredentialAction } from "@/lib/github-log";
+import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
 
 // Which VpsServer secret columns mirror into the Credentials vault.
 // `value` is the stored secret (for the SSH key we mirror the key-file URL,
@@ -26,6 +27,9 @@ export const VPS_CRED_SPECS: ReadonlyArray<{
  * linked row, creates it if missing, and deletes it if the secret was cleared.
  * The VpsServer columns remain the source of truth; these rows are the
  * shareable, access-controlled view in the vault.
+ *
+ * IMPORTANT: `server` must carry PLAINTEXT secrets — this function encrypts the
+ * stored `Credential.value` itself (AES-256-GCM via secret-crypto).
  */
 export async function syncVpsCredentials(
   server: VpsSecretSource,
@@ -33,7 +37,7 @@ export async function syncVpsCredentials(
   actorName = "system"
 ): Promise<void> {
   for (const spec of VPS_CRED_SPECS) {
-    const value = spec.get(server);
+    const value = spec.get(server); // plaintext
     const existing = await prisma.credential.findFirst({
       where: { vpsServerId: server.id, credKind: spec.credKind },
     });
@@ -54,10 +58,10 @@ export async function syncVpsCredentials(
     }
 
     if (existing) {
-      if (existing.value !== value || existing.platform !== server.name || existing.label !== spec.label) {
+      if (decryptSecret(existing.value) !== value || existing.platform !== server.name || existing.label !== spec.label) {
         await prisma.credential.update({
           where: { id: existing.id },
-          data: { value, platform: server.name, label: spec.label },
+          data: { value: encryptSecret(value), platform: server.name, label: spec.label },
         });
       }
     } else {
@@ -65,7 +69,7 @@ export async function syncVpsCredentials(
         data: {
           platform: server.name,
           label: spec.label,
-          value,
+          value: encryptSecret(value),
           // status defaults to APPROVED
           createdById,
           vpsServerId: server.id,

@@ -6,6 +6,8 @@
  * Repo: https://github.com/zxcvresque/Sentinel-Logs
  */
 
+import { logAuditEvent } from "./telegram-log";
+
 const GITHUB_TOKEN = process.env.GITHUB_LOGS_TOKEN!;
 const REPO_OWNER = "zxcvresque";
 const REPO_NAME = "Sentinel-Logs";
@@ -199,7 +201,9 @@ export function logUserAction(data: {
 }
 
 /**
- * Log a credential vault action
+ * Log a credential vault action.
+ * Writes to the immutable GitHub log AND mirrors to the Telegram audit topic.
+ * Never logs the secret value — only action, platform, and entity id.
  */
 export function logCredentialAction(data: {
   action: string;
@@ -209,6 +213,14 @@ export function logCredentialAction(data: {
   platform: string;
   details?: string;
 }) {
+  // Mirror to the Telegram audit topic (fire-and-forget; swallows its own errors).
+  logAuditEvent({
+    action: data.action,
+    entityType: "Credential",
+    entityId: data.entityId,
+    userName: data.userName,
+    details: [data.platform, data.details].filter(Boolean).join(" — "),
+  });
   return githubLog("credentials", {
     action: data.action,
     userId: data.userId,
