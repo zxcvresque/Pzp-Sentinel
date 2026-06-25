@@ -126,6 +126,22 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/**
+ * Public display handle for group thank-yous:
+ *   "Name (@username)" when both are known,
+ *   "@username" / "Name" when only one is,
+ *   else a generic fallback (external/unknown donor).
+ * `name` comes from the donor's Telegram /start; `username` is their @handle.
+ */
+export function donorHandle(name?: string | null, username?: string | null): string {
+  const u = username?.replace(/^@/, "").trim();
+  const n = name?.trim();
+  if (n && u) return `${n} (@${u})`;
+  if (u) return `@${u}`;
+  if (n) return n;
+  return "A generous supporter";
+}
+
 /** Public group thank-you. `handle` should be "@username" (or a fallback name). */
 export function groupThanks(handle: string, amount: number, currency: string): string {
   const tier = tierFor(amount, currency);

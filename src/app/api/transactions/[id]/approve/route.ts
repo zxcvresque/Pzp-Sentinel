@@ -6,7 +6,7 @@ import { logTransactionReview, postDonationThanks } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
-import { groupThanks, dmThanks } from "@/lib/donation-thanks";
+import { groupThanks, dmThanks, donorHandle } from "@/lib/donation-thanks";
 
 export async function POST(
   req: NextRequest,
@@ -133,8 +133,7 @@ export async function POST(
 
   // Public thank-you in the donations group (donations only).
   if (isDonation) {
-    const tgUser = updated.fromUser?.telegramUser?.replace(/^@/, "");
-    const handle = tgUser ? `@${tgUser}` : (updated.fromUser?.name ?? "A generous supporter");
+    const handle = donorHandle(updated.fromUser?.name, updated.fromUser?.telegramUser);
     let groupMsg = groupThanks(handle, amountNum, updated.currency);
     if (onBehalf) groupMsg += `\n<i>(recorded by ${recorderName} on their behalf)</i>`;
     postDonationThanks(groupMsg).catch((err) =>
