@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import ThemeColorPicker from "@/components/ThemeColorPicker";
 import { getRoleColor } from "@/lib/role-colors";
 import { useFormExamples } from "@/hooks/useFormExamples";
+import DonateReminderCard from "@/components/DonateReminderCard";
 
 interface UserProfile {
   id: string;
@@ -575,6 +576,13 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Donor-only: donate-reminder cadence */}
+      {user.roles.includes("DONOR") && (
+        <div className="mt-4">
+          <DonateReminderCard />
+        </div>
+      )}
 
       {/* ── Replay Tour ── */}
       <div className="card p-5">

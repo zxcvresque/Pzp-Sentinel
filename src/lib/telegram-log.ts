@@ -28,11 +28,20 @@ async function sendToTopic(topic: Topic, text: string) {
   }
 }
 
-/** Post to the group's General topic (no thread id) — used for public donor thank-yous. */
-export async function postToGroupGeneral(text: string) {
-  if (!GROUP_ID) return;
+/**
+ * Post a donation thank-you to the donations group. Uses TG_DONATION_GROUP_ID
+ * (+ optional TG_DONATION_TOPIC_ID for a specific topic; omit for General), and
+ * falls back to the logs group's General topic for testing when unset.
+ */
+export async function postDonationThanks(text: string) {
+  const groupId = process.env.TG_DONATION_GROUP_ID || GROUP_ID;
+  if (!groupId) return;
+  const topicId = process.env.TG_DONATION_TOPIC_ID;
   try {
-    await bot.api.sendMessage(GROUP_ID, text, { parse_mode: "HTML" });
+    await bot.api.sendMessage(groupId, text, {
+      parse_mode: "HTML",
+      ...(topicId ? { message_thread_id: parseInt(topicId) } : {}),
+    });
   } catch {
     // TG delivery failed — non-blocking
   }

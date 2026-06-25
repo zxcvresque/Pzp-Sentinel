@@ -142,7 +142,11 @@ export function dmThanks(name: string, amount: number, currency: string): string
     .replaceAll("{amount}", formatAmount(amount, currency));
 }
 
-/** Donate-reminder nudge DM. */
-export function donateReminderMessage(name: string): string {
-  return pick(REMINDER_TEMPLATES).replaceAll("{name}", name);
+/** Donate-reminder nudge DM. First reminder asks about frequency; later ones point to Profile. */
+export function donateReminderMessage(name: string, isFirst: boolean): string {
+  const base = pick(REMINDER_TEMPLATES).replaceAll("{name}", name);
+  const suffix = isFirst
+    ? "\n\n<i>This is your first reminder — want these more or less often, or off? Set your preference anytime in your Profile → Donation reminders.</i>"
+    : "\n\n<i>Change how often you get these in your Profile → Donation reminders.</i>";
+  return base + suffix;
 }

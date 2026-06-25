@@ -510,7 +510,12 @@ export default function TransactionsPage() {
                         )}
                       </div>
                       {tx.fromUser && (
-                        <div className="text-text-tertiary text-xs mt-0.5">from {tx.fromUser.name}</div>
+                        <div className="text-text-tertiary text-xs mt-0.5">
+                          from {tx.fromUser.name}
+                          {tx.createdBy && tx.createdBy.name !== tx.fromUser.name && (
+                            <span className="text-amber"> · recorded by {tx.createdBy.name}</span>
+                          )}
+                        </div>
                       )}
                       {tx.createdBy && !tx.fromUser && (
                         <div className="text-text-tertiary text-xs mt-0.5">by {tx.createdBy.name}</div>

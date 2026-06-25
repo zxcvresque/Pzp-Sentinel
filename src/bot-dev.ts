@@ -609,7 +609,19 @@ async function checkServiceExpiry() {
 
 // ── Donor donate-reminders ─────────────────────────────────────────────
 const DONATE_REMINDER_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // every 6h
-const CADENCE_DAYS: Record<string, number> = { WEEKLY: 7, BIWEEKLY: 14, MONTHLY: 30 };
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Weekly/biweekly roll from the last reminder; monthly fires on/after the 5th, once per calendar month.
+function reminderDue(cadence: string, last: Date | null, now: Date): boolean {
+  if (cadence === "WEEKLY") return !last || now.getTime() - last.getTime() >= 7 * DAY_MS;
+  if (cadence === "BIWEEKLY") return !last || now.getTime() - last.getTime() >= 14 * DAY_MS;
+  if (cadence === "MONTHLY") {
+    if (now.getDate() < 5) return false;
+    if (!last) return true;
+    return last.getFullYear() !== now.getFullYear() || last.getMonth() !== now.getMonth();
+  }
+  return false;
+}
 
 async function checkDonateReminders() {
   console.log("[donate-reminder] Running donor reminder check...");
@@ -635,17 +647,16 @@ async function checkDonateReminders() {
 
     let sent = 0;
     for (const d of donors) {
-      const days = CADENCE_DAYS[d.donateReminderCadence] ?? 30;
-      const dueMs = days * 24 * 60 * 60 * 1000;
-      if (d.lastDonateReminderAt && now.getTime() - d.lastDonateReminderAt.getTime() < dueMs) continue;
+      if (!reminderDue(d.donateReminderCadence, d.lastDonateReminderAt, now)) continue;
       if (!d.chatId) continue;
+      const isFirst = !d.lastDonateReminderAt;
       try {
-        await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name), { parse_mode: "HTML" });
+        await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name, isFirst), { parse_mode: "HTML" });
         sent++;
       } catch (e) {
         console.error(`[donate-reminder] DM failed for ${d.id}:`, (e as Error).message);
       }
-      // Stamp so the next nudge waits a full cadence interval.
+      // Stamp so the next nudge waits for the next cadence window.
       await dbRetry(() =>
         prisma.user.update({ where: { id: d.id }, data: { lastDonateReminderAt: now } }),
       ).catch(() => {});

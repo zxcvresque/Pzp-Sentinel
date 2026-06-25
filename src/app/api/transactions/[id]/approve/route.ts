@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { logTransactionReview, postToGroupGeneral } from "@/lib/telegram-log";
+import { logTransactionReview, postDonationThanks } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
@@ -34,7 +34,7 @@ export async function POST(
   const updated = await prisma.transaction.update({
     where: { id },
     data: { status: "APPROVED", reviewedById: user.id },
-    include: { fromUser: true },
+    include: { fromUser: true, createdBy: true },
   });
 
   await logAudit({
@@ -97,17 +97,28 @@ export async function POST(
 
   const isDonation = updated.type === "DONATION" && updated.direction === "IN";
   const amountNum = Number(updated.amount);
+  const recorderName = updated.createdBy?.name ?? "an admin";
+  // Admin recorded on behalf of a different linked donor (gets a DM note).
+  const onBehalfLinked = !!updated.fromUserId && updated.fromUserId !== updated.createdById;
+  // Recorded by someone other than the donor (incl. external donors).
+  const onBehalf = isDonation && (onBehalfLinked || !updated.fromUserId);
 
   // In-app notification + Telegram DM for the donor (tiered personal thanks for donations)
   if (updated.fromUserId) {
     const donorName = updated.fromUser?.name ?? "there";
-    const dmText = isDonation
-      ? dmThanks(donorName, amountNum, updated.currency)
-      : formatTgMessage(
-          "✅ Transaction Approved",
-          `${updated.currency} ${updated.amount} approved`,
-          appreciation,
-        );
+    let dmText: string;
+    if (isDonation) {
+      const prefix = onBehalfLinked
+        ? `ℹ️ ${recorderName} recorded this donation on your behalf.\n\n`
+        : "";
+      dmText = prefix + dmThanks(donorName, amountNum, updated.currency);
+    } else {
+      dmText = formatTgMessage(
+        "✅ Transaction Approved",
+        `${updated.currency} ${updated.amount} approved`,
+        appreciation,
+      );
+    }
     notify({
       userId: updated.fromUserId,
       type: "TX_APPROVED",
@@ -120,11 +131,13 @@ export async function POST(
     }).catch((err) => console.error("[approve] notify failed:", err));
   }
 
-  // Public thank-you in the group's General topic (donations only).
+  // Public thank-you in the donations group (donations only).
   if (isDonation) {
     const tgUser = updated.fromUser?.telegramUser?.replace(/^@/, "");
     const handle = tgUser ? `@${tgUser}` : (updated.fromUser?.name ?? "A generous supporter");
-    postToGroupGeneral(groupThanks(handle, amountNum, updated.currency)).catch((err) =>
+    let groupMsg = groupThanks(handle, amountNum, updated.currency);
+    if (onBehalf) groupMsg += `\n<i>(recorded by ${recorderName} on their behalf)</i>`;
+    postDonationThanks(groupMsg).catch((err) =>
       console.error("[approve] group thanks failed:", err),
     );
   }
