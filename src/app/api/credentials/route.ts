@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logCredentialAction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
+import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
+
+const userSelect = { id: true, name: true, photoUrl: true, telegramUser: true };
+const ACCESS_LEVELS = ["PUBLIC_KEY", "FULL"] as const;
+type AccessLevel = (typeof ACCESS_LEVELS)[number];
 
 export async function GET() {
   try {
@@ -15,40 +20,94 @@ export async function GET() {
       const credentials = await prisma.credential.findMany({
         where: { parentId: null },
         include: {
-          assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
-          createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+          accesses: { include: { user: { select: userSelect } } },
+          createdBy: { select: userSelect },
+          vpsServer: { select: { id: true, name: true } },
           revisions: {
             where: { status: "PENDING" },
-            include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
+            include: { createdBy: { select: userSelect } },
             orderBy: { createdAt: "desc" },
           },
         },
         orderBy: [{ platform: "asc" }, { label: "asc" }],
       });
-      return NextResponse.json({ credentials });
+      // Admins see plaintext — decrypt at the return point only.
+      const decrypted = credentials.map((c) => ({
+        ...c,
+        value: decryptSecret(c.value),
+        revisions: c.revisions.map((r) => ({ ...r, value: decryptSecret(r.value) })),
+      }));
+      return NextResponse.json({ credentials: decrypted });
     }
 
     if (hasRole(user.roles, "DEV")) {
-      const credentials = await prisma.credential.findMany({
+      // Credentials the dev has been GRANTED. NOTE: the secret `value` is never
+      // included here — it is only retrievable via the audited reveal endpoint.
+      const grantedRows = await prisma.credential.findMany({
         where: {
-          assignees: { some: { id: user.id } },
+          accesses: { some: { userId: user.id, granted: true } },
           parentId: null,
           status: "APPROVED",
         },
         include: {
-          assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
-          createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+          accesses: { where: { userId: user.id } },
+          createdBy: { select: userSelect },
+          vpsServer: { select: { id: true, name: true } },
         },
         orderBy: [{ platform: "asc" }, { label: "asc" }],
       });
+      const credentials = grantedRows.map((c) => {
+        const a = c.accesses[0];
+        return {
+          id: c.id,
+          platform: c.platform,
+          label: c.label,
+          status: c.status,
+          createdBy: c.createdBy,
+          vpsServer: c.vpsServer,
+          credKind: c.credKind,
+          accessLevel: a?.accessLevel ?? null,
+          granted: a?.granted ?? false,
+          devPublicKey: a?.devPublicKey ?? null,
+        };
+      });
 
+      // Shares awaiting an admin grant (e.g. PUBLIC_KEY requested, key not yet installed).
+      const pendingRows = await prisma.credential.findMany({
+        where: {
+          accesses: { some: { userId: user.id, granted: false } },
+          parentId: null,
+          status: "APPROVED",
+        },
+        include: {
+          accesses: { where: { userId: user.id } },
+          vpsServer: { select: { id: true, name: true } },
+        },
+        orderBy: [{ platform: "asc" }, { label: "asc" }],
+      });
+      const pendingGrants = pendingRows.map((c) => {
+        const a = c.accesses[0];
+        return {
+          id: c.id,
+          platform: c.platform,
+          label: c.label,
+          vpsServer: c.vpsServer,
+          credKind: c.credKind,
+          accessLevel: a?.accessLevel ?? null,
+          granted: false,
+          devPublicKey: a?.devPublicKey ?? null,
+        };
+      });
+
+      // The dev's own pending proposals (they typed these — show them back decrypted).
       const pendingByMe = await prisma.credential.findMany({
         where: { createdById: user.id, status: "PENDING" },
         include: { parent: { select: { id: true, platform: true, label: true } } },
         orderBy: { createdAt: "desc" },
       });
+      const pending = pendingByMe.map((c) => ({ ...c, value: decryptSecret(c.value) }));
 
-      return NextResponse.json({ credentials, pending: pendingByMe });
+      return NextResponse.json({ credentials, pendingGrants, pending });
     }
 
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -68,7 +127,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { platform, label, value, assigneeIds, parentId } = body;
+  const { platform, label, value, accesses, parentId } = body;
 
   if (!platform || !label || !value) {
     return NextResponse.json(
@@ -78,23 +137,45 @@ export async function POST(req: NextRequest) {
   }
 
   if (isAdmin) {
+    // Validate the share list — force-choice: every share must name an explicit level.
+    const accessRows: { userId: string; accessLevel: AccessLevel }[] = Array.isArray(accesses)
+      ? accesses
+      : [];
+    for (const a of accessRows) {
+      if (!a?.userId || !ACCESS_LEVELS.includes(a.accessLevel)) {
+        return NextResponse.json(
+          { error: "Each access entry needs a userId and accessLevel (PUBLIC_KEY or FULL)" },
+          { status: 400 },
+        );
+      }
+    }
+    const now = new Date();
     const credential = await prisma.credential.create({
       data: {
         platform,
         label,
-        value,
+        value: encryptSecret(value),
         status: "APPROVED",
         createdById: user.id,
-        assignees: assigneeIds?.length
-          ? { connect: assigneeIds.map((id: string) => ({ id })) }
+        accesses: accessRows.length
+          ? {
+              create: accessRows.map((a) => ({
+                userId: a.userId,
+                accessLevel: a.accessLevel,
+                // FULL shared directly by admin is live immediately; PUBLIC_KEY
+                // waits until the admin installs the dev's key and grants it.
+                granted: a.accessLevel === "FULL",
+                grantedAt: a.accessLevel === "FULL" ? now : null,
+              })),
+            }
           : undefined,
       },
       include: {
-        assignees: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
-        createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+        accesses: { include: { user: { select: userSelect } } },
+        createdBy: { select: userSelect },
       },
     });
-    // GitHub immutable log
+
     logCredentialAction({
       action: "CREATED",
       userId: user.id,
@@ -103,41 +184,51 @@ export async function POST(req: NextRequest) {
       platform,
       details: `Admin created: ${label}`,
     });
-
-    // Notify each assignee about the shared credential
-    if (assigneeIds?.length) {
-      for (const assigneeId of assigneeIds) {
-        notify({
-          userId: assigneeId,
-          type: "CREDENTIAL_ASSIGNED",
-          title: "Credential Shared",
-          message: `${platform} -- ${label} has been shared with you by ${user.name}.`,
-          entityId: credential.id,
-          priority: "NORMAL",
-          actionUrl: "/credentials",
-          telegramMessage: formatTgMessage(
-            "🔐 Credential Shared",
-            `${platform} · ${label}`,
-            `Shared by ${user.name}`,
-          ),
-        }).catch((err) => console.error("[cred] notify failed:", err));
-      }
+    if (accessRows.length) {
+      logCredentialAction({
+        action: "SHARE",
+        userId: user.id,
+        userName: user.name,
+        entityId: credential.id,
+        platform,
+        details: accessRows.map((a) => `${a.userId.slice(0, 8)}:${a.accessLevel}`).join(", "),
+      });
     }
 
-    return NextResponse.json({ credential }, { status: 201 });
+    for (const a of accessRows) {
+      notify({
+        userId: a.userId,
+        type: "CREDENTIAL_ASSIGNED",
+        title: "Credential Shared",
+        message: `${platform} -- ${label} has been shared with you by ${user.name} (${a.accessLevel === "FULL" ? "full access" : "public-key access"}).`,
+        entityId: credential.id,
+        priority: "NORMAL",
+        actionUrl: "/credentials",
+        telegramMessage: formatTgMessage(
+          "🔐 Credential Shared",
+          `${platform} · ${label}`,
+          `Shared by ${user.name} · ${a.accessLevel === "FULL" ? "Full access" : "Public-key access"}`,
+        ),
+      }).catch((err) => console.error("[cred] notify failed:", err));
+    }
+
+    return NextResponse.json(
+      { credential: { ...credential, value: decryptSecret(credential.value) } },
+      { status: 201 },
+    );
   }
 
+  // Dev proposal — stored PENDING for admin review. Value encrypted at rest.
   const credential = await prisma.credential.create({
     data: {
       platform,
       label,
-      value,
+      value: encryptSecret(value),
       status: "PENDING",
       createdById: user.id,
       parentId: parentId || null,
     },
   });
-  // GitHub immutable log
   logCredentialAction({
     action: "PROPOSED",
     userId: user.id,

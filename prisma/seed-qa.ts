@@ -380,7 +380,12 @@ async function main() {
       value: "qa-temp-readonly-key-rotate-me",
       status: "APPROVED",
       createdById: admin.id,
-      assignees: { connect: [{ id: admin.id }, { id: qaDev.id }] },
+      accesses: {
+        create: [
+          { userId: admin.id, accessLevel: "FULL", granted: true, grantedAt: new Date() },
+          { userId: qaDev.id, accessLevel: "FULL", granted: true, grantedAt: new Date() },
+        ],
+      },
     },
   });
   await prisma.credential.create({
