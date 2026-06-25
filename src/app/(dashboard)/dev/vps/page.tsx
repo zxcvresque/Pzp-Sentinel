@@ -29,6 +29,11 @@ interface Server {
     netIn: number;
     netOut: number;
   };
+  access?: {
+    status: "none" | "requested" | "granted";
+    accessLevel: string | null;
+    devPublicKey: string | null;
+  };
   lastSeen: string; // ISO timestamp
 }
 
@@ -160,10 +165,139 @@ function UsageBar({
 }
 
 /* ------------------------------------------------------------------ */
+/*  SSH access panel — request / pending / granted                     */
+/* ------------------------------------------------------------------ */
+
+function SshAccessPanel({ server, onChanged }: { server: Server; onChanged: () => void }) {
+  const access = server.access ?? { status: "none", accessLevel: null, devPublicKey: null };
+  const [showForm, setShowForm] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submitKey() {
+    const key = keyInput.trim();
+    if (!key) return;
+    setSubmitting(true);
+    setErr("");
+    try {
+      const res = await fetch(`/api/vps/${server.id}/request-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ devPublicKey: key }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Request failed");
+      }
+      setKeyInput("");
+      setShowForm(false);
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const statusColor =
+    access.status === "granted"
+      ? "var(--mint)"
+      : access.status === "requested"
+        ? "var(--amber)"
+        : "var(--text-tertiary)";
+  const statusLabel =
+    access.status === "granted"
+      ? "✓ Access granted"
+      : access.status === "requested"
+        ? "Awaiting admin grant"
+        : "No access";
+
+  return (
+    <div className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+          SSH Access
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.08em]" style={{ color: statusColor }}>
+          {statusLabel}
+        </span>
+      </div>
+
+      {access.status !== "none" && access.devPublicKey && (
+        <div className="mt-1">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+            Your submitted key
+          </span>
+          <code className="block min-w-0 break-all rounded bg-[var(--bg-card)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-secondary)]">
+            {access.devPublicKey}
+          </code>
+        </div>
+      )}
+
+      {access.status === "granted" && (
+        <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+          Your key is installed on the server. Use your matching private key to SSH in.
+        </p>
+      )}
+      {access.status === "requested" && (
+        <p className="mt-1.5 text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+          An admin will install your key on the box and grant access.
+        </p>
+      )}
+
+      {!showForm ? (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="mt-2 font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+          style={{ color: "var(--text-secondary)", background: "var(--bg-card)" }}
+        >
+          {access.status === "none" ? "Request access" : "Update key"}
+        </button>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <textarea
+            placeholder="Paste your SSH public key (ssh-ed25519 AAAA... or ssh-rsa AAAA...)"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            rows={3}
+            className="w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-lg px-3 py-2 font-mono text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none focus:border-[var(--border-active)] resize-none break-all"
+          />
+          {err && <p className="text-[11px] text-[var(--coral)]">{err}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={submitKey}
+              disabled={submitting || !keyInput.trim()}
+              className="font-mono text-[10px] uppercase px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40"
+              style={{ color: "var(--bg-deep)", background: "var(--lime)" }}
+            >
+              {submitting ? "Submitting..." : "Submit key"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm(false);
+                setErr("");
+              }}
+              className="font-mono text-[10px] uppercase px-3 py-1.5 rounded-lg transition-colors"
+              style={{ color: "var(--text-tertiary)", background: "var(--bg-card)" }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Server card component                                              */
 /* ------------------------------------------------------------------ */
 
-function ServerCard({ server }: { server: Server }) {
+function ServerCard({ server, onChanged }: { server: Server; onChanged: () => void }) {
   const [copiedSsh, setCopiedSsh] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
@@ -289,6 +423,9 @@ function ServerCard({ server }: { server: Server }) {
           </button>
         </div>
       </div>
+
+      {/* SSH access — request / pending / granted (per-dev) */}
+      <SshAccessPanel server={server} onChanged={onChanged} />
 
       {specEntries.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -690,7 +827,7 @@ export default function VpsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {servers.map((server) => (
-            <ServerCard key={server.id} server={server} />
+            <ServerCard key={server.id} server={server} onChanged={fetchServers} />
           ))}
         </div>
       )}
