@@ -30,7 +30,25 @@ interface Server {
     netIn: number;
     netOut: number;
   };
+  history?: {
+    week: MetricSummary;
+    month: MetricSummary;
+  };
   lastSeen: string;
+}
+
+interface MetricSummary {
+  samples: number;
+  cpuUsage: number;
+  ramUsage: number;
+  ramTotal: number;
+  ramPct: number;
+  diskUsage: number;
+  diskTotal: number;
+  diskPct: number;
+  load1: number;
+  load5: number;
+  load15: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -68,6 +86,37 @@ function formatUptime(seconds: number): string {
 
 function formatGB(gb: number): string {
   return gb >= 100 ? gb.toFixed(0) : gb.toFixed(1);
+}
+
+function extractSshUser(notes: string): string {
+  const match = notes.match(/(?:^|\n)\s*(?:user|username)\s*[:=]\s*([^\s,;]+)/i);
+  return match?.[1] || "root";
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function sshTarget(user: string, ip: string): string {
+  return ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+}
+
+function parseLoadAvg(loadAvg: string): number[] {
+  return loadAvg
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((n) => Number.isFinite(n));
+}
+
+function loadStatus(loadAvg: string): { label: string; color: string; help: string } {
+  const peak = Math.max(0, ...parseLoadAvg(loadAvg));
+  if (peak >= 2) {
+    return { label: "High", color: "var(--coral)", help: ">= 2.00" };
+  }
+  if (peak >= 1) {
+    return { label: "Watch", color: "var(--amber)", help: "1.00-1.99" };
+  }
+  return { label: "Low", color: "var(--mint)", help: "< 1.00" };
 }
 
 /* ------------------------------------------------------------------ */
@@ -138,6 +187,33 @@ function UsageBar({
   );
 }
 
+function AverageRow({ label, summary }: { label: string; summary?: MetricSummary }) {
+  if (!summary || summary.samples === 0) {
+    return (
+      <div className="grid grid-cols-[64px_1fr] gap-2 text-[11px]">
+        <span className="font-mono uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+          {label}
+        </span>
+        <span className="font-mono text-[var(--text-tertiary)]">Collecting samples</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[64px_1fr] gap-2 text-[11px]">
+      <span className="font-mono uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+        {label}
+      </span>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[var(--text-secondary)]">
+        <span>CPU {summary.cpuUsage}%</span>
+        <span>RAM {summary.ramPct}%</span>
+        <span>Disk {summary.diskPct}%</span>
+        <span>Load {summary.load1}/{summary.load5}/{summary.load15}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Approved server card (full metrics)                                */
 /* ------------------------------------------------------------------ */
@@ -151,11 +227,19 @@ function ApprovedServerCard({
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
+  const [copiedSsh, setCopiedSsh] = useState(false);
+  const [copiedSshPass, setCopiedSshPass] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
 
   const ramPct = m.ramTotal > 0 ? (m.ramUsage / m.ramTotal) * 100 : 0;
   const diskPct = m.diskTotal > 0 ? (m.diskUsage / m.diskTotal) * 100 : 0;
+  const sshUser = extractSshUser(server.notes);
+  const sshBase = `ssh ${sshTarget(sshUser, server.ip)}`;
+  const sshPass = server.password
+    ? `sshpass -p ${shellQuote(server.password)} ${sshBase}`
+    : sshBase;
+  const load = loadStatus(server.loadAvg);
 
   const specEntries = Object.entries(server.specs ?? {});
 
@@ -215,19 +299,19 @@ function ApprovedServerCard({
       {/* IP Address + Platform */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div
-          className="rounded-lg px-3 py-2"
+          className="min-w-0 rounded-lg px-3 py-2"
           style={{ background: "var(--bg-deep)" }}
         >
           <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
             IP Address
           </span>
-          <span className="font-mono text-sm text-[var(--text-primary)]">
+          <span className="block min-w-0 break-all font-mono text-xs leading-relaxed text-[var(--text-primary)] sm:text-sm">
             {server.ip || "—"}
           </span>
         </div>
         {server.platform && (
           <div
-            className="rounded-lg px-3 py-2"
+            className="min-w-0 rounded-lg px-3 py-2"
             style={{ background: "var(--bg-deep)" }}
           >
             <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
@@ -283,6 +367,52 @@ function ApprovedServerCard({
         </div>
       )}
 
+      <div
+        className="rounded-lg px-3 py-2"
+        style={{ background: "var(--bg-deep)" }}
+      >
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-1">
+          SSH
+        </span>
+        <code className="block min-w-0 break-all rounded bg-[var(--bg-card)] px-2 py-1.5 font-mono text-xs text-[var(--text-secondary)]">
+          {sshBase}
+        </code>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(sshBase);
+              setCopiedSsh(true);
+              setTimeout(() => setCopiedSsh(false), 2000);
+            }}
+            className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+            style={{
+              color: copiedSsh ? "var(--mint)" : "var(--text-secondary)",
+              background: "var(--bg-card)",
+            }}
+          >
+            {copiedSsh ? "Copied SSH" : "Copy SSH"}
+          </button>
+          {server.password && (
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(sshPass);
+                setCopiedSshPass(true);
+                setTimeout(() => setCopiedSshPass(false), 2000);
+              }}
+              className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+              style={{
+                color: copiedSshPass ? "var(--mint)" : "var(--text-secondary)",
+                background: "var(--bg-card)",
+              }}
+            >
+              {copiedSshPass ? "Copied sshpass" : "Copy sshpass"}
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Specs */}
       {specEntries.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -318,6 +448,17 @@ function ApprovedServerCard({
         />
       </div>
 
+      <div
+        className="rounded-lg px-3 py-2.5 space-y-2"
+        style={{ background: "var(--bg-deep)" }}
+      >
+        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block">
+          Averages
+        </span>
+        <AverageRow label="7 day" summary={server.history?.week} />
+        <AverageRow label="30 day" summary={server.history?.month} />
+      </div>
+
       {/* Network I/O */}
       <div
         className="flex items-center justify-between rounded-lg px-3 py-2.5"
@@ -343,12 +484,25 @@ function ApprovedServerCard({
           className="rounded-lg px-3 py-2"
           style={{ background: "var(--bg-deep)" }}
         >
-          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-            Load Avg
-          </span>
-          <span className="font-mono text-sm text-[var(--text-primary)]">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Load Avg
+            </span>
+            <span
+              className="font-mono text-[10px] uppercase tracking-[0.08em]"
+              style={{ color: load.color }}
+            >
+              {load.label}
+            </span>
+          </div>
+          <span className="font-mono text-sm text-[var(--text-primary)]" style={{ color: load.color }}>
             {server.loadAvg}
           </span>
+          <div className="mt-2 flex flex-wrap gap-2 font-mono text-[9px] uppercase tracking-[0.08em]">
+            <span className="text-[var(--mint)]">Low &lt;1</span>
+            <span className="text-[var(--amber)]">Watch 1-2</span>
+            <span className="text-[var(--coral)]">High 2+</span>
+          </div>
         </div>
       )}
 

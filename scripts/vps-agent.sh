@@ -137,7 +137,7 @@ log "Sentinel agent started (interval: ${INTERVAL}s)"
 log "Reporting to: $SENTINEL_URL"
 
 # Cache public IP once at startup — no need to re-fetch every loop.
-public_ip=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "unknown")
+public_ip=$(curl -4 -s --max-time 5 ifconfig.me || curl -4 -s --max-time 5 icanhazip.com || curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "unknown")
 log "Public IP: $public_ip"
 
 while true; do

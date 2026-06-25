@@ -97,7 +97,7 @@ export default function LoginPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (cancelled || !data?.user?.roles) return;

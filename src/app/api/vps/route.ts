@@ -5,6 +5,61 @@ import { randomBytes } from "crypto";
 
 export const dynamic = "force-dynamic";
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+function pct(used: number, total: number) {
+  return total > 0 ? (used / total) * 100 : 0;
+}
+
+async function metricSummary(serverId: string, since: Date) {
+  const [aggregate, samples] = await Promise.all([
+    prisma.vpsMetric.aggregate({
+      where: { serverId, createdAt: { gte: since } },
+      _avg: {
+        cpuUsage: true,
+        ramUsage: true,
+        ramTotal: true,
+        diskUsage: true,
+        diskTotal: true,
+        load1: true,
+        load5: true,
+        load15: true,
+      },
+    }),
+    prisma.vpsMetric.count({
+      where: { serverId, createdAt: { gte: since } },
+    }),
+  ]);
+
+  const ramUsage = aggregate._avg.ramUsage ?? 0;
+  const ramTotal = aggregate._avg.ramTotal ?? 0;
+  const diskUsage = aggregate._avg.diskUsage ?? 0;
+  const diskTotal = aggregate._avg.diskTotal ?? 0;
+
+  return {
+    samples,
+    cpuUsage: round1(aggregate._avg.cpuUsage ?? 0),
+    ramUsage: round1(ramUsage),
+    ramTotal: round1(ramTotal),
+    ramPct: round1(pct(ramUsage, ramTotal)),
+    diskUsage: round1(diskUsage),
+    diskTotal: round1(diskTotal),
+    diskPct: round1(pct(diskUsage, diskTotal)),
+    load1: round2(aggregate._avg.load1 ?? 0),
+    load5: round2(aggregate._avg.load5 ?? 0),
+    load15: round2(aggregate._avg.load15 ?? 0),
+  };
+}
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,7 +74,7 @@ export async function GET() {
   });
 
   const now = Date.now();
-  const result = servers.map((s) => ({
+  const result = await Promise.all(servers.map(async (s) => ({
     id: s.id,
     name: s.name,
     provider: s.provider,
@@ -34,16 +89,20 @@ export async function GET() {
     uptime: s.uptime,
     loadAvg: s.loadAvg,
     metrics: {
-      cpuUsage: Math.round(s.cpuUsage * 10) / 10,
-      ramUsage: Math.round(s.ramUsage * 10) / 10,
-      ramTotal: Math.round(s.ramTotal * 10) / 10,
-      diskUsage: Math.round(s.diskUsage * 10) / 10,
-      diskTotal: Math.round(s.diskTotal * 10) / 10,
-      netIn: Math.round(s.netIn * 100) / 100,
-      netOut: Math.round(s.netOut * 100) / 100,
+      cpuUsage: round1(s.cpuUsage),
+      ramUsage: round1(s.ramUsage),
+      ramTotal: round1(s.ramTotal),
+      diskUsage: round1(s.diskUsage),
+      diskTotal: round1(s.diskTotal),
+      netIn: round2(s.netIn),
+      netOut: round2(s.netOut),
+    },
+    history: {
+      week: await metricSummary(s.id, new Date(now - WEEK_MS)),
+      month: await metricSummary(s.id, new Date(now - MONTH_MS)),
     },
     lastSeen: s.lastSeen.toISOString(),
-  }));
+  })));
 
   return NextResponse.json(
     { servers: result },

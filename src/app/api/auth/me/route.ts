@@ -3,10 +3,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { NotifType } from "@/generated/prisma/enums";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   return NextResponse.json({
@@ -23,7 +28,7 @@ export async function GET() {
       dmPreferences: user.dmPreferences,
       createdAt: user.createdAt.toISOString(),
     },
-  });
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(req: NextRequest) {

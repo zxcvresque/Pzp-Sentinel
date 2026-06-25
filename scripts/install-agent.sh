@@ -141,7 +141,7 @@ if [[ "$REGISTER" == "true" ]]; then
   # Auto-detect IP if not provided
   if [[ -z "$SERVER_IP" ]]; then
     log "Detecting public IP..."
-    SERVER_IP=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "")
+    SERVER_IP=$(curl -4 -s --max-time 5 ifconfig.me || curl -4 -s --max-time 5 icanhazip.com || curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "")
     [[ -n "$SERVER_IP" ]] || fail "Could not detect IP — provide --ip"
     ok "Detected IP: $SERVER_IP"
   fi
@@ -280,7 +280,7 @@ collect_and_send() {
 log "Sentinel agent started (interval: ${INTERVAL}s)"
 log "Reporting to: $SENTINEL_URL"
 
-public_ip=$(curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "unknown")
+public_ip=$(curl -4 -s --max-time 5 ifconfig.me || curl -4 -s --max-time 5 icanhazip.com || curl -s --max-time 5 ifconfig.me || curl -s --max-time 5 icanhazip.com || echo "unknown")
 log "Public IP: $public_ip"
 
 while true; do

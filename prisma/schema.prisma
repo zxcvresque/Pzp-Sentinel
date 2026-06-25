@@ -334,4 +334,25 @@ model VpsServer {
   addedById   String?
   lastSeen    DateTime @default(now())
   createdAt   DateTime @default(now())
+  metrics      VpsMetric[]
+}
+
+model VpsMetric {
+  id        String    @id @default(cuid())
+  serverId  String
+  server    VpsServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  cpuUsage  Float     @default(0)
+  ramUsage  Float     @default(0)
+  ramTotal  Float     @default(0)
+  diskUsage Float     @default(0)
+  diskTotal Float     @default(0)
+  netIn     Float     @default(0)
+  netOut    Float     @default(0)
+  uptime    Int       @default(0)
+  load1     Float     @default(0)
+  load5     Float     @default(0)
+  load15    Float     @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([serverId, createdAt])
 }
