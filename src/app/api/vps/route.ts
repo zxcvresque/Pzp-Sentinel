@@ -88,6 +88,29 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
   });
 
+  // Per-dev SSH access status per server (dev view only) — derived from the
+  // dev's CredentialAccess rows on each server's linked credentials.
+  const accessByServer = new Map<
+    string,
+    { status: "requested" | "granted"; accessLevel: string; devPublicKey: string | null }
+  >();
+  if (!isAdmin && servers.length) {
+    const rows = await prisma.credentialAccess.findMany({
+      where: { userId: user.id, credential: { vpsServerId: { in: servers.map((s) => s.id) } } },
+      include: { credential: { select: { vpsServerId: true } } },
+    });
+    for (const a of rows) {
+      const sid = a.credential.vpsServerId;
+      if (!sid) continue;
+      const status = a.granted ? "granted" : "requested";
+      const prev = accessByServer.get(sid);
+      // Prefer a granted row over a merely requested one.
+      if (!prev || (prev.status !== "granted" && status === "granted")) {
+        accessByServer.set(sid, { status, accessLevel: a.accessLevel, devPublicKey: a.devPublicKey });
+      }
+    }
+  }
+
   const now = Date.now();
   const result = await Promise.all(servers.map(async (s) => ({
     id: s.id,
@@ -107,6 +130,9 @@ export async function GET() {
           accessPublicKeys: s.accessPublicKeys,
         }
       : {}),
+    ...(isAdmin
+      ? {}
+      : { access: accessByServer.get(s.id) ?? { status: "none", accessLevel: null, devPublicKey: null } }),
     specs: s.specs,
     approved: s.approved,
     addedById: s.addedById,
