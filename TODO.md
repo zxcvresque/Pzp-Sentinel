@@ -48,14 +48,15 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 - [x] Telegram audit mirror: `logCredentialAction` → also `logAuditEvent` (TG_TOPIC_AUDIT); emoji map extended. Never re-sends SSH file.
 - [ ] Audited **reveal** chokepoint endpoint (with PATCH below)
 
-### Remaining Phase 1
-- [ ] `/api/vps` POST → sync after create; PATCH approve → sync; encrypt password/sshKeyFileUrl on write; admin GET decrypt; verify DELETE cascade
-- [ ] `/api/credentials` GET admin (accesses + vpsServer) · GET dev (value-omission + pendingGrants) · POST admin (accesses[], force-choice)
-- [ ] `/api/credentials/[id]` PATCH (reconcile access, notify on granted false→true, VPS write-back) · DELETE (cascade)
-- [ ] Access-request route — dev POST {devPublicKey}, granted:false, notifyAdmins
-- [ ] `dev/vps/page.tsx` — "Request access" affordance + per-server status (none/requested/granted+own key); stats unchanged
-- [ ] `admin/credentials/page.tsx` — per-dev access rows (level dropdown + granted toggle + devPublicKey + install cmd), VPS badge, send `accesses`
-- [ ] `dev/credentials/page.tsx` — default empty, value optional, reveal only FULL&&granted, PUBLIC_KEY shows own key, pendingGrants block
+### Remaining Phase 1 — ALL DONE ✅ (production build passes)
+- [x] `/api/vps` POST sync after create; PATCH approve sync; encrypt password/sshKeyFileUrl; admin GET decrypt; DELETE cascade verified
+- [x] `/api/credentials` GET admin (accesses + vpsServer, decrypt) · GET dev (NO value + pendingGrants) · POST (accesses[], force-choice, encrypt)
+- [x] `/api/credentials/[id]` PATCH (reconcile access, notify on grant, VPS write-back) · DELETE (cascade) · review unchanged
+- [x] `/api/credentials/[id]/reveal` — audited decrypt chokepoint
+- [x] `/api/vps/[id]/request-access` — dev submits key, granted:false, notifyAdmins
+- [x] `dev/vps/page.tsx` — SshAccessPanel (none/requested/granted + own key)
+- [x] `admin/credentials/page.tsx` — per-dev access rows, grant toggle, install cmd, VPS badge
+- [x] `dev/credentials/page.tsx` — default empty, reveal-on-demand, pendingGrants block
 
 ## Phase 2 — extras
 - [ ] Share-at-add-server-time (`AddServerForm` multi-select → POST `/api/vps` `shareWith[]`)
@@ -66,4 +67,5 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 ## Verification
 - [ ] db studio: CredentialAccess populated, VPS-linked creds exist, no orphans/dupes
 - [ ] Run app end-to-end (see plan verification section)
-- [ ] Security test: PUBLIC_KEY dev GET has no `value` key; no-grant dev gets empty list
+- [x] `tsc --noEmit` clean + `npm run build` passes
+- [ ] Security test: secret-crypto round-trip + reveal authorization (PUBLIC_KEY/no-grant → 403)
