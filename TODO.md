@@ -34,13 +34,13 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 
 ## Phase 0 — working system
 - [x] Create `superclaude.md`, trim `CLAUDE.md`, create `plan.md`, append this checklist, create `.claude/worklog.md`
-- [ ] Commit Phase 0
+- [x] Commit Phase 0
 
 ## Phase 1 — core
-- [ ] DB backup + dump `_CredentialAssignees` pairs → JSON (verify A/B column = credentialId vs userId)
-- [ ] Edit schema (enum + CredentialAccess + Credential/User/VpsServer relations) → `npm run db:push` → `npm run db:generate`
-- [ ] Write + run `prisma/backfill-cred-access.ts` (assignees→FULL/granted; VPS→linked creds, upsert on (vpsServerId,credKind))
-- [ ] `src/lib/vps-credentials.ts` — `syncVpsCredentials(server, createdById)` (upsert, delete-if-empty, logCredentialAction)
+- [x] DB backup + dump `_CredentialAssignees` pairs → JSON (table was EMPTY: 0 creds, 0 pairs; only an empty join table dropped → no data loss)
+- [x] Edit schema (enum + CredentialAccess + Credential/User/VpsServer relations) → `db push` (--accept-data-loss) → `generate` ✅
+- [x] Write + run `prisma/backfill-cred-access.ts` (0 pairs; 1 VPS server → 1 linked "Root Password" credential)
+- [x] `src/lib/vps-credentials.ts` — `syncVpsCredentials(server, createdById)` (upsert, delete-if-empty, logCredentialAction)
 - [ ] `/api/vps` POST → sync after create; PATCH approve → sync; verify DELETE cascade
 - [ ] `/api/credentials` GET admin (accesses + vpsServer) · GET dev (value-omission + pendingGrants) · POST admin (accesses[], force-choice)
 - [ ] `/api/credentials/[id]` PATCH (reconcile access, notify on granted false→true, VPS write-back) · DELETE (cascade)
