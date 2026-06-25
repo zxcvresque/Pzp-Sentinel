@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
+import { syncVpsCredentials } from "@/lib/vps-credentials";
+import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -100,8 +102,8 @@ export async function GET() {
     sshKeyFileName: s.sshKeyFileName,
     ...(isAdmin
       ? {
-          password: s.password,
-          sshKeyFileUrl: s.sshKeyFileUrl,
+          password: decryptSecret(s.password),
+          sshKeyFileUrl: s.sshKeyFileUrl ? decryptSecret(s.sshKeyFileUrl) : null,
           accessPublicKeys: s.accessPublicKeys,
         }
       : {}),
@@ -179,8 +181,8 @@ export async function POST(req: NextRequest) {
       platform: String(platform ?? "").trim(),
       username: cleanUsername,
       sshPort: normalizeSshPort(sshPort),
-      password: cleanPassword,
-      sshKeyFileUrl: cleanSshKeyFileUrl || null,
+      password: encryptSecret(cleanPassword),
+      sshKeyFileUrl: cleanSshKeyFileUrl ? encryptSecret(cleanSshKeyFileUrl) : null,
       sshKeyFileName: cleanSshKeyFileName || null,
       accessPublicKeys: String(accessPublicKeys ?? "").trim(),
       tags: normalizeTags(tags),
@@ -190,6 +192,21 @@ export async function POST(req: NextRequest) {
       addedById: user.id,
     },
   });
+
+  // Mirror secrets into the vault as access-controlled credentials (admin-created
+  // servers only; dev-requested servers sync on approval). Pass PLAINTEXT —
+  // syncVpsCredentials encrypts the stored credential value itself.
+  if (isAdmin) {
+    try {
+      await syncVpsCredentials(
+        { id: server.id, name: server.name, password: cleanPassword, sshKeyFileUrl: cleanSshKeyFileUrl || null },
+        user.id,
+        user.name,
+      );
+    } catch (e) {
+      console.error("[vps] syncVpsCredentials failed:", e);
+    }
+  }
 
   // Only return token for admin-created (approved) servers
   return NextResponse.json({
@@ -216,6 +233,22 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       data: { approved: true },
     });
+    // Now that it's approved, mirror its secrets into the vault (decrypt the
+    // stored columns to plaintext for the sync helper, which re-encrypts).
+    try {
+      await syncVpsCredentials(
+        {
+          id: server.id,
+          name: server.name,
+          password: decryptSecret(server.password),
+          sshKeyFileUrl: server.sshKeyFileUrl ? decryptSecret(server.sshKeyFileUrl) : null,
+        },
+        user.id,
+        user.name,
+      );
+    } catch (e) {
+      console.error("[vps] syncVpsCredentials failed:", e);
+    }
     // Return the token so admin can set up the agent
     return NextResponse.json({ server: { id: server.id, name: server.name, token: server.token } });
   }
