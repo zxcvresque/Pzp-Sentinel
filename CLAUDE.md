@@ -1,5 +1,13 @@
 # PzP Finance
 
+Next.js + Prisma app for finance/ops: transactions, donors, services, credentials vault, and VPS stats.
+
+> **Working method & token-limit protocol: see `superclaude.md`.** Follow it every session, starting with its Resume Protocol (read `todo.md` → tail of `.claude/worklog.md` → `git log`). Do not re-explore the codebase from scratch.
+
+## Git
+- **NEVER add a Claude / AI co-author trailer or "Generated with" line to commits or PRs.** No `Co-Authored-By: Claude`, ever.
+- Commits and pushes are authored under the user's name only.
+
 ## Skill routing
 
 When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
