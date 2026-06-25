@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import PageTour from "@/components/PageTour";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1002,6 +1003,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
   return (
     <>
       <button
+        data-tour="add-server"
         onClick={() => setOpen((v) => !v)}
         className="font-mono text-xs px-3 py-1.5 rounded transition-colors"
         style={{
@@ -1487,10 +1489,11 @@ export default function AdminVpsPage() {
         variant="danger"
         loading={confirmState.loading}
       />
+      <PageTour pageKey="admin-vps" />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-3xl font-extrabold">
+        <h1 data-tour="admin-vps-title" className="text-3xl font-extrabold">
           VPS <span className="font-display text-lime">Stats</span>
           <span className="text-sm font-normal text-[var(--text-tertiary)] ml-3">Admin</span>
         </h1>

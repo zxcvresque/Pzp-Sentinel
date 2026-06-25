@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import PageTour from "@/components/PageTour";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -214,7 +215,7 @@ function SshAccessPanel({ server, onChanged }: { server: Server; onChanged: () =
         : "No access";
 
   return (
-    <div className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
+    <div data-tour="ssh-access" className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
       <div className="flex items-center justify-between mb-1">
         <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
           SSH Access
@@ -784,7 +785,7 @@ export default function VpsPage() {
     <div className="pb-20 md:pb-0">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <h1 className="text-3xl font-extrabold">
+        <h1 data-tour="dev-vps-title" className="text-3xl font-extrabold">
           VPS <span className="font-display text-lime">Stats</span>
         </h1>
         <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
@@ -831,6 +832,7 @@ export default function VpsPage() {
           ))}
         </div>
       )}
+      <PageTour pageKey="dev-vps" />
     </div>
   );
 }

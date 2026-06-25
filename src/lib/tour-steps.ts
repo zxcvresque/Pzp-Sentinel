@@ -191,19 +191,64 @@ export const pageTourSteps: Record<string, TourStep[]> = {
   "admin-credentials": [
     {
       target: "[data-tour='add-credential']",
-      title: "Store Credentials",
-      body: "Add API keys, passwords, or access tokens. Assign them to specific developers so they can see only what they need.",
+      title: "Store & Share Credentials",
+      body: "Add API keys, passwords, or tokens. For each developer you share with, you pick an access level — there's no default, you choose every time.",
       placement: "bottom",
     },
     {
       target: "[data-tour='credential-list']",
-      title: "Credential Vault",
-      body: "Values are hidden by default. Click Reveal to view them. Edits go through a pending review before applying.",
+      title: "Public-key vs Full Access",
+      body: "Public-key: the dev submits their own SSH key, you install it and flip Grant — they never see the secret. Full: the dev can reveal the actual value. VPS server secrets appear here automatically, linked to the server.",
       placement: "top",
     },
   ],
 
+  "admin-vps": [
+    {
+      target: "[data-tour='admin-vps-title']",
+      title: "How Devs Get Access",
+      body: "By default every dev sees server stats but no credentials. A dev requests SSH access by submitting their public key; you install it on the box and grant them from the Credential Vault. Revealing the password/private key (Full access) is opt-in, per dev.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='add-server']",
+      title: "Add a Server",
+      body: "When you add a server, its password and SSH key are encrypted and mirrored into the Credential Vault automatically. You can also grant full credential access to specific devs right here at creation.",
+      placement: "bottom",
+    },
+  ],
+
   /* ── Dev pages ── */
+  "dev-vps": [
+    {
+      target: "[data-tour='dev-vps-title']",
+      title: "Stats Are Open to You",
+      body: "You can see live stats for every approved server. Credentials and SSH access, though, stay private until an admin grants them.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='ssh-access']",
+      title: "Request SSH Access",
+      body: "On a server, paste your own SSH public key to request access. An admin installs it on the box and grants you in — the server password and private key are never shared. Once granted, you'll see the key you submitted here for reference.",
+      placement: "top",
+    },
+  ],
+
+  "dev-credentials": [
+    {
+      target: "[data-tour='dev-creds-title']",
+      title: "Shared With You Only",
+      body: "This page stays empty until an admin shares a credential with you. Full-access ones can be revealed here; public-key ones show only the SSH key you submitted — never the secret itself.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='share-new']",
+      title: "Share Something You Own",
+      body: "Have a credential the team needs? Submit it here and an admin will review before it goes live.",
+      placement: "bottom",
+    },
+  ],
+
   "dev-board": [
     {
       target: "[data-tour='board-actions']",

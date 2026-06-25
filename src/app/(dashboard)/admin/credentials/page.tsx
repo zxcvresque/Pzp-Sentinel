@@ -84,20 +84,22 @@ function AccessRowItem({ row, onToggleGrant }: { row: AccessRow; onToggleGrant: 
         >
           {row.granted ? "granted ✓" : "awaiting grant"}
         </span>
-        <button
-          onClick={onToggleGrant}
-          className="ml-auto font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
-        >
-          {row.granted ? "Revoke" : "Grant"}
-        </button>
-        {row.devPublicKey && (
+        <div className="ml-auto flex flex-wrap gap-2">
           <button
-            onClick={() => setShowKey((v) => !v)}
+            onClick={onToggleGrant}
             className="font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
           >
-            {showKey ? "Hide key" : "Show key"}
+            {row.granted ? "Revoke" : "Grant"}
           </button>
-        )}
+          {row.devPublicKey && (
+            <button
+              onClick={() => setShowKey((v) => !v)}
+              className="font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
+            >
+              {showKey ? "Hide key" : "Show key"}
+            </button>
+          )}
+        </div>
       </div>
 
       {showKey && row.devPublicKey && (
@@ -399,9 +401,9 @@ export default function CredentialsPage() {
                   ["FULL", "Full"],
                 ];
                 return (
-                  <div key={dev.id} className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm text-text-secondary min-w-[120px]">{dev.name}</span>
-                    <div className="flex gap-1">
+                  <div key={dev.id} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-sm text-text-secondary sm:min-w-[120px]">{dev.name}</span>
+                    <div className="flex flex-wrap gap-1">
                       {options.map(([val, label]) => {
                         const active = (val === null && !lvl) || val === lvl;
                         const activeBg =

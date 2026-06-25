@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
+import PageTour from "@/components/PageTour";
 
 interface UserRef {
   id: string;
@@ -177,10 +178,11 @@ export default function DevCredentialsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-extrabold">
+        <h1 data-tour="dev-creds-title" className="text-3xl font-extrabold">
           My <span className="font-display text-lime">Credentials</span>
         </h1>
         <button
+          data-tour="share-new"
           onClick={() => (showForm ? resetForm() : startNew())}
           className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 transition-colors"
         >
@@ -428,6 +430,7 @@ export default function DevCredentialsPage() {
           ))}
         </div>
       )}
+      <PageTour pageKey="dev-credentials" />
     </div>
   );
 }
