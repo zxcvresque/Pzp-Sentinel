@@ -5,12 +5,15 @@ import { useState, useEffect, useCallback } from "react";
 /**
  * Hook that manages page-specific mini tours.
  * On first visit to a page (per user), triggers a short 2-3 step tour.
- * Tracks completion via localStorage: `sentinel_page_tour_{userId}_{pageKey}`
+ * Tracks completion via localStorage: `sentinel_page_tour_{userId}_{pageKey}`.
+ * Bump `version` (>1) when a tour gains new steps so it re-shows once for users
+ * who already completed the older version (suffixes the key with `_v{version}`).
  */
-export function usePageTour(userId: string | undefined, pageKey: string) {
+export function usePageTour(userId: string | undefined, pageKey: string, version = 1) {
   const [active, setActive] = useState(false);
 
-  const storageKey = userId ? `sentinel_page_tour_${userId}_${pageKey}` : "";
+  const versionSuffix = version > 1 ? `_v${version}` : "";
+  const storageKey = userId ? `sentinel_page_tour_${userId}_${pageKey}${versionSuffix}` : "";
 
   useEffect(() => {
     if (!userId || !pageKey) return;

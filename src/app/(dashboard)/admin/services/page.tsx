@@ -24,6 +24,8 @@ interface Service {
   planUrl: string | null;
   expiryDate: string | null;
   status: string | null;
+  autoRenew?: boolean;
+  vpsServer?: { id: string; name: string } | null;
   createdAt: string;
 }
 
@@ -36,6 +38,7 @@ function formatCurrency(price: string, currency: string | null) {
 
 function frequencyLabel(f: string | null) {
   if (f === "YEARLY") return "/yr";
+  if (f === "WEEKLY") return "/wk";
   if (f === "ONE_TIME") return " one-time";
   return "/mo";
 }
@@ -226,6 +229,7 @@ export default function ServicesPage() {
     .reduce((sum, s) => {
       const p = parseFloat(s.price!);
       if (s.frequency === "YEARLY") return sum + p / 12;
+      if (s.frequency === "WEEKLY") return sum + (p * 52) / 12;
       if (s.frequency === "ONE_TIME") return sum;
       return sum + p;
     }, 0);
@@ -565,6 +569,28 @@ export default function ServicesPage() {
                       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="text-sm font-semibold">{svc.name}</div>
+                          {svc.vpsServer && (
+                            <span
+                              className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                              style={{
+                                color: "var(--lime)",
+                                background: "rgba(111,209,215,0.10)",
+                                border: "1px solid rgba(111,209,215,0.25)",
+                              }}
+                              title={`Linked to VPS: ${svc.vpsServer.name}`}
+                            >
+                              VPS
+                            </span>
+                          )}
+                          {svc.autoRenew && (
+                            <span
+                              className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                              style={{ color: "var(--mint)", background: "rgba(52,211,153,0.08)" }}
+                              title="Auto-renews each cycle"
+                            >
+                              Auto-renew
+                            </span>
+                          )}
                           {svc.planUrl && (
                             <a
                               href={svc.planUrl}

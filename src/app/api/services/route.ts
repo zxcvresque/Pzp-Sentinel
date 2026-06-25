@@ -12,6 +12,7 @@ export async function GET() {
 
   const services = await prisma.service.findMany({
     orderBy: [{ category: "asc" }, { name: "asc" }],
+    include: { vpsServer: { select: { id: true, name: true } } },
   });
 
   return NextResponse.json({ services });

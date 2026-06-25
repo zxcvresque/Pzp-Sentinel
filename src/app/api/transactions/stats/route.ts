@@ -118,6 +118,7 @@ export async function GET(request: NextRequest) {
   const monthlySubs = activeSubRecords.reduce((sum, sub) => {
     const price = toDisplay(Number(sub.price!), sub.currency ?? "INR");
     if (sub.frequency === "YEARLY") return sum + price / 12;
+    if (sub.frequency === "WEEKLY") return sum + (price * 52) / 12;
     if (sub.frequency === "ONE_TIME") return sum;
     return sum + price; // MONTHLY
   }, 0);

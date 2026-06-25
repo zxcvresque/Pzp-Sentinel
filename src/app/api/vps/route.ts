@@ -3,6 +3,8 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { syncVpsCredentials } from "@/lib/vps-credentials";
+import { syncVpsSubscription, nextCycleDate, type VpsDuration } from "@/lib/vps-subscription";
+import { Prisma } from "@/generated/prisma/client";
 import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { logCredentialAction } from "@/lib/github-log";
@@ -88,6 +90,7 @@ export async function GET() {
   const servers = await prisma.vpsServer.findMany({
     where: isAdmin ? {} : { approved: true },
     orderBy: { createdAt: "asc" },
+    include: { subscription: true },
   });
 
   // Per-dev SSH access status per server (dev view only) — derived from the
@@ -125,11 +128,25 @@ export async function GET() {
     notes: s.notes,
     tags: s.tags,
     sshKeyFileName: s.sshKeyFileName,
+    // Plan link, billing/duration, and renewal are ADMIN-ONLY. Never exposed to
+    // devs and never shared — devs see stats (+ shared credentials) only.
     ...(isAdmin
       ? {
           password: decryptSecret(s.password),
           sshKeyFileUrl: s.sshKeyFileUrl ? decryptSecret(s.sshKeyFileUrl) : null,
           accessPublicKeys: s.accessPublicKeys,
+          planLink: s.planLink ?? null,
+          subscription: s.subscription
+            ? {
+                mode: s.subscription.frequency === "ONE_TIME" ? "LIFETIME" : "SUBSCRIPTION",
+                frequency: s.subscription.frequency,
+                price: s.subscription.price != null ? Number(s.subscription.price) : null,
+                currency: s.subscription.currency,
+                expiryDate: s.subscription.expiryDate?.toISOString() ?? null,
+                autoRenew: s.subscription.autoRenew,
+                status: s.subscription.status,
+              }
+            : null,
         }
       : {}),
     ...(isAdmin
@@ -184,6 +201,8 @@ export async function POST(req: NextRequest) {
     tags,
     notes,
     shareWith,
+    planLink,
+    duration,
   } = await req.json();
   const cleanName = String(name ?? "").trim();
   const cleanIp = String(ip ?? "").trim();
@@ -191,6 +210,7 @@ export async function POST(req: NextRequest) {
   const cleanPassword = String(password ?? "").trim();
   const cleanSshKeyFileUrl = String(sshKeyFileUrl ?? "").trim();
   const cleanSshKeyFileName = String(sshKeyFileName ?? "").trim();
+  const cleanPlanLink = String(planLink ?? "").trim();
 
   if (!cleanName || !cleanIp || !cleanUsername || (!cleanPassword && !cleanSshKeyFileUrl)) {
     return NextResponse.json(
@@ -216,6 +236,7 @@ export async function POST(req: NextRequest) {
       accessPublicKeys: String(accessPublicKeys ?? "").trim(),
       tags: normalizeTags(tags),
       notes: String(notes ?? "").trim(),
+      planLink: cleanPlanLink || null,
       token,
       approved: isAdmin,
       addedById: user.id,
@@ -283,6 +304,18 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       console.error("[vps] syncVpsCredentials failed:", e);
     }
+
+    // Mirror the plan into the Services tab + deduct the price now (admin only;
+    // finances are admin-controlled). No-op when no priced duration was given.
+    try {
+      await syncVpsSubscription(
+        { id: server.id, name: server.name, planLink: cleanPlanLink },
+        duration as VpsDuration | null,
+        user.id,
+      );
+    } catch (e) {
+      console.error("[vps] syncVpsSubscription failed:", e);
+    }
   }
 
   // Only return token for admin-created (approved) servers
@@ -302,8 +335,104 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const { id, action } = await req.json();
+  const body = await req.json();
+  const { id, action } = body;
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
+
+  if (action === "update") {
+    const existingServer = await prisma.vpsServer.findUnique({ where: { id } });
+    if (!existingServer) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const newPassword = String(body.password ?? "").trim();
+    const newSshKeyFileUrl = String(body.sshKeyFileUrl ?? "").trim();
+    const cleanPlanLink = String(body.planLink ?? "").trim();
+
+    const data: Prisma.VpsServerUpdateInput = {
+      name: String(body.name ?? existingServer.name).trim() || existingServer.name,
+      provider: String(body.provider ?? "").trim(),
+      ip: String(body.ip ?? existingServer.ip).trim(),
+      platform: String(body.platform ?? "").trim(),
+      username: String(body.username ?? "root").trim() || "root",
+      sshPort: normalizeSshPort(body.sshPort),
+      accessPublicKeys: String(body.accessPublicKeys ?? "").trim(),
+      tags: normalizeTags(body.tags),
+      notes: String(body.notes ?? "").trim(),
+      planLink: cleanPlanLink || null,
+    };
+    // Secrets: blank input means "keep existing" (never overwrite with empty).
+    if (newPassword) data.password = encryptSecret(newPassword);
+    if (newSshKeyFileUrl) data.sshKeyFileUrl = encryptSecret(newSshKeyFileUrl);
+    if (body.sshKeyFileName !== undefined) {
+      data.sshKeyFileName = String(body.sshKeyFileName ?? "").trim() || null;
+    }
+
+    const server = await prisma.vpsServer.update({ where: { id }, data });
+
+    // Keep the vault mirror + the Services row in sync (decrypt to plaintext for
+    // the credential helper, which re-encrypts).
+    try {
+      await syncVpsCredentials(
+        {
+          id: server.id,
+          name: server.name,
+          password: decryptSecret(server.password),
+          sshKeyFileUrl: server.sshKeyFileUrl ? decryptSecret(server.sshKeyFileUrl) : null,
+        },
+        user.id,
+        user.name,
+      );
+    } catch (e) {
+      console.error("[vps] syncVpsCredentials failed:", e);
+    }
+    try {
+      await syncVpsSubscription(
+        { id: server.id, name: server.name, planLink: cleanPlanLink },
+        body.duration as VpsDuration | null,
+        user.id,
+      );
+    } catch (e) {
+      console.error("[vps] syncVpsSubscription failed:", e);
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "renew") {
+    // Manually log one more billing cycle: deduct the rate now + push the expiry
+    // forward one cycle. Only valid for a linked, recurring, priced subscription.
+    const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
+    if (!sub || sub.price == null || !sub.frequency || sub.frequency === "ONE_TIME") {
+      return NextResponse.json({ error: "No recurring subscription to renew" }, { status: 400 });
+    }
+    const price = Number(sub.price);
+    if (!(price > 0)) return NextResponse.json({ error: "Subscription has no rate" }, { status: 400 });
+
+    const now = new Date();
+    const base = sub.expiryDate && sub.expiryDate > now ? sub.expiryDate : now;
+    const tx = await prisma.transaction.create({
+      data: {
+        amount: new Prisma.Decimal(price),
+        currency: sub.currency ?? "INR",
+        method: "OTHER",
+        direction: "OUT",
+        type: "SUBSCRIPTION",
+        description: `VPS plan renewal: ${sub.name}`,
+        status: "APPROVED",
+        date: now,
+        createdById: user.id,
+      },
+    });
+    await prisma.service.update({
+      where: { id: sub.id },
+      data: {
+        paidTxId: tx.id,
+        lastRenewalDate: now,
+        expiryDate: nextCycleDate(base, sub.frequency),
+        status: "ACTIVE",
+      },
+    });
+    return NextResponse.json({ ok: true });
+  }
 
   if (action === "approve") {
     const server = await prisma.vpsServer.update({

@@ -62,6 +62,7 @@ enum SubStatus {
 }
 
 enum Frequency {
+  WEEKLY
   MONTHLY
   YEARLY
   ONE_TIME
@@ -177,9 +178,14 @@ model Service {
   planUrl         String?
   expiryDate      DateTime?
   lastRenewalDate DateTime?
+  autoRenew       Boolean    @default(false)
   paidTxId        String?    @unique
   paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
   status          SubStatus?
+  // Optional link back to the VPS server that created this subscription.
+  // SetNull so deleting a server preserves the Service + its transaction history.
+  vpsServerId     String?    @unique
+  vpsServer       VpsServer? @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
   createdAt       DateTime   @default(now())
 }
 
@@ -379,10 +385,12 @@ model VpsServer {
   status      String   @default("offline")
   approved    Boolean  @default(false)
   addedById   String?
+  planLink    String?  // URL to the hosting plan / control panel
   lastSeen    DateTime @default(now())
   createdAt   DateTime @default(now())
   metrics      VpsMetric[]
   credentials  Credential[]  // linked vault entries mirroring this server's secrets
+  subscription Service?      @relation("VpsSub")  // billing row in the Services tab
 }
 
 model VpsMetric {

@@ -312,10 +312,10 @@ function ServerCard({ server, onChanged }: { server: Server; onChanged: () => vo
   const specEntries = Object.entries(server.specs ?? {});
 
   return (
-    <div className="card p-4 sm:p-6 flex flex-col gap-4">
+    <div className="card p-4 sm:p-5 flex flex-col gap-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           {/* Status dot */}
           <span
             className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -327,14 +327,29 @@ function ServerCard({ server, onChanged }: { server: Server; onChanged: () => vo
             }}
           />
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)] truncate">
-              {server.name}
-            </h3>
-            <span className="text-xs text-[var(--text-tertiary)]">
-              {server.provider}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-[var(--text-primary)] truncate">
+                {server.name}
+              </h3>
+              {server.platform && (
+                <span
+                  className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+                  style={{
+                    color: "var(--violet)",
+                    background: "rgba(167,139,250,0.12)",
+                    border: "1px solid rgba(167,139,250,0.30)",
+                  }}
+                  title="Platform"
+                >
+                  {server.platform}
+                </span>
+              )}
+            </div>
+            {server.provider && (
+              <span className="text-xs text-[var(--text-tertiary)]">{server.provider}</span>
+            )}
             {(server.tags ?? []).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(server.tags ?? []).map((tag) => (
                   <span
                     key={tag}
@@ -349,7 +364,7 @@ function ServerCard({ server, onChanged }: { server: Server; onChanged: () => vo
           </div>
         </div>
         <span
-          className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded shrink-0"
+          className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-full shrink-0"
           style={{
             color: isOnline ? "var(--mint)" : "var(--coral)",
             background: isOnline
@@ -361,32 +376,14 @@ function ServerCard({ server, onChanged }: { server: Server; onChanged: () => vo
         </span>
       </div>
 
-      {/* IP Address + Platform */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div
-          className="rounded-lg px-3 py-2"
-          style={{ background: "var(--bg-deep)" }}
-        >
-          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-            IP Address
-          </span>
-          <span className="font-mono text-sm text-[var(--text-primary)]">
-            {server.ip || "—"}
-          </span>
-        </div>
-        {server.platform && (
-          <div
-            className="rounded-lg px-3 py-2"
-            style={{ background: "var(--bg-deep)" }}
-          >
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-              Platform
-            </span>
-            <span className="font-mono text-sm text-[var(--text-primary)]">
-              {server.platform}
-            </span>
-          </div>
-        )}
+      {/* IP Address */}
+      <div className="rounded-lg px-3 py-1.5" style={{ background: "var(--bg-deep)" }}>
+        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+          IP Address
+        </span>
+        <span className="block min-w-0 break-all font-mono text-xs leading-relaxed text-[var(--text-primary)] sm:text-sm">
+          {server.ip || "—"}
+        </span>
       </div>
 
       {/* Specs — dynamic from JSON */}

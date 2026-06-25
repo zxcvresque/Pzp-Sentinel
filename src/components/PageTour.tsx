@@ -8,6 +8,8 @@ import { usePageTour } from "@/hooks/usePageTour";
 interface PageTourProps {
   /** Unique key for this page, e.g. "admin-dashboard", "dev-board" */
   pageKey: string;
+  /** Bump (>1) when the tour gains steps so it re-shows once for prior viewers. */
+  version?: number;
 }
 
 /**
@@ -15,7 +17,7 @@ interface PageTourProps {
  * Fetches the current user ID from /api/auth/me and triggers a
  * 2-3 step tour on first visit to this page.
  */
-export default function PageTour({ pageKey }: PageTourProps) {
+export default function PageTour({ pageKey, version = 1 }: PageTourProps) {
   const [userId, setUserId] = useState<string | undefined>();
 
   useEffect(() => {
@@ -28,7 +30,7 @@ export default function PageTour({ pageKey }: PageTourProps) {
   }, []);
 
   const steps = getPageTourSteps(pageKey);
-  const { active, finish } = usePageTour(userId, pageKey);
+  const { active, finish } = usePageTour(userId, pageKey, version);
 
   if (steps.length === 0) return null;
 

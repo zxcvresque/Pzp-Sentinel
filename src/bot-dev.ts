@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Bot } from "grammy";
-import { PrismaClient } from "./generated/prisma/client";
+import { PrismaClient, Prisma } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { logAuditEvent } from "./lib/telegram-log";
@@ -670,6 +670,92 @@ async function checkDonateReminders() {
   }
 }
 
+// ── VPS subscription auto-renewals ─────────────────────────────────────
+const SUB_RENEWAL_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // daily
+
+// Advance a date by one billing cycle (mirrors lib/vps-subscription nextCycleDate;
+// inlined so the bot stays free of the web app's @/-aliased imports).
+function advanceCycle(from: Date, frequency: string | null): Date {
+  const d = new Date(from);
+  if (frequency === "WEEKLY") d.setDate(d.getDate() + 7);
+  else if (frequency === "MONTHLY") d.setMonth(d.getMonth() + 1);
+  else if (frequency === "YEARLY") d.setFullYear(d.getFullYear() + 1);
+  return d;
+}
+
+// Auto-renewing VPS subscriptions (autoRenew + recurring + due) → log an APPROVED
+// OUT expense for the rate and push the expiry forward one cycle. The expiry is
+// based on `now`, so each due renewal charges exactly once (no catch-up avalanche
+// if the bot was down).
+async function checkSubscriptionRenewals() {
+  console.log("[sub-renewal] Running subscription auto-renewal check...");
+  try {
+    const now = new Date();
+    const admin = await dbRetry(() =>
+      prisma.user.findFirst({
+        where: { roles: { has: "ADMIN" }, status: "ACTIVE" },
+        select: { id: true },
+      }),
+    );
+    if (!admin) {
+      console.warn("[sub-renewal] No active admin for attribution — skipping.");
+      return;
+    }
+
+    const due = await dbRetry(() =>
+      prisma.service.findMany({
+        where: {
+          autoRenew: true,
+          status: "ACTIVE",
+          frequency: { in: ["WEEKLY", "MONTHLY", "YEARLY"] },
+          price: { not: null },
+          expiryDate: { not: null, lte: now },
+        },
+        select: { id: true, name: true, price: true, currency: true, frequency: true },
+      }),
+    );
+
+    let renewed = 0;
+    for (const sub of due) {
+      const price = sub.price != null ? Number(sub.price) : 0;
+      if (!(price > 0)) continue;
+      try {
+        const tx = await dbRetry(() =>
+          prisma.transaction.create({
+            data: {
+              amount: new Prisma.Decimal(price),
+              currency: sub.currency ?? "INR",
+              method: "OTHER",
+              direction: "OUT",
+              type: "SUBSCRIPTION",
+              description: `VPS plan auto-renewal: ${sub.name}`,
+              status: "APPROVED",
+              date: now,
+              createdById: admin.id,
+            },
+          }),
+        );
+        await dbRetry(() =>
+          prisma.service.update({
+            where: { id: sub.id },
+            data: {
+              paidTxId: tx.id,
+              lastRenewalDate: now,
+              expiryDate: advanceCycle(now, sub.frequency),
+            },
+          }),
+        );
+        renewed++;
+      } catch (e) {
+        console.error(`[sub-renewal] Renewal failed for ${sub.id}:`, (e as Error).message);
+      }
+    }
+    console.log(`[sub-renewal] Done. ${renewed} renewal(s) of ${due.length} due.`);
+  } catch (err) {
+    console.error("[sub-renewal] Check failed:", err);
+  }
+}
+
 (async () => {
   await bot.api.deleteWebhook();
   console.log("Sentinel bot starting in polling mode...");
@@ -690,6 +776,13 @@ async function checkDonateReminders() {
         setInterval(checkDonateReminders, DONATE_REMINDER_CHECK_INTERVAL);
       }, 20_000);
       console.log("[donate-reminder] Scheduled — first check in 20s, then every 6h");
+
+      // VPS subscription auto-renewals: first check after 30s, then every 24h
+      setTimeout(() => {
+        checkSubscriptionRenewals();
+        setInterval(checkSubscriptionRenewals, SUB_RENEWAL_CHECK_INTERVAL);
+      }, 30_000);
+      console.log("[sub-renewal] Scheduled — first check in 30s, then every 24h");
     },
   });
 })();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties, FormEvent, ReactNode } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 
@@ -25,6 +25,9 @@ interface Server {
   notes: string;
   approved: boolean;
   addedById: string;
+  // ADMIN-ONLY (never sent to devs): plan link + billing/duration.
+  planLink?: string | null;
+  subscription?: Subscription | null;
   specs: Record<string, string>;
   status: "online" | "offline" | "pending";
   uptime: number;
@@ -43,6 +46,16 @@ interface Server {
     month: MetricSummary;
   };
   lastSeen: string;
+}
+
+interface Subscription {
+  mode: "LIFETIME" | "SUBSCRIPTION";
+  frequency: "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME";
+  price: number | null;
+  currency: "INR" | "USD" | null;
+  expiryDate: string | null;
+  autoRenew: boolean;
+  status: "ACTIVE" | "EXPIRED" | "CANCELLED" | null;
 }
 
 interface MetricSummary {
@@ -173,6 +186,69 @@ function loadStatus(loadAvg: string): { label: string; color: string; help: stri
   return { label: "Low", color: "var(--mint)", help: "< 1.00" };
 }
 
+const CURRENCY_SYMBOL: Record<string, string> = { INR: "₹", USD: "$" };
+const FREQ_SHORT: Record<string, string> = { WEEKLY: "wk", MONTHLY: "mo", YEARLY: "yr", ONE_TIME: "once" };
+
+function formatMoney(amount: number | null | undefined, currency: string | null | undefined): string {
+  if (amount == null) return "—";
+  const sym = CURRENCY_SYMBOL[currency ?? "INR"] ?? "";
+  const n = Number.isInteger(amount) ? amount.toString() : amount.toFixed(2);
+  return `${sym}${n}`;
+}
+
+function formatRate(sub: Subscription): string {
+  const money = formatMoney(sub.price, sub.currency);
+  if (sub.mode === "LIFETIME" || sub.frequency === "ONE_TIME") return money;
+  return `${money} / ${FREQ_SHORT[sub.frequency] ?? sub.frequency.toLowerCase()}`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function toDateInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/** Days until expiry (negative = already expired). */
+function daysUntil(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - Date.now()) / 86_400_000);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Pill — compact status chip (reuses the ONLINE badge styling)       */
+/* ------------------------------------------------------------------ */
+
+function Pill({
+  children,
+  color,
+  bg,
+  border,
+  title,
+}: {
+  children: React.ReactNode;
+  color: string;
+  bg?: string;
+  border?: string;
+  title?: string;
+}) {
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
+      style={{ color, background: bg ?? "transparent", border }}
+    >
+      {children}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Usage bar component                                                */
 /* ------------------------------------------------------------------ */
@@ -275,9 +351,13 @@ function AverageRow({ label, summary }: { label: string; summary?: MetricSummary
 function ApprovedServerCard({
   server,
   onDeleteRequest,
+  onEditRequest,
+  onRenew,
 }: {
   server: Server;
   onDeleteRequest: (id: string, name: string) => void;
+  onEditRequest: (server: Server) => void;
+  onRenew: (id: string) => Promise<void>;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
@@ -285,8 +365,11 @@ function ApprovedServerCard({
   const [copiedSshPass, setCopiedSshPass] = useState(false);
   const [copiedKeysCommand, setCopiedKeysCommand] = useState(false);
   const [showAverages, setShowAverages] = useState(false);
+  const [renewing, setRenewing] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
+  const sub = server.subscription ?? null;
+  const expDays = daysUntil(sub?.expiryDate);
 
   const ramPct = m.ramTotal > 0 ? (m.ramUsage / m.ramTotal) * 100 : 0;
   const diskPct = m.diskTotal > 0 ? (m.diskUsage / m.diskTotal) * 100 : 0;
@@ -306,10 +389,10 @@ function ApprovedServerCard({
   const specEntries = Object.entries(server.specs ?? {});
 
   return (
-    <div className="card p-4 sm:p-6 flex flex-col gap-4">
+    <div className="card p-4 sm:p-5 flex flex-col gap-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <span
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{
@@ -320,14 +403,26 @@ function ApprovedServerCard({
             }}
           />
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--text-primary)]">
-              {server.name}
-            </h3>
-            <span className="text-xs text-[var(--text-tertiary)]">
-              {server.provider}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-[var(--text-primary)] truncate">
+                {server.name}
+              </h3>
+              {server.platform && (
+                <Pill
+                  color="var(--violet)"
+                  bg="rgba(167,139,250,0.12)"
+                  border="1px solid rgba(167,139,250,0.30)"
+                  title="Platform"
+                >
+                  {server.platform}
+                </Pill>
+              )}
+            </div>
+            {server.provider && (
+              <span className="text-xs text-[var(--text-tertiary)]">{server.provider}</span>
+            )}
             {(server.tags ?? []).length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {(server.tags ?? []).map((tag) => (
                   <span
                     key={tag}
@@ -341,18 +436,29 @@ function ApprovedServerCard({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span
-            className="font-mono text-[10px] uppercase tracking-[0.08em] px-2.5 py-1 rounded"
-            style={{
-              color: isOnline ? "var(--mint)" : "var(--coral)",
-              background: isOnline
-                ? "rgba(52,211,153,0.08)"
-                : "rgba(248,113,113,0.08)",
-            }}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Pill
+            color={isOnline ? "var(--mint)" : "var(--coral)"}
+            bg={isOnline ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)"}
           >
             {server.status}
-          </span>
+          </Pill>
+          <button
+            data-tour="vps-edit"
+            onClick={() => onEditRequest(server)}
+            className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--lime)] hover:bg-[rgba(111,209,215,0.08)] transition-colors"
+            title="Edit server"
+            aria-label="Edit server"
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M9.5 2.5l2 2L5 11l-2.5.5L3 9l6.5-6.5z"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
           <button
             onClick={() => onDeleteRequest(server.id, server.name)}
             className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-tertiary)] hover:text-[var(--coral)] hover:bg-[rgba(248,113,113,0.08)] transition-colors"
@@ -371,13 +477,13 @@ function ApprovedServerCard({
         </div>
       </div>
 
-      {/* IP Address + Platform */}
+      {/* Connection: IP (full width) + Username / SSH Port */}
       <div className="grid grid-cols-2 gap-2">
         <div
-          className="col-span-2 min-w-0 rounded-lg px-3 py-2"
+          className="col-span-2 min-w-0 rounded-lg px-3 py-1.5"
           style={{ background: "var(--bg-deep)" }}
         >
-          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
             IP Address
           </span>
           <span className="block min-w-0 break-all font-mono text-xs leading-relaxed text-[var(--text-primary)] sm:text-sm">
@@ -385,10 +491,10 @@ function ApprovedServerCard({
           </span>
         </div>
         <div
-          className="min-w-0 rounded-lg px-3 py-2"
+          className="min-w-0 rounded-lg px-3 py-1.5"
           style={{ background: "var(--bg-deep)" }}
         >
-          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
             Username
           </span>
           <span className="font-mono text-sm text-[var(--text-primary)] break-all">
@@ -396,30 +502,96 @@ function ApprovedServerCard({
           </span>
         </div>
         <div
-          className="min-w-0 rounded-lg px-3 py-2"
+          className="min-w-0 rounded-lg px-3 py-1.5"
           style={{ background: "var(--bg-deep)" }}
         >
-          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
             SSH Port
           </span>
           <span className="font-mono text-sm text-[var(--text-primary)]">
             {sshPort}
           </span>
         </div>
-        {server.platform && (
-          <div
-            className="col-span-2 min-w-0 rounded-lg px-3 py-2 sm:col-span-1"
-            style={{ background: "var(--bg-deep)" }}
-          >
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] block mb-0.5">
-              Platform
-            </span>
-            <span className="font-mono text-sm text-[var(--text-primary)]">
-              {server.platform}
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Plan & billing (admin-only). Hidden when no plan/subscription set. */}
+      {(server.planLink || sub) && (
+        <div className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Plan &amp; Duration
+            </span>
+            {server.planLink && (
+              <a
+                href={server.planLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-[var(--lime)] bg-[rgba(111,209,215,0.10)] hover:bg-[rgba(111,209,215,0.18)] transition-colors"
+              >
+                Open plan ↗
+              </a>
+            )}
+          </div>
+          {sub ? (
+            <>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {sub.mode === "LIFETIME" ? (
+                  <Pill color="var(--violet)" bg="rgba(167,139,250,0.12)" border="1px solid rgba(167,139,250,0.30)">
+                    Lifetime
+                  </Pill>
+                ) : (
+                  <Pill color="var(--lime)" bg="rgba(111,209,215,0.10)">
+                    {sub.frequency}
+                  </Pill>
+                )}
+                {sub.autoRenew && (
+                  <Pill color="var(--mint)" bg="rgba(52,211,153,0.08)" title="Auto-renews each cycle">
+                    Auto-renew
+                  </Pill>
+                )}
+                {sub.status === "CANCELLED" && (
+                  <Pill color="var(--text-tertiary)" bg="var(--bg-card)">Cancelled</Pill>
+                )}
+                {sub.expiryDate && (
+                  <Pill
+                    color={expDays != null && expDays <= 7 ? "var(--amber)" : "var(--text-secondary)"}
+                    bg={expDays != null && expDays <= 7 ? "rgba(251,191,36,0.10)" : "var(--bg-card)"}
+                    title={expDays != null ? `${expDays} day(s) left` : undefined}
+                  >
+                    {expDays != null && expDays < 0 ? "Expired " : "Expires "}{formatDate(sub.expiryDate)}
+                  </Pill>
+                )}
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="font-mono text-sm text-[var(--text-primary)]">
+                  {formatRate(sub)}
+                </span>
+                {sub.mode === "SUBSCRIPTION" && sub.status !== "CANCELLED" && (
+                  <button
+                    type="button"
+                    disabled={renewing}
+                    onClick={async () => {
+                      setRenewing(true);
+                      try {
+                        await onRenew(server.id);
+                      } finally {
+                        setRenewing(false);
+                      }
+                    }}
+                    className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
+                    style={{ color: "var(--lime)", background: "rgba(111,209,215,0.10)" }}
+                    title="Log one more billing cycle now (deducts the rate + extends expiry)"
+                  >
+                    {renewing ? "Renewing…" : "Renew now"}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="mt-1 font-mono text-[11px] text-[var(--text-tertiary)]">No billing set</p>
+          )}
+        </div>
+      )}
 
       {/* Password (admin only, show/copy) */}
       {server.password && (
@@ -652,12 +824,9 @@ function ApprovedServerCard({
             <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
               Load Avg
             </span>
-            <span
-              className="font-mono text-[10px] uppercase tracking-[0.08em]"
-              style={{ color: load.color }}
-            >
+            <Pill color={load.color} bg={`color-mix(in srgb, ${load.color} 10%, transparent)`} title={load.help}>
               {load.label}
-            </span>
+            </Pill>
           </div>
           <span className="font-mono text-sm text-[var(--text-primary)]" style={{ color: load.color }}>
             {server.loadAvg}
@@ -872,27 +1041,53 @@ function PendingServerCard({
 /*  Add Server form                                                    */
 /* ------------------------------------------------------------------ */
 
-function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [provider, setProvider] = useState("");
-  const [ip, setIp] = useState("");
-  const [platform, setPlatform] = useState("");
-  const [username, setUsername] = useState("root");
-  const [sshPort, setSshPort] = useState("22");
+function ServerForm({
+  mode,
+  initial,
+  onCreated,
+  onClose,
+}: {
+  mode: "add" | "edit";
+  initial?: Server | null;
+  onCreated: (token?: string) => void;
+  onClose?: () => void;
+}) {
+  const isEdit = mode === "edit";
+  const initSub = initial?.subscription ?? null;
+  const [open, setOpen] = useState(isEdit);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [provider, setProvider] = useState(initial?.provider ?? "");
+  const [ip, setIp] = useState(initial?.ip ?? "");
+  const [platform, setPlatform] = useState(initial?.platform ?? "");
+  const [username, setUsername] = useState(initial?.username ?? "root");
+  const [sshPort, setSshPort] = useState(String(initial?.sshPort ?? 22));
   const [password, setPassword] = useState("");
   const [sshKeyFile, setSshKeyFile] = useState<File | null>(null);
-  const [sshKeyFileName, setSshKeyFileName] = useState("");
-  const [accessPublicKeys, setAccessPublicKeys] = useState("");
-  const [tagsInput, setTagsInput] = useState("");
-  const [notes, setNotes] = useState("");
+  const [sshKeyFileName, setSshKeyFileName] = useState(initial?.sshKeyFileName ?? "");
+  const [accessPublicKeys, setAccessPublicKeys] = useState(initial?.accessPublicKeys ?? "");
+  const [tagsInput, setTagsInput] = useState((initial?.tags ?? []).join(", "));
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  // Plan link + duration/billing (admin-only).
+  const [planLink, setPlanLink] = useState(initial?.planLink ?? "");
+  const [durationMode, setDurationMode] = useState<"NONE" | "LIFETIME" | "SUBSCRIPTION">(
+    initSub ? initSub.mode : "NONE",
+  );
+  const [price, setPrice] = useState(initSub?.price != null ? String(initSub.price) : "");
+  const [currency, setCurrency] = useState<"INR" | "USD">((initSub?.currency as "INR" | "USD") ?? "INR");
+  const [frequency, setFrequency] = useState<"WEEKLY" | "MONTHLY" | "YEARLY">(
+    initSub && initSub.frequency !== "ONE_TIME"
+      ? (initSub.frequency as "WEEKLY" | "MONTHLY" | "YEARLY")
+      : "MONTHLY",
+  );
+  const [expiryDate, setExpiryDate] = useState(toDateInput(initSub?.expiryDate));
+  const [autoRenew, setAutoRenew] = useState(initSub?.autoRenew ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [devs, setDevs] = useState<{ id: string; name: string }[]>([]);
   const [shareWith, setShareWith] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || isEdit) return;
     fetch("/api/users")
       .then((r) => (r.ok ? r.json() : { users: [] }))
       .then((d) =>
@@ -908,6 +1103,8 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
   const parsedPort = Number(sshPort);
   const tags = parseTagsInput(tagsInput);
   const hasAuth = Boolean(password.trim() || sshKeyFile);
+  const priceNum = Number(price);
+  const billingValid = durationMode === "NONE" || (Number.isFinite(priceNum) && priceNum > 0);
   const canSubmit = Boolean(
     name.trim() &&
     ip.trim() &&
@@ -915,7 +1112,8 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
     Number.isInteger(parsedPort) &&
     parsedPort > 0 &&
     parsedPort <= 65535 &&
-    hasAuth,
+    (isEdit || hasAuth) &&
+    billingValid,
   );
 
   const inputClass =
@@ -952,10 +1150,25 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
         uploadedKey = await uploadKeyFile(sshKeyFile);
       }
 
+      const duration =
+        durationMode === "NONE"
+          ? null
+          : durationMode === "LIFETIME"
+          ? { mode: "LIFETIME", price: priceNum, currency }
+          : {
+              mode: "SUBSCRIPTION",
+              price: priceNum,
+              currency,
+              frequency,
+              expiryDate: expiryDate || null,
+              autoRenew,
+            };
+
       const res = await fetch("/api/vps", {
-        method: "POST",
+        method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(isEdit ? { id: initial!.id, action: "update" } : {}),
           name: name.trim(),
           provider: provider.trim(),
           ip: ip.trim(),
@@ -968,16 +1181,23 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           accessPublicKeys: accessPublicKeys.trim(),
           tags,
           notes: notes.trim(),
-          shareWith,
+          planLink: planLink.trim(),
+          duration,
+          ...(isEdit ? {} : { shareWith }),
         }),
       });
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create server");
+        throw new Error(data.error || (isEdit ? "Failed to update server" : "Failed to create server"));
       }
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (isEdit) {
+        onClose?.();
+        onCreated();
+        return;
+      }
       setName("");
       setProvider("");
       setIp("");
@@ -991,10 +1211,17 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       setTagsInput("");
       setNotes("");
       setShareWith([]);
+      setPlanLink("");
+      setDurationMode("NONE");
+      setPrice("");
+      setCurrency("INR");
+      setFrequency("MONTHLY");
+      setExpiryDate("");
+      setAutoRenew(false);
       setOpen(false);
       onCreated(data.server?.token ?? data.token);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create server");
+      setError(err instanceof Error ? err.message : isEdit ? "Failed to update server" : "Failed to create server");
     } finally {
       setSubmitting(false);
     }
@@ -1002,30 +1229,32 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
 
   return (
     <>
-      <button
-        data-tour="add-server"
-        onClick={() => setOpen((v) => !v)}
-        className="font-mono text-xs px-3 py-1.5 rounded transition-colors"
-        style={{
-          color: "var(--lime)",
-          background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
-          border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
-        }}
-      >
-        {open ? (
-          <svg width="14" height="14" viewBox="0 0 12 12" fill="none" className="inline-block">
-            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        ) : (
-          "+ Add Server"
-        )}
-      </button>
+      {!isEdit && (
+        <button
+          data-tour="add-server"
+          onClick={() => setOpen((v) => !v)}
+          className="font-mono text-xs px-3 py-1.5 rounded transition-colors"
+          style={{
+            color: "var(--lime)",
+            background: "rgba(var(--lime-rgb, 52,211,153), 0.08)",
+            border: "1px solid rgba(var(--lime-rgb, 52,211,153), 0.2)",
+          }}
+        >
+          {open ? (
+            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" className="inline-block">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          ) : (
+            "+ Add Server"
+          )}
+        </button>
+      )}
 
       {open && (
         <form onSubmit={handleSubmit} className="card p-4 sm:p-5 flex flex-col gap-4 col-span-full">
           <div className="flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-              New Server
+              {isEdit ? `Edit ${initial?.name ?? "Server"}` : "New Server"}
             </span>
           </div>
 
@@ -1097,7 +1326,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
                 <span className={labelClass}>Password</span>
                 <input
                   type="password"
-                  placeholder="SSH password, if using password login"
+                  placeholder={isEdit ? "Leave blank to keep current" : "SSH password, if using password login"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className={inputClass}
@@ -1190,6 +1419,111 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           </div>
 
           <div className="space-y-3">
+            <span className={sectionClass}>Plan &amp; Duration</span>
+            <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              Admin-only — never shown to or shared with devs. Saving with a price deducts it now from the current balance and adds a row to the Services tab.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+              <label className="xl:col-span-6">
+                <span className={labelClass}>Plan link</span>
+                <input
+                  type="url"
+                  placeholder="https://… control panel / order page"
+                  value={planLink}
+                  onChange={(e) => setPlanLink(e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label className="xl:col-span-6">
+                <span className={labelClass}>Duration</span>
+                <select
+                  value={durationMode}
+                  onChange={(e) => setDurationMode(e.target.value as "NONE" | "LIFETIME" | "SUBSCRIPTION")}
+                  className={inputClass}
+                >
+                  <option value="NONE">No billing</option>
+                  <option value="LIFETIME">Lifetime (one-time)</option>
+                  <option value="SUBSCRIPTION">Subscription</option>
+                </select>
+              </label>
+            </div>
+            {durationMode !== "NONE" && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
+                <label className="xl:col-span-3">
+                  <span className={labelClass}>{durationMode === "LIFETIME" ? "Price" : "Rate"}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="0"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="xl:col-span-3">
+                  <span className={labelClass}>Currency</span>
+                  <select
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value as "INR" | "USD")}
+                    className={inputClass}
+                  >
+                    <option value="INR">INR ₹</option>
+                    <option value="USD">USD $</option>
+                  </select>
+                </label>
+                {durationMode === "SUBSCRIPTION" && (
+                  <>
+                    <label className="xl:col-span-3">
+                      <span className={labelClass}>Billing cycle</span>
+                      <select
+                        value={frequency}
+                        onChange={(e) => setFrequency(e.target.value as "WEEKLY" | "MONTHLY" | "YEARLY")}
+                        className={inputClass}
+                      >
+                        <option value="WEEKLY">Weekly</option>
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="YEARLY">Yearly</option>
+                      </select>
+                    </label>
+                    <label className="xl:col-span-3">
+                      <span className={labelClass}>Expiry</span>
+                      <input
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
+                        className={inputClass}
+                      />
+                    </label>
+                    <label className="xl:col-span-12 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={autoRenew}
+                        onChange={(e) => setAutoRenew(e.target.checked)}
+                        className="h-4 w-4 accent-[var(--mint)]"
+                      />
+                      <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+                        Auto-renew — deduct the rate automatically each cycle until unchecked
+                      </span>
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
+            {durationMode !== "NONE" && priceNum > 0 && !initSub && (
+              <p className="font-mono text-[10px] text-[var(--amber)]">
+                {formatMoney(priceNum, currency)} will be deducted from the current balance when you save.
+              </p>
+            )}
+            {isEdit && initSub && (
+              <p className="font-mono text-[10px] text-[var(--text-tertiary)]">
+                Editing plan details won&apos;t re-charge — use “Renew now” on the card or auto-renew for further deductions.
+              </p>
+            )}
+          </div>
+
+          {!isEdit && (
+          <div className="space-y-3">
             <span className={sectionClass}>Share credentials (optional)</span>
             <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
               Give selected developers FULL access to this server&apos;s stored credentials right away. Leave empty and devs can request public-key access themselves.
@@ -1222,6 +1556,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
               )}
             </div>
           </div>
+          )}
 
           {error && (
             <p className="text-xs text-[var(--coral)]">{error}</p>
@@ -1238,11 +1573,19 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
                 background: "var(--lime)",
               }}
             >
-              {submitting ? (sshKeyFile ? "Uploading..." : "Creating...") : "Create Server"}
+              {submitting
+                ? sshKeyFile
+                  ? "Uploading..."
+                  : isEdit
+                  ? "Saving..."
+                  : "Creating..."
+                : isEdit
+                ? "Save changes"
+                : "Create Server"}
             </button>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => (isEdit ? onClose?.() : setOpen(false))}
               disabled={submitting}
               className="font-mono text-xs px-4 py-2.5 rounded-lg transition-colors disabled:opacity-40"
               style={{
@@ -1334,6 +1677,7 @@ export default function AdminVpsPage() {
   const [error, setError] = useState<string | null>(null);
   const [tokenDisplay, setTokenDisplay] = useState<{ name: string; token: string } | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
+  const [editingServer, setEditingServer] = useState<Server | null>(null);
 
   // Confirm dialog state
   const [confirmState, setConfirmState] = useState<{
@@ -1436,9 +1780,30 @@ export default function AdminVpsPage() {
     setConfirmState({ open: false, id: "", name: "", action: "delete", loading: false });
   }
 
-  function handleCreated(token: string) {
-    setTokenDisplay({ name: "New Server", token });
+  function handleCreated(token?: string) {
+    if (token) setTokenDisplay({ name: "New Server", token });
     fetchServers();
+  }
+
+  async function handleRenew(id: string) {
+    try {
+      const res = await fetch("/api/vps", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "renew" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Renew failed");
+      }
+    } finally {
+      await fetchServers();
+    }
+  }
+
+  function requestEdit(server: Server) {
+    setEditingServer(server);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   if (loading) {
@@ -1489,7 +1854,7 @@ export default function AdminVpsPage() {
         variant="danger"
         loading={confirmState.loading}
       />
-      <PageTour pageKey="admin-vps" />
+      <PageTour pageKey="admin-vps" version={2} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
@@ -1533,8 +1898,21 @@ export default function AdminVpsPage() {
 
       {/* Add Server form (full-width below header) */}
       <div className="mb-6">
-        <AddServerForm onCreated={handleCreated} />
+        <ServerForm mode="add" onCreated={handleCreated} />
       </div>
+
+      {/* Edit Server form (full-width, shown when editing) */}
+      {editingServer && (
+        <div className="mb-6">
+          <ServerForm
+            key={editingServer.id}
+            mode="edit"
+            initial={editingServer}
+            onCreated={handleCreated}
+            onClose={() => setEditingServer(null)}
+          />
+        </div>
+      )}
 
       {/* Token display (shown after creating/approving) */}
       {tokenDisplay && (
@@ -1591,6 +1969,8 @@ export default function AdminVpsPage() {
                 key={server.id}
                 server={server}
                 onDeleteRequest={requestDelete}
+                onEditRequest={requestEdit}
+                onRenew={handleRenew}
               />
             ))}
           </div>

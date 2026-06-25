@@ -70,3 +70,20 @@ Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.m
 - [x] Security tests: secret-crypto round-trip / tamper / passthrough (6 pass)
 - [ ] OPTIONAL manual run: log in as admin + dev and click through the flows
 - [ ] PROD: set `CREDENTIAL_ENC_KEY` env in production before deploy (fail-closed without it)
+
+---
+
+# VPS Plan/Duration → Services (active feature)
+
+Compact + pill-ified VPS card; admin-only Plan Link + Duration that mirror into the Services/subscriptions tab and deduct from current balance.
+
+- [x] Schema: `Frequency.WEEKLY`; `Service.autoRenew` + `Service.vpsServer`/`vpsServerId` (`@unique`, onDelete SetNull); `VpsServer.planLink` + `subscription` relation. `db push --accept-data-loss` (new-column unique only) + generate.
+- [x] `src/lib/vps-subscription.ts` — `syncVpsSubscription()` (upsert Service, first-attach deduct as APPROVED OUT SUBSCRIPTION tx, paidTxId link) + `nextCycleDate()`.
+- [x] `/api/vps` — POST accepts `planLink`+`duration`; PATCH `action:"update"` (edit; blank secret = keep) + `action:"renew"` (manual cycle); GET includes `subscription`/`planLink` **admin-only**.
+- [x] `src/bot-dev.ts` — `checkSubscriptionRenewals()` daily; auto-renew due subs → OUT tx + advance expiry.
+- [x] Admin card redesign: compact (gap-3, p-5), status/platform/duration/load **pills**, Platform highlighted, Plan link, Renew-now, Edit flow via shared `ServerForm` (add+edit).
+- [x] Dev card: compact + platform/status pills, **no billing** (devs never see plan/duration — user requirement).
+- [x] Services page: `VPS` + `Auto-renew` badges on linked rows; WEEKLY burn math (client + stats route).
+- [x] Verify: tsc clean, vitest 6/6, `npm run build` exit 0.
+- [ ] Manual/QA: edit Pzp Netcup → add Monthly sub + Renew → confirm Services row + APPROVED OUT tx + balance drop; Lifetime one-time; toggle auto-renew off; delete VPS keeps Service+tx.
+- [ ] Not committed/pushed (awaiting user).

@@ -213,7 +213,13 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     {
       target: "[data-tour='add-server']",
       title: "Add a Server",
-      body: "When you add a server, its password and SSH key are encrypted and mirrored into the Credential Vault automatically. You can also grant full credential access to specific devs right here at creation.",
+      body: "When you add a server, its password and SSH key are encrypted and mirrored into the Credential Vault automatically. You can also set a Plan Link and a Duration (Lifetime or a subscription) and grant full credential access to specific devs — all right here at creation.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='vps-edit']",
+      title: "Plan, Duration & Billing",
+      body: "Edit any server to add its Plan Link and Duration. Saving with a price deducts it from your current balance now and adds a row to the Services tab. Pick Subscription + Auto-renew to bill every cycle automatically, or use \"Renew now\" to log one manually. Plan and billing are admin-only — never shown to or shared with devs.",
       placement: "bottom",
     },
   ],

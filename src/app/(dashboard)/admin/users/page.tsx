@@ -383,40 +383,152 @@ export default function UsersPage() {
     );
   }
 
+  // Mobile-first card equivalent of renderUserRow (shown < sm; the table is shown sm+)
+  function renderUserCard(u: User, dimmed: boolean) {
+    const isEditing = editingId === u.id;
+    const isToggling = togglingId === u.id;
+    const isInactive = u.status === "INACTIVE";
+
+    if (isEditing) {
+      return (
+        <div key={u.id} className="card p-4 border-l-2 border-l-violet flex flex-col gap-3">
+          <input
+            type="text"
+            value={editState.name}
+            onChange={(e) => setEditState((s) => ({ ...s, name: e.target.value }))}
+            placeholder="Name"
+            className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-semibold text-text-primary focus:outline-none focus:border-lime/30"
+          />
+          <div>
+            <input
+              type="text"
+              value={editState.telegramUser}
+              onChange={(e) => setEditState((s) => ({ ...s, telegramUser: e.target.value }))}
+              placeholder="@username"
+              className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+            />
+            <div className="text-text-tertiary text-xs mt-1">{u.telegramId}</div>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {["ADMIN", "DONOR", "DEV"].map((role) => {
+              const rc = getRoleColor(role);
+              return (
+                <button
+                  key={role}
+                  onClick={() => toggleEditRole(role)}
+                  className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer"
+                  style={editState.roles.includes(role)
+                    ? { background: rc.bg, color: rc.text, boxShadow: `inset 0 0 0 1px ${rc.border}` }
+                    : { background: "var(--bg-deep)", color: "var(--text-tertiary)" }
+                  }
+                >
+                  {role}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => saveEdit(u.id)}
+              disabled={!editState.name.trim() || editState.roles.length === 0}
+              className="px-3 py-1 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20 disabled:opacity-40 transition-colors"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setEditingId(null)}
+              className="px-3 py-1 rounded-full text-xs text-text-tertiary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div key={u.id} className={`card p-4 flex flex-col gap-3 ${dimmed ? "opacity-60" : ""}`}>
+        <div className="flex items-center justify-between gap-3">
+          <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={28} />
+          <span
+            title={u.chatId ? "Bot connected" : "Bot not connected"}
+            className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-text-tertiary shrink-0"
+          >
+            <span className={`w-2 h-2 rounded-full ${u.chatId ? "bg-mint" : "bg-text-tertiary"}`} />
+            Bot
+          </span>
+        </div>
+        <div className="text-text-tertiary text-xs">
+          @{u.telegramUser || "—"} &middot; {u.telegramId} &middot; joined {new Date(u.createdAt).toLocaleDateString()}
+        </div>
+        {u.roles.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {u.roles.map((r) => {
+              const rc = getRoleColor(r);
+              return (
+                <span
+                  key={r}
+                  className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded"
+                  style={{ background: rc.bg, color: rc.text }}
+                >
+                  {r}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button
+            onClick={() => startEditing(u)}
+            className="px-3 py-1 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => toggleStatus(u)}
+            disabled={isToggling}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+              u.status === "ACTIVE"
+                ? "bg-coral/10 text-coral hover:bg-coral/20"
+                : "bg-mint/10 text-mint hover:bg-mint/20"
+            } disabled:opacity-40`}
+          >
+            {isToggling ? "..." : u.status === "ACTIVE" ? "Deactivate" : "Activate"}
+          </button>
+          {isInactive && (
+            <button
+              onClick={() => setDeleteTarget(u)}
+              className="px-3 py-1 rounded-full text-xs text-text-tertiary hover:text-coral hover:bg-coral/10 transition-colors flex items-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+              </svg>
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   function renderPendingCard(u: User) {
     const isEditing = editingId === u.id;
 
     return (
       <div key={u.id} className="card p-4 border-l-2 border-l-amber">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            {isEditing ? (
-              <div className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={editState.name}
-                  onChange={(e) => setEditState((s) => ({ ...s, name: e.target.value }))}
-                  className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm font-semibold text-text-primary focus:outline-none focus:border-lime/30"
-                />
-                <input
-                  type="text"
-                  value={editState.telegramUser}
-                  onChange={(e) => setEditState((s) => ({ ...s, telegramUser: e.target.value }))}
-                  placeholder="@username"
-                  className="bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-secondary focus:outline-none focus:border-lime/30"
-                />
-              </div>
-            ) : (
-              <>
-                <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={24} />
-                <div className="text-text-tertiary text-xs mt-0.5">
-                  @{u.telegramUser || u.telegramId} &middot; started bot {new Date(u.createdAt).toLocaleDateString()}
-                </div>
-              </>
-            )}
+            <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={24} />
+            <div className="text-text-tertiary text-xs mt-0.5">
+              @{u.telegramUser || u.telegramId} &middot; started bot {new Date(u.createdAt).toLocaleDateString()}
+            </div>
           </div>
           {isEditing ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {["ADMIN", "DONOR", "DEV"].map((role) => {
                 const rc = getRoleColor(role);
                 return (
@@ -684,9 +796,9 @@ export default function UsersPage() {
               <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
                 Active Members ({activeUsers.length})
               </h2>
-              <div className="card overflow-hidden">
+              <div className="card overflow-hidden hidden sm:block">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full min-w-[680px]">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
                         <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Name</th>
@@ -703,6 +815,9 @@ export default function UsersPage() {
                   </table>
                 </div>
               </div>
+              <div className="space-y-3 sm:hidden">
+                {activeUsers.map((u) => renderUserCard(u, false))}
+              </div>
             </div>
           )}
 
@@ -712,9 +827,9 @@ export default function UsersPage() {
                 <span className="w-2 h-2 rounded-full bg-text-tertiary" />
                 Inactive ({inactiveUsers.length})
               </h2>
-              <div className="card overflow-hidden">
+              <div className="card overflow-hidden hidden sm:block">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full min-w-[680px]">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
                         <th className="text-left p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Name</th>
@@ -730,6 +845,9 @@ export default function UsersPage() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+              <div className="space-y-3 sm:hidden">
+                {inactiveUsers.map((u) => renderUserCard(u, true))}
               </div>
             </div>
           )}
