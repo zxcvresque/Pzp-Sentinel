@@ -887,6 +887,22 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [devs, setDevs] = useState<{ id: string; name: string }[]>([]);
+  const [shareWith, setShareWith] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/users")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((d) =>
+        setDevs(
+          (d.users || [])
+            .filter((u: { roles: string[] }) => u.roles.includes("DEV"))
+            .map((u: { id: string; name: string }) => ({ id: u.id, name: u.name })),
+        ),
+      )
+      .catch(() => {});
+  }, [open]);
 
   const parsedPort = Number(sshPort);
   const tags = parseTagsInput(tagsInput);
@@ -951,6 +967,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
           accessPublicKeys: accessPublicKeys.trim(),
           tags,
           notes: notes.trim(),
+          shareWith,
         }),
       });
 
@@ -972,6 +989,7 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
       setAccessPublicKeys("");
       setTagsInput("");
       setNotes("");
+      setShareWith([]);
       setOpen(false);
       onCreated(data.server?.token ?? data.token);
     } catch (err: unknown) {
@@ -1166,6 +1184,40 @@ function AddServerForm({ onCreated }: { onCreated: (token: string) => void }) {
                   className={`${inputClass} resize-none`}
                 />
               </label>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <span className={sectionClass}>Share credentials (optional)</span>
+            <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              Give selected developers FULL access to this server&apos;s stored credentials right away. Leave empty and devs can request public-key access themselves.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {devs.map((dev) => {
+                const active = shareWith.includes(dev.id);
+                return (
+                  <button
+                    key={dev.id}
+                    type="button"
+                    onClick={() =>
+                      setShareWith((prev) =>
+                        prev.includes(dev.id) ? prev.filter((x) => x !== dev.id) : [...prev, dev.id],
+                      )
+                    }
+                    className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors"
+                    style={
+                      active
+                        ? { color: "var(--bg-deep)", background: "var(--coral)", borderColor: "var(--coral)" }
+                        : { color: "var(--text-secondary)", borderColor: "var(--border)", background: "transparent" }
+                    }
+                  >
+                    {dev.name}
+                  </button>
+                );
+              })}
+              {devs.length === 0 && (
+                <span className="font-mono text-[10px] text-[var(--text-tertiary)]">No developers found</span>
+              )}
             </div>
           </div>
 
@@ -1426,7 +1478,11 @@ export default function AdminVpsPage() {
         onClose={() => setConfirmState((s) => ({ ...s, open: false }))}
         onConfirm={handleConfirm}
         title={confirmState.action === "delete" ? `Delete "${confirmState.name}"?` : `Reject "${confirmState.name}"?`}
-        message="This cannot be undone"
+        message={
+          confirmState.action === "delete"
+            ? "This cannot be undone. Linked vault credentials and any developer access to them are also removed."
+            : "This cannot be undone"
+        }
         confirmLabel={confirmState.action === "delete" ? "Delete" : "Reject"}
         variant="danger"
         loading={confirmState.loading}

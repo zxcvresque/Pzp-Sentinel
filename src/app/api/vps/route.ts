@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { syncVpsCredentials } from "@/lib/vps-credentials";
 import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
+import { notify, formatTgMessage } from "@/lib/notifications";
+import { logCredentialAction } from "@/lib/github-log";
 
 export const dynamic = "force-dynamic";
 
@@ -181,6 +183,7 @@ export async function POST(req: NextRequest) {
     accessPublicKeys,
     tags,
     notes,
+    shareWith,
   } = await req.json();
   const cleanName = String(name ?? "").trim();
   const cleanIp = String(ip ?? "").trim();
@@ -229,6 +232,54 @@ export async function POST(req: NextRequest) {
         user.id,
         user.name,
       );
+
+      // Optional: grant FULL access to selected devs at creation time
+      // ("share the entire credentials at the beginning").
+      const shareIds: string[] = Array.isArray(shareWith)
+        ? shareWith.filter((x: unknown): x is string => typeof x === "string" && x.length > 0)
+        : [];
+      if (shareIds.length) {
+        const linked = await prisma.credential.findMany({
+          where: { vpsServerId: server.id },
+          select: { id: true },
+        });
+        const now = new Date();
+        for (const cred of linked) {
+          for (const uid of shareIds) {
+            await prisma.credentialAccess.upsert({
+              where: { credentialId_userId: { credentialId: cred.id, userId: uid } },
+              create: { credentialId: cred.id, userId: uid, accessLevel: "FULL", granted: true, grantedAt: now },
+              update: { accessLevel: "FULL", granted: true, grantedAt: now },
+            });
+          }
+        }
+        if (linked.length) {
+          logCredentialAction({
+            action: "SHARE",
+            userId: user.id,
+            userName: user.name,
+            entityId: server.id,
+            platform: server.name,
+            details: `Full access at creation: ${shareIds.map((u) => u.slice(0, 8)).join(", ")}`,
+          });
+        }
+        for (const uid of shareIds) {
+          notify({
+            userId: uid,
+            type: "CREDENTIAL_ASSIGNED",
+            title: "VPS Credentials Shared",
+            message: `${user.name} gave you full access to ${server.name}'s credentials.`,
+            entityId: server.id,
+            priority: "NORMAL",
+            actionUrl: "/credentials",
+            telegramMessage: formatTgMessage(
+              "🔐 VPS Credentials Shared",
+              `${server.name}`,
+              `Full access by ${user.name}`,
+            ),
+          }).catch((err) => console.error("[vps] notify failed:", err));
+        }
+      }
     } catch (e) {
       console.error("[vps] syncVpsCredentials failed:", e);
     }
