@@ -14,6 +14,7 @@
 - [x] Add copyable SSH command using username/IP/password context.
 - [x] Add load-average health colors and a legend.
 - [x] Add weekly/monthly VPS metric averages for CPU, RAM, disk, and load.
+- [x] Replace runtime PNG assets with WebP assets for production.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.
 - [ ] Verify BMC sync/webhook in production.

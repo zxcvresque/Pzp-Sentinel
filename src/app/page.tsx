@@ -2,9 +2,9 @@ export default function PublicPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
       <picture>
-        <source media="(max-width: 767px)" srcSet="/mobile-landing-page.png" />
+        <source media="(max-width: 767px)" srcSet="/mobile-landing-page.webp" />
         <img
-          src="/login-bg.png"
+          src="/login-bg.webp"
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectPosition: "center top" }}

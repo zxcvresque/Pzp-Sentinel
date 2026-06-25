@@ -304,7 +304,7 @@ export default function Sidebar({
               }}
             >
               <img
-                src="/logo-icon.png"
+                src="/logo-icon.webp"
                 alt="Sentinel"
                 style={{
                   width: 28,
@@ -328,7 +328,7 @@ export default function Sidebar({
                 }}
               >
                 <img
-                  src="/logo-icon.png"
+                  src="/logo-icon.webp"
                   alt="Sentinel"
                   style={{
                     width: 24,
