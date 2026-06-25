@@ -85,6 +85,65 @@ npx prisma generate
 npx tsx prisma/seed.ts
 ```
 
+### Buy Me a Coffee Setup / Account Replacement
+
+Sentinel uses Buy Me a Coffee in two ways:
+
+- Manual sync: `POST /api/bmc/sync` imports supporters and extras through the BMC API.
+- Live updates: `POST /api/bmc/webhook` receives signed BMC webhook events.
+
+From the active Buy Me a Coffee account, collect:
+
+```env
+BMC_TOKEN=your-bmc-api-token
+BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
+```
+
+In the BMC developer/webhook settings, set the webhook URL to:
+
+```text
+https://sentinel.piratezparty.com/api/bmc/webhook
+```
+
+Enable all available events, or at minimum the events Sentinel handles:
+
+```text
+payment.created
+payment.refunded
+extras.purchased
+extras.refunded
+monthly_support.started
+monthly_support.cancelled
+membership.started
+membership.cancelled
+commission_order.created
+commission_order.refunded
+wishlist_payment.created
+wishlist_payment.refunded
+monthly_support.updated
+membership.updated
+extras.updated
+```
+
+To replace an existing BMC account on the VPS:
+
+```bash
+cd ~/Sentinel
+nano .env
+# replace BMC_TOKEN and BMC_WEBHOOK_SECRET only
+pm2 restart sentinel
+pm2 save
+```
+
+Then verify from the admin dashboard:
+
+1. Open `Admin -> Dashboard`.
+2. Click `Sync BMC`.
+3. Confirm imported BMC transactions appear in `Admin -> Transactions`.
+4. Trigger a small test payment/webhook event if possible and confirm it appears automatically.
+
+Previously imported BMC transactions remain in the database. Replacing the BMC account only changes future syncs/webhooks unless old BMC transactions are manually deleted.
+
 ### Run
 
 Two separate processes:
