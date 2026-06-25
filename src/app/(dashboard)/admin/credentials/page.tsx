@@ -5,11 +5,22 @@ import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
 
+type AccessLevel = "PUBLIC_KEY" | "FULL";
+
 interface UserRef {
   id: string;
   name: string;
   photoUrl?: string | null;
   telegramUser?: string | null;
+}
+
+interface AccessRow {
+  userId: string;
+  accessLevel: AccessLevel;
+  granted: boolean;
+  grantedAt: string | null;
+  devPublicKey: string | null;
+  user: UserRef;
 }
 
 interface Revision {
@@ -28,8 +39,10 @@ interface Credential {
   label: string;
   value: string;
   status: string;
-  assignees: UserRef[];
+  accesses: AccessRow[];
   createdBy: UserRef;
+  vpsServer?: { id: string; name: string } | null;
+  credKind?: string | null;
   revisions: Revision[];
   createdAt: string;
 }
@@ -37,6 +50,79 @@ interface Credential {
 interface DevUser {
   id: string;
   name: string;
+}
+
+function installCommand(key: string): string {
+  return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo ${JSON.stringify(key)} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Per-dev access row (in a credential card)                          */
+/* ------------------------------------------------------------------ */
+
+function AccessRowItem({ row, onToggleGrant }: { row: AccessRow; onToggleGrant: () => void }) {
+  const [showKey, setShowKey] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const isFull = row.accessLevel === "FULL";
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-bg-deep border border-[var(--border)] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <TgUser name={row.user.name} telegramUser={row.user.telegramUser} photoUrl={row.user.photoUrl} size={18} />
+        <span
+          className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded"
+          style={{
+            color: isFull ? "var(--coral)" : "var(--mint)",
+            background: isFull ? "rgba(248,113,113,0.1)" : "rgba(52,211,153,0.1)",
+          }}
+        >
+          {isFull ? "Full" : "Public-key"}
+        </span>
+        <span
+          className="font-mono text-[9px] uppercase tracking-[0.08em]"
+          style={{ color: row.granted ? "var(--mint)" : "var(--amber)" }}
+        >
+          {row.granted ? "granted ✓" : "awaiting grant"}
+        </span>
+        <button
+          onClick={onToggleGrant}
+          className="ml-auto font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
+        >
+          {row.granted ? "Revoke" : "Grant"}
+        </button>
+        {row.devPublicKey && (
+          <button
+            onClick={() => setShowKey((v) => !v)}
+            className="font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
+          >
+            {showKey ? "Hide key" : "Show key"}
+          </button>
+        )}
+      </div>
+
+      {showKey && row.devPublicKey && (
+        <div className="space-y-2">
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block">
+            Submitted public key
+          </span>
+          <code className="block break-all rounded bg-bg-card px-2 py-1.5 font-mono text-[11px] text-text-secondary">
+            {row.devPublicKey}
+          </code>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(installCommand(row.devPublicKey!));
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            className="font-mono text-[10px] uppercase px-2 py-1 rounded bg-bg-card text-text-secondary hover:text-text-primary transition-colors"
+            style={{ color: copied ? "var(--mint)" : undefined }}
+          >
+            {copied ? "Copied install command" : "Copy install command"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function CredentialsPage() {
@@ -49,8 +135,13 @@ export default function CredentialsPage() {
 
   const [platform, setPlatform] = useState("");
   const [fields, setFields] = useState<{ label: string; value: string }[]>([{ label: "", value: "" }]);
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [accessMap, setAccessMap] = useState<Record<string, AccessLevel>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  async function refresh() {
+    const fresh = await fetch("/api/credentials").then((r) => r.json());
+    setCredentials(fresh.credentials || []);
+  }
 
   useEffect(() => {
     Promise.all([
@@ -77,7 +168,7 @@ export default function CredentialsPage() {
     setEditId(cred.id);
     setPlatform(cred.platform);
     setFields([{ label: cred.label, value: cred.value }]);
-    setAssigneeIds(cred.assignees.map((a) => a.id));
+    setAccessMap(Object.fromEntries(cred.accesses.map((a) => [a.userId, a.accessLevel])));
     setShowForm(true);
   }
 
@@ -85,7 +176,7 @@ export default function CredentialsPage() {
     setEditId(null);
     setPlatform("");
     setFields([{ label: "", value: "" }]);
-    setAssigneeIds([]);
+    setAccessMap({});
     setShowForm(false);
   }
 
@@ -101,10 +192,17 @@ export default function CredentialsPage() {
     setFields((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function toggleAssignee(id: string) {
-    setAssigneeIds((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
-    );
+  function setDevAccess(id: string, level: AccessLevel | null) {
+    setAccessMap((prev) => {
+      const next = { ...prev };
+      if (!level) delete next[id];
+      else next[id] = level;
+      return next;
+    });
+  }
+
+  function accessesPayload() {
+    return Object.entries(accessMap).map(([userId, accessLevel]) => ({ userId, accessLevel }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -112,25 +210,18 @@ export default function CredentialsPage() {
     setSubmitting(true);
 
     const validFields = fields.filter((f) => f.label && f.value);
+    const accesses = accessesPayload();
 
     if (editId) {
-      const body = { platform, label: validFields[0]?.label, value: validFields[0]?.value, assigneeIds };
-      const res = await fetch(`/api/credentials/${editId}`, {
+      const body = { platform, label: validFields[0]?.label, value: validFields[0]?.value, accesses };
+      await fetch(`/api/credentials/${editId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setCredentials((prev) =>
-          prev.map((c) => (c.id === editId ? { ...c, ...data.credential } : c))
-        );
-      }
-    }
-
-    if (!editId) {
+    } else {
       for (const field of validFields) {
-        const body = { platform, label: field.label, value: field.value, assigneeIds };
+        const body = { platform, label: field.label, value: field.value, accesses };
         await fetch("/api/credentials", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -139,10 +230,23 @@ export default function CredentialsPage() {
       }
     }
 
-    const freshCreds = await fetch("/api/credentials").then((r) => r.json());
-    setCredentials(freshCreds.credentials || []);
+    await refresh();
     resetForm();
     setSubmitting(false);
+  }
+
+  async function handleToggleGrant(cred: Credential, userId: string) {
+    const accesses = cred.accesses.map((a) => ({
+      userId: a.userId,
+      accessLevel: a.accessLevel,
+      granted: a.userId === userId ? !a.granted : a.granted,
+    }));
+    const res = await fetch(`/api/credentials/${cred.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accesses }),
+    });
+    if (res.ok) await refresh();
   }
 
   async function handleDelete(id: string) {
@@ -159,8 +263,7 @@ export default function CredentialsPage() {
       body: JSON.stringify({ action }),
     });
     if (res.ok) {
-      const freshCreds = await fetch("/api/credentials").then((r) => r.json());
-      setCredentials(freshCreds.credentials || []);
+      await refresh();
       if (action === "approve") {
         setRevealed((prev) => {
           const next = new Set(prev);
@@ -280,23 +383,50 @@ export default function CredentialsPage() {
 
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-              Assign to Developers
+              Share with Developers
             </label>
-            <div className="flex flex-wrap gap-2">
-              {devs.map((dev) => (
-                <button
-                  key={dev.id}
-                  type="button"
-                  onClick={() => toggleAssignee(dev.id)}
-                  className={`font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2 rounded-full border transition-colors ${
-                    assigneeIds.includes(dev.id)
-                      ? "bg-violet text-bg-void border-violet"
-                      : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
-                  }`}
-                >
-                  {dev.name}
-                </button>
-              ))}
+            <p className="text-[11px] text-text-tertiary mb-3 leading-relaxed">
+              Pick an access level per developer.{" "}
+              <span className="text-mint">Public-key</span>: the dev submits their own SSH key, you install it — they never see the secret.{" "}
+              <span className="text-coral">Full</span>: the dev can reveal the actual value.
+            </p>
+            <div className="space-y-2">
+              {devs.map((dev) => {
+                const lvl = accessMap[dev.id];
+                const options: [AccessLevel | null, string][] = [
+                  [null, "—"],
+                  ["PUBLIC_KEY", "Public-key"],
+                  ["FULL", "Full"],
+                ];
+                return (
+                  <div key={dev.id} className="flex items-center gap-3 flex-wrap">
+                    <span className="text-sm text-text-secondary min-w-[120px]">{dev.name}</span>
+                    <div className="flex gap-1">
+                      {options.map(([val, label]) => {
+                        const active = (val === null && !lvl) || val === lvl;
+                        const activeBg =
+                          val === "FULL"
+                            ? "bg-coral text-bg-void border-coral"
+                            : val === "PUBLIC_KEY"
+                              ? "bg-mint text-bg-void border-mint"
+                              : "bg-bg-deep text-text-secondary border-[var(--border)]";
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setDevAccess(dev.id, val)}
+                            className={`font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors ${
+                              active ? activeBg : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
               {devs.length === 0 && (
                 <span className="text-text-tertiary text-xs">No developers found</span>
               )}
@@ -333,6 +463,11 @@ export default function CredentialsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
                           <span className="text-sm font-semibold">{cred.label}</span>
+                          {cred.vpsServer && (
+                            <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-violet/10 text-violet">
+                              🔗 VPS: {cred.vpsServer.name}
+                            </span>
+                          )}
                           {cred.revisions.length > 0 && (
                             <span className="font-mono text-[9px] uppercase tracking-[0.08em] px-2 py-0.5 rounded bg-amber/10 text-amber">
                               {cred.revisions.length} pending update{cred.revisions.length > 1 ? "s" : ""}
@@ -352,15 +487,23 @@ export default function CredentialsPage() {
                             </code>
                           )}
                         </div>
-                        {cred.assignees.length > 0 && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
-                              Access:
+                        {cred.accesses.length > 0 ? (
+                          <div className="space-y-2">
+                            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block">
+                              Access
                             </span>
-                            {cred.assignees.map((a) => (
-                              <TgUser key={a.id} name={a.name} telegramUser={a.telegramUser} photoUrl={a.photoUrl} size={18} />
+                            {cred.accesses.map((row) => (
+                              <AccessRowItem
+                                key={row.userId}
+                                row={row}
+                                onToggleGrant={() => handleToggleGrant(cred, row.userId)}
+                              />
                             ))}
                           </div>
+                        ) : (
+                          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
+                            Not shared
+                          </span>
                         )}
                       </div>
                       <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
