@@ -367,6 +367,9 @@ bot.command("start", async (ctx) => {
   if (user) {
     const updates: Record<string, string | null> = { chatId };
     if (photoUrl) updates.photoUrl = photoUrl;
+    // Refresh the @username if it changed (telegramId is the stable key).
+    // Leave `name` alone so a user's edited profile name isn't clobbered.
+    if (username && username !== user.telegramUser) updates.telegramUser = username;
     await dbRetry(() => prisma.user.update({
       where: { id: user!.id },
       data: updates,
