@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
-import type { TaskStatus } from "@/generated/prisma/enums";
+import { TaskStatus } from "@/generated/prisma/enums";
 
 export async function GET(
   req: NextRequest,
@@ -56,11 +56,18 @@ export async function POST(
   }
 
   const body = await req.json();
-  const { title, description, priority, assigneeId, deadline, startDate, tagIds, parentId } = body;
+  const { title, description, priority, status, assigneeId, deadline, startDate, tagIds, parentId } = body;
 
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
+
+  // Honor the chosen column; fall back to the schema default only if absent/invalid.
+  const validStatuses = Object.values(TaskStatus) as string[];
+  const taskStatus =
+    typeof status === "string" && validStatuses.includes(status)
+      ? (status as TaskStatus)
+      : undefined;
 
   const task = await prisma.task.create({
     data: {
@@ -68,6 +75,7 @@ export async function POST(
       title,
       description: description || null,
       priority: priority || "MEDIUM",
+      status: taskStatus,
       assigneeId: assigneeId || null,
       deadline: deadline ? new Date(deadline) : null,
       startDate: startDate ? new Date(startDate) : null,

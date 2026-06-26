@@ -97,6 +97,11 @@ export default function DevTasksPage() {
   const [filterPriority, setFilterPriority] = useState<string>("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
+  // The strict task API lets a DEV change only `status` (not title/priority/etc.),
+  // so the inline editor is admin-only. Status changes stay open to everyone here
+  // since /api/tasks/mine only ever returns the user's own assigned tasks.
+  const [isAdmin, setIsAdmin] = useState(false);
+
   // Stable, data-only refresh used for both the initial mount load and the
   // background re-fetches. Never toggles loading/skeleton state and never clears
   // existing data first (no flicker); failures are swallowed so a failed
@@ -115,6 +120,16 @@ export default function DevTasksPage() {
   useEffect(() => {
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // Fetch the current user once on mount to decide whether to offer inline editing.
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.user) setIsAdmin(data.user.roles.includes("ADMIN"));
+      })
+      .catch(() => {});
+  }, []);
 
   useAutoRefresh(load, 30000);
 
@@ -375,6 +390,7 @@ export default function DevTasksPage() {
                   <TaskRow
                     key={task.id}
                     task={task}
+                    canEdit={isAdmin}
                     onStatusChange={handleStatusChange}
                     onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}
@@ -409,6 +425,7 @@ export default function DevTasksPage() {
                   <TaskRow
                     key={task.id}
                     task={task}
+                    canEdit={isAdmin}
                     onStatusChange={handleStatusChange}
                     onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}
@@ -561,6 +578,7 @@ function InlineEditPanel({
 
 function TaskRow({
   task,
+  canEdit,
   onStatusChange,
   onTaskUpdate,
   expanded,
@@ -570,6 +588,7 @@ function TaskRow({
   onCancelEdit,
 }: {
   task: Task;
+  canEdit: boolean;
   onStatusChange: (id: string, status: string) => void;
   onTaskUpdate: (id: string, updates: { title?: string; description?: string | null; priority?: string; deadline?: string | null }) => Promise<boolean>;
   expanded: boolean;
@@ -583,23 +602,29 @@ function TaskRow({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <button
-              onClick={onStartEdit}
-              className="text-sm font-medium truncate hover:text-lime transition-colors text-left"
-              title="Click to edit"
-            >
-              {task.title}
-            </button>
-            <button
-              onClick={onStartEdit}
-              className="text-text-tertiary hover:text-lime transition-colors shrink-0"
-              title="Edit task"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
+            {canEdit ? (
+              <>
+                <button
+                  onClick={onStartEdit}
+                  className="text-sm font-medium truncate hover:text-lime transition-colors text-left"
+                  title="Click to edit"
+                >
+                  {task.title}
+                </button>
+                <button
+                  onClick={onStartEdit}
+                  className="text-text-tertiary hover:text-lime transition-colors shrink-0"
+                  title="Edit task"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+              </>
+            ) : (
+              <span className="text-sm font-medium truncate text-left">{task.title}</span>
+            )}
             <span
               className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded shrink-0 ${PRIORITY_COLOR[task.priority]} ${PRIORITY_BG[task.priority]}`}
             >
@@ -642,8 +667,8 @@ function TaskRow({
         />
       </div>
 
-      {/* Inline edit panel */}
-      {isEditing && (
+      {/* Inline edit panel — admin only; the strict API rejects DEV field edits. */}
+      {canEdit && isEditing && (
         <InlineEditPanel
           task={task}
           onSave={(updates) => onTaskUpdate(task.id, updates)}

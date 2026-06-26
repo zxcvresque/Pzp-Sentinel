@@ -28,7 +28,9 @@
 - [x] Fix cross-account login (multi Telegram accounts on one device): Mini App initData now authoritative over stale cookie; /api/auth/me redirect only in regular browsers.
 - [x] Fix admin Audit Log row overlap on mobile (responsive stack).
 - [x] upgrade.sh: silence the `curl: (23)` broken-pipe noise from the install-endpoint smoke test (keep the check).
-- [x] Custom donor reminders: every N days/weeks/months + time-of-day (all cadences) + per-donor timezone (default IST). Schema + /api/auth/me + DonateReminderCard + bot timing (30min poll). ⚠ `prisma db push` to shared DB still pending (gated) — feature inert until pushed + deployed.
+- [x] Custom donor reminders: every N days/weeks/months + time-of-day (all cadences) + per-donor timezone (default IST). Schema + /api/auth/me + DonateReminderCard + bot timing (30min poll). `prisma db push` applied to shared DB ✅; pushed.
+- [x] Fix dev tasks always landing in Backlog: POST /api/projects/[id]/tasks now honors `status`; board add-form has a Status/Column selector (default To Do).
+- [x] Align dev task UI to strict API ("own tasks only"): devs can change status only on their own assigned tasks; field edits + Save are admin-only; delete only for creator/admin; controls hidden otherwise (no silent 403s). Inline edit on /dev/tasks gated. Gantt NaN-date guard.
 - [ ] Update the existing production `Pzp Netcup` row back to its IPv4 address.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.

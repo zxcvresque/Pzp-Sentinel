@@ -27,6 +27,7 @@ interface Task {
   status: string;
   priority: string;
   deadline: string | null;
+  createdById?: string | null;
   assignee: { id: string; name: string; photoUrl?: string | null } | null;
   tags: Tag[];
   subtasks: Task[];
@@ -108,10 +109,15 @@ export default function DevDashboard() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [groupMode, setGroupMode] = useState<GroupMode>("status");
 
+  // Current-user awareness — gates task actions to match the strict task API.
+  const [meId, setMeId] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [showForm, setShowForm] = useState(false);
   const [formTitle, setFormTitle] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formPriority, setFormPriority] = useState("MEDIUM");
+  const [formStatus, setFormStatus] = useState("TODO");
   const [formAssignee, setFormAssignee] = useState("");
   const [formDeadline, setFormDeadline] = useState("");
   const [formTags, setFormTags] = useState<string[]>([]);
@@ -229,7 +235,25 @@ export default function DevDashboard() {
       .catch(() => setActivity([]));
   }, []);
 
+  // Fetch the current user once on mount to drive per-task permissions.
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.user) return;
+        setMeId(data.user.id);
+        setIsAdmin(data.user.roles.includes("ADMIN"));
+      })
+      .catch(() => {});
+  }, []);
+
   useAutoRefresh(load, 30000);
+
+  // Per-task permission gates mirroring the strict task API:
+  //  - status: ADMIN, or the task's assignee (DEV may PATCH status on own tasks)
+  //  - delete: ADMIN, or the task's creator
+  const canStatus = (t: Task) => isAdmin || t.assignee?.id === meId;
+  const canDelete = (t: Task) => isAdmin || t.createdById === meId;
 
   async function handleStatusChange(taskId: string, newStatus: string) {
     const prev = tasks;
@@ -264,6 +288,7 @@ export default function DevDashboard() {
     setFormTitle("");
     setFormDesc("");
     setFormPriority("MEDIUM");
+    setFormStatus("TODO");
     setFormAssignee("");
     setFormDeadline("");
     setFormTags([]);
@@ -381,6 +406,7 @@ export default function DevDashboard() {
       title: formTitle.trim(),
       description: formDesc.trim() || null,
       priority: formPriority,
+      status: formStatus,
       assigneeId: formAssignee || null,
       deadline: formDeadline || null,
       tagIds: formTags.length ? formTags : undefined,
@@ -765,6 +791,16 @@ export default function DevDashboard() {
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Status / Column
+              </label>
+              <Dropdown
+                value={formStatus}
+                options={COLUMNS.map((c) => ({ value: c.key, label: c.label }))}
+                onChange={setFormStatus}
+              />
+            </div>
+            <div>
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Assignee
               </label>
               <Dropdown
@@ -901,6 +937,7 @@ export default function DevDashboard() {
                         onEdit={openEdit}
                         expanded={expandedTasks.has(task.id)}
                         onToggleExpand={() => toggleExpand(task.id)}
+                        canChangeStatus={isAdmin || task.assignee?.id === meId}
                       />
                     ))
                   )}
@@ -942,6 +979,7 @@ export default function DevDashboard() {
                       onEdit={openEdit}
                       expanded={expandedTasks.has(task.id)}
                       onToggleExpand={() => toggleExpand(task.id)}
+                      canChangeStatus={isAdmin || task.assignee?.id === meId}
                     />
                   ))}
                 </div>
@@ -1069,134 +1107,166 @@ export default function DevDashboard() {
                 </div>
               )}
 
-              {/* ── Edit fields ── */}
-              <div className="border-t border-[var(--border)] pt-5">
-                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-4">Edit Task</span>
-                <form onSubmit={handleSaveEdit} className="space-y-4">
-                  <div>
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Title</label>
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      required
-                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Description</label>
-                    <textarea
-                      value={editDesc}
-                      onChange={(e) => setEditDesc(e.target.value)}
-                      rows={2}
-                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30 resize-none"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+              {/* ── Edit fields (ADMIN only — the strict API rejects DEV edits) ── */}
+              {isAdmin ? (
+                <div className="border-t border-[var(--border)] pt-5">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-4">Edit Task</span>
+                  <form onSubmit={handleSaveEdit} className="space-y-4">
                     <div>
-                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Status</label>
-                      <Dropdown value={editStatus} options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))} onChange={setEditStatus} />
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Priority</label>
-                      <Dropdown value={editPriority} options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))} onChange={setEditPriority} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Assignee</label>
-                      <Dropdown
-                        value={editAssignee}
-                        options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name, avatar: m.photoUrl ?? null })) || [])]}
-                        onChange={setEditAssignee}
-                        placeholder="Unassigned"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Deadline</label>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Title</label>
                       <input
-                        type="date"
-                        value={editDeadline}
-                        onChange={(e) => setEditDeadline(e.target.value)}
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        required
                         className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
                       />
                     </div>
-                  </div>
-                  <div>
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Parent Task</label>
-                    <Dropdown
-                      value={editParentId}
-                      options={[{ value: "", label: "None (top-level)" }, ...tasks.filter((t) => t.id !== editingTask.id).map((t) => ({ value: t.id, label: t.title }))]}
-                      onChange={setEditParentId}
-                      placeholder="None (top-level)"
-                    />
-                  </div>
-                  <div>
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Tags</label>
-                    <div className="flex flex-wrap gap-2">
-                      {allTags.map((tag) => {
-                        const isSelected = editTags.includes(tag.id);
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            onClick={() => toggleEditTag(tag.id)}
-                            className="px-3 py-1 rounded-full text-xs font-semibold transition-all border"
-                            style={{
-                              backgroundColor: isSelected ? tag.color + "30" : "transparent",
-                              borderColor: isSelected ? tag.color : "var(--border)",
-                              color: isSelected ? tag.color : "var(--text-secondary)",
-                            }}
-                          >
-                            {tag.name}
-                          </button>
-                        );
-                      })}
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Description</label>
+                      <textarea
+                        value={editDesc}
+                        onChange={(e) => setEditDesc(e.target.value)}
+                        rows={2}
+                        className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30 resize-none"
+                      />
                     </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-
-            {/* ── Sticky footer ── */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)] shrink-0" style={{ background: "var(--bg-deep)" }}>
-              <button
-                onClick={(e) => { e.preventDefault(); handleSaveEdit(e as unknown as React.FormEvent); }}
-                disabled={saving || !editTitle.trim()}
-                className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-              {!confirmDelete ? (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="px-4 py-2 rounded-full text-xs font-semibold text-coral bg-coral/10 hover:bg-coral/20 transition-colors"
-                >
-                  Delete Task
-                </button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Status</label>
+                        <Dropdown value={editStatus} options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))} onChange={setEditStatus} />
+                      </div>
+                      <div>
+                        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Priority</label>
+                        <Dropdown value={editPriority} options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))} onChange={setEditPriority} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Assignee</label>
+                        <Dropdown
+                          value={editAssignee}
+                          options={[{ value: "", label: "Unassigned" }, ...(selectedProject?.members.map((m) => ({ value: m.id, label: m.name, avatar: m.photoUrl ?? null })) || [])]}
+                          onChange={setEditAssignee}
+                          placeholder="Unassigned"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Deadline</label>
+                        <input
+                          type="date"
+                          value={editDeadline}
+                          onChange={(e) => setEditDeadline(e.target.value)}
+                          className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Parent Task</label>
+                      <Dropdown
+                        value={editParentId}
+                        options={[{ value: "", label: "None (top-level)" }, ...tasks.filter((t) => t.id !== editingTask.id).map((t) => ({ value: t.id, label: t.title }))]}
+                        onChange={setEditParentId}
+                        placeholder="None (top-level)"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Tags</label>
+                      <div className="flex flex-wrap gap-2">
+                        {allTags.map((tag) => {
+                          const isSelected = editTags.includes(tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              type="button"
+                              onClick={() => toggleEditTag(tag.id)}
+                              className="px-3 py-1 rounded-full text-xs font-semibold transition-all border"
+                              style={{
+                                backgroundColor: isSelected ? tag.color + "30" : "transparent",
+                                borderColor: isSelected ? tag.color : "var(--border)",
+                                color: isSelected ? tag.color : "var(--text-secondary)",
+                              }}
+                            >
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </form>
+                </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-tertiary">
-                    {editingTask.subtasks.length > 0
-                      ? `Delete with ${editingTask.subtasks.length} subtask${editingTask.subtasks.length !== 1 ? "s" : ""}?`
-                      : "Sure?"}
-                  </span>
-                  <button
-                    onClick={handleDeleteTask}
-                    disabled={deleting}
-                    className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/20 text-coral hover:bg-coral/30 disabled:opacity-40 transition-colors"
-                  >
-                    {deleting ? "..." : "Confirm"}
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-text-tertiary text-xs hover:text-text-secondary transition-colors"
-                  >
-                    Cancel
-                  </button>
+                /* ── DEV read-only detail. Status is editable only on their own assigned task. ── */
+                <div className="border-t border-[var(--border)] pt-5 space-y-4">
+                  {canStatus(editingTask) ? (
+                    <div>
+                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Status</label>
+                      <Dropdown
+                        value={editStatus}
+                        options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
+                        onChange={(val) => {
+                          handleStatusChange(editingTask.id, val);
+                          setEditingTask({ ...editingTask, status: val });
+                          setEditStatus(val);
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-tertiary">
+                      Status: <span className={COLUMN_ACCENT[editingTask.status] || "text-text-secondary"}>{editingTask.status.replace(/_/g, " ")}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* ── Sticky footer — only when there's an action the user is allowed to take ── */}
+            {(isAdmin || canDelete(editingTask)) && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)] shrink-0" style={{ background: "var(--bg-deep)" }}>
+              {isAdmin ? (
+                <button
+                  onClick={(e) => { e.preventDefault(); handleSaveEdit(e as unknown as React.FormEvent); }}
+                  disabled={saving || !editTitle.trim()}
+                  className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+                >
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+              ) : (
+                <span />
+              )}
+              {canDelete(editingTask) && (
+                !confirmDelete ? (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="px-4 py-2 rounded-full text-xs font-semibold text-coral bg-coral/10 hover:bg-coral/20 transition-colors"
+                  >
+                    Delete Task
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-text-tertiary">
+                      {editingTask.subtasks.length > 0
+                        ? `Delete with ${editingTask.subtasks.length} subtask${editingTask.subtasks.length !== 1 ? "s" : ""}?`
+                        : "Sure?"}
+                    </span>
+                    <button
+                      onClick={handleDeleteTask}
+                      disabled={deleting}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/20 text-coral hover:bg-coral/30 disabled:opacity-40 transition-colors"
+                    >
+                      {deleting ? "..." : "Confirm"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="text-text-tertiary text-xs hover:text-text-secondary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
+            )}
           </div>
         </div>,
         document.body,
@@ -1219,12 +1289,14 @@ function TaskCard({
   onEdit,
   expanded,
   onToggleExpand,
+  canChangeStatus,
 }: {
   task: Task;
   onStatusChange: (id: string, status: string) => void;
   onEdit: (task: Task) => void;
   expanded: boolean;
   onToggleExpand: () => void;
+  canChangeStatus: boolean;
 }) {
   return (
     <div className="card p-4 cursor-pointer hover:border-[var(--lime)]/20 transition-colors" onClick={() => onEdit(task)}>
@@ -1320,13 +1392,21 @@ function TaskCard({
         </div>
       )}
 
-      <Dropdown
-        value={task.status}
-        options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
-        onChange={(val) => onStatusChange(task.id, val)}
-        onClick={(e) => e.stopPropagation()}
-        size="sm"
-      />
+      {canChangeStatus ? (
+        <Dropdown
+          value={task.status}
+          options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
+          onChange={(val) => onStatusChange(task.id, val)}
+          onClick={(e) => e.stopPropagation()}
+          size="sm"
+        />
+      ) : (
+        <span
+          className={`inline-block font-mono text-[9px] uppercase tracking-[0.08em] ${COLUMN_ACCENT[task.status] || "text-text-tertiary"}`}
+        >
+          {task.status.replace(/_/g, " ")}
+        </span>
+      )}
     </div>
   );
 }

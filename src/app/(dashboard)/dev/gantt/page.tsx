@@ -330,8 +330,19 @@ export default function GanttPage() {
       const end = t.deadline
         ? new Date(t.deadline).getTime()
         : start;
+      // Skip tasks with invalid/missing dates so a single bad row can't break the timeline.
+      if (Number.isNaN(start) || Number.isNaN(end)) continue;
       if (start < minDate) minDate = start;
       if (end > maxDate) maxDate = end;
+    }
+
+    // If every task was skipped (all dates invalid), fall back to a default window.
+    if (!Number.isFinite(minDate) || !Number.isFinite(maxDate)) {
+      return {
+        timelineStart: startOfDay(new Date()),
+        timelineEnd: addDays(new Date(), 30),
+        totalDays: 30,
+      };
     }
 
     // Add padding of 3 days on each side
