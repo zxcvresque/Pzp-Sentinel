@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
   id: string;
@@ -65,55 +66,35 @@ export default function AdminDashboard() {
     currencyRef.current = currency;
   }, [currency]);
 
-  // Fetch dashboard data — called on mount and every 30s for live updates
-  const fetchDashboard = (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    Promise.all([
-      fetch("/api/transactions?limit=10").then((r) => {
-        if (!r.ok) throw new Error(`Transactions: ${r.status}`);
-        return r.json();
-      }),
-      fetch("/api/transactions/stats" + (currency !== "INR" ? `?currency=${currency}` : "")).then((r) => {
-        if (!r.ok) throw new Error(`Stats: ${r.status}`);
-        return r.json();
-      }),
+  // Fetch dashboard data — stable callback used for the initial mount load AND
+  // every background refresh. It never toggles loading/skeleton state and never
+  // clears existing data, so background refreshes update silently with no
+  // flicker; a failed refresh keeps the last good data. Reads the latest
+  // currency via currencyRef so the callback can stay stable.
+  const load = useCallback(async () => {
+    const curr = currencyRef.current;
+    const [txData, statsData, bmcData] = await Promise.all([
+      fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/transactions/stats" + (curr !== "INR" ? `?currency=${curr}` : "")).then((r) => (r.ok ? r.json() : null)),
       fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    ])
-      .then(([txData, statsData, bmcData]) => {
-        setTransactions(txData.transactions || []);
-        setStats(statsData);
-        if (bmcData) setBmcStats(bmcData);
-      })
-      .catch(() => {})
-      .finally(() => { if (!isBackground) setLoading(false); });
-  };
+    ]);
+    if (txData) setTransactions(txData.transactions || []);
+    if (statsData) {
+      setStats(statsData);
+      if (statsData.exchangeRate) setExchangeRate(statsData.exchangeRate);
+    }
+    if (bmcData) setBmcStats(bmcData);
+  }, []);
 
   useEffect(() => {
-    const initialFetch = setTimeout(() => fetchDashboard(), 0);
-    // Poll every 30s for live webhook updates, using ref to read latest currency
-    const interval = setInterval(() => {
-      const curr = currencyRef.current;
-      Promise.all([
-        fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)),
-        fetch("/api/transactions/stats" + (curr !== "INR" ? `?currency=${curr}` : "")).then((r) => (r.ok ? r.json() : null)),
-        fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      ])
-        .then(([txData, statsData, bmcData]) => {
-          if (txData) setTransactions(txData.transactions || []);
-          if (statsData) {
-            setStats(statsData);
-            if (statsData.exchangeRate) setExchangeRate(statsData.exchangeRate);
-          }
-          if (bmcData) setBmcStats(bmcData);
-        })
-        .catch(() => {});
-    }, 30000);
-    return () => {
-      clearTimeout(initialFetch);
-      clearInterval(interval);
-    };
+    // Initial mount load: show the skeleton until the first fetch resolves.
+    // Swallow errors (same as before) and drop the skeleton once settled.
+    load().catch(() => {}).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Background refresh on focus / visibility regain + every 30s while visible.
+  useAutoRefresh(load, 30000);
 
   async function toggleCurrency() {
     const next = currency === "INR" ? "USD" : "INR";
@@ -169,7 +150,7 @@ export default function AdminDashboard() {
         (data.errors?.length ? ` (${data.errors.length} errors)` : ""),
       );
       // Refresh dashboard data
-      fetchDashboard(true);
+      load();
     } catch {
       setBmcResult("Network error during sync");
     } finally {

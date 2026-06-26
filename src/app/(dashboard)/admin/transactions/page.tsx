@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
@@ -72,9 +73,20 @@ export default function TransactionsPage() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    const res = await fetch("/api/transactions?limit=100");
+    if (!res.ok) {
+      throw new Error(`Failed to load transactions (${res.status})`);
+    }
+    const data = await res.json();
+    setTransactions(data.transactions || []);
+  }, []);
+
   useEffect(() => {
     fetchTransactions();
   }, []);
+
+  useAutoRefresh(load, 30000);
 
   useEffect(() => {
     if (direction === "IN" && users.length === 0) {
@@ -103,16 +115,11 @@ export default function TransactionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/transactions?limit=100");
-      if (!res.ok) {
-        setError(`Failed to load transactions (${res.status})`);
-        setTransactions([]);
-        return;
-      }
-      const data = await res.json();
-      setTransactions(data.transactions || []);
+      await load();
     } catch (err) {
-      setError("Network error loading transactions");
+      const msg = err instanceof Error ? err.message : "";
+      setError(msg.startsWith("Failed to load") ? msg : "Network error loading transactions");
+      setTransactions([]);
       console.error(err);
     } finally {
       setLoading(false);

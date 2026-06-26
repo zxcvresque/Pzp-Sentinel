@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Tag {
   id: string;
@@ -96,13 +97,26 @@ export default function DevTasksPage() {
   const [filterPriority, setFilterPriority] = useState<string>("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/tasks/mine")
-      .then((r) => (r.ok ? r.json() : { tasks: [] }))
-      .then((data) => setTasks(data.tasks || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  // Stable, data-only refresh used for both the initial mount load and the
+  // background re-fetches. Never toggles loading/skeleton state and never clears
+  // existing data first (no flicker); failures are swallowed so a failed
+  // background refresh keeps the last good data with no error flash.
+  const load = useCallback(async () => {
+    try {
+      const data = await fetch("/api/tasks/mine").then((r) =>
+        r.ok ? r.json() : { tasks: [] }
+      );
+      setTasks(data.tasks || []);
+    } catch {
+      // keep last good data
+    }
   }, []);
+
+  useEffect(() => {
+    load().finally(() => setLoading(false));
+  }, [load]);
+
+  useAutoRefresh(load, 30000);
 
   async function handleStatusChange(taskId: string, newStatus: string) {
     const prev = tasks;

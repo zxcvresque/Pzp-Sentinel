@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface TopBarProps {
   name: string;
@@ -83,12 +84,11 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
     }
   }, []);
 
-  // Fetch on mount + poll every 30s
+  // Fetch on mount; the hook then refreshes on tab focus and every 15s.
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30_000);
-    return () => clearInterval(interval);
   }, [fetchNotifications]);
+  useAutoRefresh(fetchNotifications, 15_000);
 
   // Re-fetch when dropdown opens
   useEffect(() => {

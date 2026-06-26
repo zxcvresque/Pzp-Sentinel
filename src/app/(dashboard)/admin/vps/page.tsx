@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1848,15 +1849,13 @@ export default function AdminVpsPage() {
     }
   }, []);
 
-  /* Fetch servers + 30s polling */
+  /* Initial fetch on mount (skeleton shows until this resolves) */
   useEffect(() => {
-    const initial = setTimeout(() => fetchServers(), 0);
-    const interval = setInterval(() => fetchServers(), 30000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(interval);
-    };
+    fetchServers();
   }, [fetchServers]);
+
+  /* Background refresh: on focus/visibility + every 20s while visible (agent heartbeats) */
+  useAutoRefresh(fetchServers, 20000);
 
   async function handleDelete(id: string) {
     try {

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
   id: string;
@@ -34,16 +35,31 @@ export default function DonorDashboard() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
+  // Stable callback used for the initial mount load AND every background
+  // refresh. It never toggles loading/skeleton state and never clears existing
+  // data, so background refreshes update the overview silently with no flicker;
+  // a failed refresh keeps the last good data. The summary stats (total
+  // contributed / pending / approved) are derived from `transactions`, so
+  // refreshing this one endpoint refreshes the whole overview.
+  const load = useCallback(async () => {
+    const res = await fetch("/api/transactions?limit=50");
+    if (!res.ok) throw new Error("Failed to load transactions");
+    const data = await res.json();
+    setTransactions(data.transactions || []);
+  }, []);
+
   useEffect(() => {
-    fetch("/api/transactions?limit=50")
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to load transactions");
-        return r.json();
-      })
-      .then((data) => setTransactions(data.transactions || []))
+    // Initial mount load: show the skeleton until the first fetch resolves.
+    // Preserve the original initial-load error handling (empty the list), then
+    // drop the skeleton once settled.
+    load()
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Background refresh on focus / visibility regain + every 30s while visible.
+  useAutoRefresh(load, 30000);
 
   const approved = transactions.filter((t) => t.status === "APPROVED");
   const totalContributed = approved.reduce(

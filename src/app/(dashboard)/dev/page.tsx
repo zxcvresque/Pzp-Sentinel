@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Member {
   id: string;
@@ -156,6 +157,50 @@ export default function DevDashboard() {
       .finally(() => setTasksLoading(false));
   }, [selectedProjectId]);
 
+  // Keep the latest selected project in a ref so `load` can stay stable ([] deps)
+  // while still refetching the currently-selected project's tasks.
+  const selectedProjectIdRef = useRef(selectedProjectId);
+  selectedProjectIdRef.current = selectedProjectId;
+
+  // Stable, data-only refresh used for background re-fetches. Refreshes every
+  // endpoint the view is built from. Never toggles loading/skeleton state and
+  // never clears existing data first (no flicker); failures are swallowed so a
+  // failed background refresh keeps the last good data with no error flash.
+  const load = useCallback(async () => {
+    try {
+      const [projData, tagData] = await Promise.all([
+        fetch("/api/projects").then((r) => r.json()),
+        fetch("/api/tags").then((r) => r.json()),
+      ]);
+      const list = projData.projects || [];
+      setProjects(list);
+      setAllTags(tagData.tags || []);
+    } catch {
+      // keep last good data
+    }
+
+    const projectId = selectedProjectIdRef.current;
+    if (projectId) {
+      try {
+        const data = await fetch(`/api/projects/${projectId}/tasks`).then((r) =>
+          r.ok ? r.json() : { tasks: [] }
+        );
+        setTasks(data.tasks || []);
+      } catch {
+        // keep last good data
+      }
+    }
+
+    try {
+      const data = await fetch("/api/github/activity").then((r) =>
+        r.ok ? r.json() : { activity: [] }
+      );
+      setActivity(data.activity || []);
+    } catch {
+      // keep last good data
+    }
+  }, []);
+
   useEffect(() => {
     Promise.all([
       fetch("/api/projects").then((r) => r.json()),
@@ -183,6 +228,8 @@ export default function DevDashboard() {
       .then((data) => setActivity(data.activity || []))
       .catch(() => setActivity([]));
   }, []);
+
+  useAutoRefresh(load, 30000);
 
   async function handleStatusChange(taskId: string, newStatus: string) {
     const prev = tasks;
