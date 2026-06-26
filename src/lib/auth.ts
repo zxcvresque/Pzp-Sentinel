@@ -12,12 +12,19 @@ export const SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
 export interface JwtPayload {
   userId: string;
   roles: Role[];
+  exp?: number;
 }
 
-export async function signToken(payload: JwtPayload): Promise<string> {
-  return new SignJWT(payload as unknown as Record<string, unknown>)
+export async function signToken(
+  payload: JwtPayload,
+  // string ("24h") resolves relative to now; number is an absolute UNIX-seconds
+  // expiry — used to re-mint a token while preserving its original expiry.
+  expiration: string | number = "24h",
+): Promise<string> {
+  const { exp: _exp, ...claims } = payload;
+  return new SignJWT(claims as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("24h")
+    .setExpirationTime(expiration)
     .sign(JWT_SECRET);
 }
 

@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { getCurrentUser, signToken, verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { NotifType, DonateCadence } from "@/generated/prisma/enums";
+import type { Role } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
+
+function rolesEqual(a: Role[], b: Role[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedB = [...b].sort();
+  return [...a].sort().every((r, i) => r === sortedB[i]);
+}
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -14,7 +22,7 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     user: {
       id: user.id,
       name: user.name,
@@ -30,6 +38,29 @@ export async function GET() {
       createdAt: user.createdAt.toISOString(),
     },
   }, { headers: { "Cache-Control": "no-store" } });
+
+  // Keep the auth cookie's role snapshot in sync with the DB. Middleware authorizes
+  // /admin, /dev, /donor from the JWT roles (the Edge runtime can't query Prisma), so
+  // a role added or removed after login otherwise wouldn't take effect until the 24h
+  // token expired. The app fetches this endpoint on load, so re-mint the cookie here
+  // when the DB roles drift from the token — preserving the original expiry.
+  const token = (await cookies()).get("token")?.value;
+  const payload = token ? await verifyToken(token) : null;
+  if (payload?.exp && !rolesEqual(payload.roles, user.roles)) {
+    const remaining = payload.exp - Math.floor(Date.now() / 1000);
+    if (remaining > 0) {
+      const fresh = await signToken({ userId: user.id, roles: user.roles }, payload.exp);
+      res.cookies.set("token", fresh, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: remaining,
+        path: "/",
+      });
+    }
+  }
+
+  return res;
 }
 
 export async function PATCH(req: NextRequest) {
