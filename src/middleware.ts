@@ -4,8 +4,12 @@ import type { Role } from "@/generated/prisma/enums";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 
-// Public paths — no auth required
-const publicPaths = ["/", "/login", "/plan"];
+// Public paths — no auth required.
+// `/install.sh` and `/agent.sh` are rewritten to /api/vps/{install,agent} in
+// next.config, but middleware runs BEFORE rewrites and sees the raw path — so
+// they must be allow-listed here or unauthenticated `curl .../install.sh` gets
+// redirected to /login (and piped into bash, breaks).
+const publicPaths = ["/", "/login", "/plan", "/install.sh", "/agent.sh"];
 
 // Public API routes — no JWT needed
 const publicApiPaths = ["/api/auth", "/api/bot", "/api/exchange-rate", "/api/bmc/webhook", "/api/vps/heartbeat", "/api/vps/install", "/api/vps/agent"];
