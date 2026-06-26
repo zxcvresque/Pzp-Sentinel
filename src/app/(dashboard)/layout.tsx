@@ -36,6 +36,12 @@ function applyThemeColor(hex: string) {
   );
 }
 
+function highestRoleRoute(roles: Role[]): string {
+  if (roles.includes("ADMIN")) return "/admin";
+  if (roles.includes("DEV")) return "/dev";
+  return "/donor";
+}
+
 export default function DashboardLayout({
   children,
 }: {
@@ -48,20 +54,41 @@ export default function DashboardLayout({
   const [tourActive, setTourActive] = useState(false);
   const [tourToast, setTourToast] = useState(false);
 
-  // Fetch user data once on mount only
+  // Load the user, then keep it fresh by re-fetching on tab focus and on a short
+  // interval. Each /api/auth/me call re-mints the auth cookie server-side with the
+  // current DB roles, so a role granted OR revoked by an admin takes effect within
+  // ~2 min (or instantly on tab focus) without a manual re-login.
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => {
+    let cancelled = false;
+
+    async function loadUser() {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
         if (!res.ok) throw new Error();
-        return res.json();
-      })
-      .then((data) => {
+        const data = await res.json();
+        if (cancelled) return;
         setUser(data.user);
         if (data.user.themeColor) {
           applyThemeColor(data.user.themeColor);
         }
-      })
-      .catch(() => router.push("/login"));
+      } catch {
+        if (!cancelled) router.push("/login");
+      }
+    }
+
+    loadUser();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadUser();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const interval = setInterval(loadUser, 2 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(interval);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -85,20 +112,30 @@ export default function DashboardLayout({
     }
   }
 
-  // Derive activeRole from pathname whenever it changes — no re-fetch
+  // Derive activeRole from pathname whenever it (or the user's roles) changes.
+  // If the user is viewing a role-gated section they no longer have access to
+  // (e.g. an admin just revoked the role), bounce them to an allowed dashboard.
   useEffect(() => {
     if (!user) return;
-    const roleFromPath = pathname.startsWith("/admin")
+    const roleFromPath: Role = pathname.startsWith("/admin")
       ? "ADMIN"
       : pathname.startsWith("/dev")
         ? "DEV"
         : "DONOR";
-    if (user.roles.includes(roleFromPath as Role)) {
-      setActiveRole(roleFromPath as Role);
+    const isGated =
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/dev") ||
+      pathname.startsWith("/donor");
+    if (isGated && !user.roles.includes(roleFromPath)) {
+      router.replace(highestRoleRoute(user.roles));
+      return;
+    }
+    if (user.roles.includes(roleFromPath)) {
+      setActiveRole(roleFromPath);
     } else {
       setActiveRole(user.roles[0]);
     }
-  }, [pathname, user]);
+  }, [pathname, user, router]);
 
   function handleRoleSwitch(role: Role) {
     setActiveRole(role);

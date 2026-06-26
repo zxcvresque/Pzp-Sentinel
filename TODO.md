@@ -23,6 +23,7 @@
 - [x] Keep shared/dev VPS views free of passwords and private-key download links.
 - [x] Fix: DEV role users couldn't add a Project in prod (POST /api/projects was ADMIN-only; now ADMIN||DEV, matching GET).
 - [x] Fix: roles added after login (e.g. DONOR on a DEV) weren't honored — middleware reads JWT-snapshot roles; /api/auth/me now re-mints the cookie with fresh DB roles (preserving expiry).
+- [x] Harden role propagation: dashboard re-fetches /api/auth/me on focus + every 2 min (re-mints cookie), and redirects users out of a section the moment their role is revoked — so demotions take effect without re-login.
 - [ ] Update the existing production `Pzp Netcup` row back to its IPv4 address.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.
