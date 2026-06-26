@@ -21,6 +21,7 @@ interface Server {
   sshKeyFileUrl?: string | null;
   sshKeyFileName?: string | null;
   accessPublicKeys?: string | null;
+  token?: string;
   tags: string[];
   notes: string;
   approved: boolean;
@@ -383,6 +384,8 @@ function ApprovedServerCard({
   const [renewing, setRenewing] = useState(false);
   const [refunding, setRefunding] = useState(false);
   const [confirmRefund, setConfirmRefund] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
+  const [copiedInstall, setCopiedInstall] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
   const sub = server.subscription ?? null;
@@ -741,6 +744,46 @@ function ApprovedServerCard({
           )}
         </div>
       </div>
+
+      {server.token && (
+        <div className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+              Agent install
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowInstall((v) => !v)}
+              className="font-mono text-[10px] uppercase px-2 py-0.5 rounded transition-colors"
+              style={{ color: "var(--text-secondary)", background: "var(--bg-card)" }}
+            >
+              {showInstall ? "Hide" : "Show command"}
+            </button>
+          </div>
+          {showInstall && (
+            <>
+              <code className="mt-2 block min-w-0 break-all rounded bg-[var(--bg-card)] px-2 py-1.5 font-mono text-[11px] text-[var(--lime)] select-all">
+                {installCommand(server.token)}
+              </code>
+              <p className="mt-1 font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+                Run on the VPS as root. Re-running with the current token fixes a 403 / offline agent (e.g. after re-adding the server).
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(installCommand(server.token!));
+                  setCopiedInstall(true);
+                  setTimeout(() => setCopiedInstall(false), 2000);
+                }}
+                className="mt-2 font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
+                style={{ color: copiedInstall ? "var(--mint)" : "var(--text-secondary)", background: "var(--bg-card)" }}
+              >
+                {copiedInstall ? "Copied" : "Copy command"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {publicKeys.length > 0 && (
         <div

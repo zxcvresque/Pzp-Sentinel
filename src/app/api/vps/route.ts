@@ -135,6 +135,7 @@ export async function GET() {
           password: decryptSecret(s.password),
           sshKeyFileUrl: s.sshKeyFileUrl ? decryptSecret(s.sshKeyFileUrl) : null,
           accessPublicKeys: s.accessPublicKeys,
+          token: s.token, // admin-only: lets the card re-show the agent install command
           planLink: s.planLink ?? null,
           subscription: s.subscription
             ? {
