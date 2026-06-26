@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!hasRole(user.roles, "ADMIN")) {
+  if (!hasRole(user.roles, "ADMIN") && !hasRole(user.roles, "DEV")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
