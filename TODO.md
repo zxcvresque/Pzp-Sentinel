@@ -25,6 +25,10 @@
 - [x] Fix: roles added after login (e.g. DONOR on a DEV) weren't honored — middleware reads JWT-snapshot roles; /api/auth/me now re-mints the cookie with fresh DB roles (preserving expiry).
 - [x] Harden role propagation: dashboard re-fetches /api/auth/me on focus + every 2 min (re-mints cookie), and redirects users out of a section the moment their role is revoked — so demotions take effect without re-login.
 - [x] Live data without reload: useAutoRefresh hook (focus + interval, no skeleton flash); applied to dev board/tasks, admin transactions, admin/dev VPS (20s), admin/donor balances, and notifications (15s).
+- [x] Fix cross-account login (multi Telegram accounts on one device): Mini App initData now authoritative over stale cookie; /api/auth/me redirect only in regular browsers.
+- [x] Fix admin Audit Log row overlap on mobile (responsive stack).
+- [x] upgrade.sh: silence the `curl: (23)` broken-pipe noise from the install-endpoint smoke test (keep the check).
+- [ ] Custom donor reminders: every N days/weeks/months + time-of-day (all cadences) + per-donor timezone (default IST). Schema + /api/auth/me + DonateReminderCard + bot timing.
 - [ ] Update the existing production `Pzp Netcup` row back to its IPv4 address.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.

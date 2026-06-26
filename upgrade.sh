@@ -42,6 +42,6 @@ pm2 save
 
 step "Verifying agent install endpoint…"
 # Should print a bash shebang, not HTML — confirms the new build + middleware are live.
-curl -fsSL https://sentinel.piratezparty.com/install.sh | head -1 || true
+curl -fsS https://sentinel.piratezparty.com/install.sh 2>/dev/null | sed -n '1p' || true
 
 ok "Upgrade complete."
