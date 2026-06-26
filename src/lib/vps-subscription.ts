@@ -8,7 +8,9 @@ import { Prisma } from "@/generated/prisma/client";
  * A `price > 0` is what triggers a Services-tab row + an immediate balance deduction.
  */
 export type VpsDuration = {
-  mode?: "LIFETIME" | "SUBSCRIPTION" | null;
+  // LIFETIME = pay once, never expires. ONE_TIME = pay once, optional expiry, no
+  // recurrence. SUBSCRIPTION = recurring rate + cycle + expiry (+ optional auto-renew).
+  mode?: "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION" | null;
   price?: number | string | null;
   currency?: "INR" | "USD" | null;
   frequency?: "WEEKLY" | "MONTHLY" | "YEARLY" | null;
@@ -76,21 +78,21 @@ export async function syncVpsSubscription(
     return;
   }
 
-  const isSubscription = duration!.mode === "SUBSCRIPTION";
-  const frequency = (isSubscription ? duration!.frequency || "MONTHLY" : "ONE_TIME") as
-    | "WEEKLY"
-    | "MONTHLY"
-    | "YEARLY"
-    | "ONE_TIME";
+  const mode = duration!.mode;
+  const isSubscription = mode === "SUBSCRIPTION";
+  const frequency = (
+    mode === "LIFETIME" ? "LIFETIME" : mode === "ONE_TIME" ? "ONE_TIME" : duration!.frequency || "MONTHLY"
+  ) as "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME" | "LIFETIME";
   const currency = (duration!.currency || "INR") as "INR" | "USD";
   const autoRenew = isSubscription && RECURRING.has(frequency) ? !!duration!.autoRenew : false;
   const planUrl = (server.planLink || "").trim() || null;
 
   let expiryDate: Date | null = null;
   if (isSubscription) {
-    expiryDate = duration!.expiryDate
-      ? new Date(duration!.expiryDate)
-      : nextCycleDate(new Date(), frequency);
+    expiryDate = duration!.expiryDate ? new Date(duration!.expiryDate) : nextCycleDate(new Date(), frequency);
+  } else if (mode === "ONE_TIME" && duration!.expiryDate) {
+    // One-time purchases may carry a term/expiry but never auto-charge.
+    expiryDate = new Date(duration!.expiryDate);
   }
 
   const sharedData = {

@@ -49,8 +49,8 @@ interface Server {
 }
 
 interface Subscription {
-  mode: "LIFETIME" | "SUBSCRIPTION";
-  frequency: "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME";
+  mode: "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION";
+  frequency: "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME" | "LIFETIME";
   price: number | null;
   currency: "INR" | "USD" | null;
   expiryDate: string | null;
@@ -198,7 +198,7 @@ function formatMoney(amount: number | null | undefined, currency: string | null 
 
 function formatRate(sub: Subscription): string {
   const money = formatMoney(sub.price, sub.currency);
-  if (sub.mode === "LIFETIME" || sub.frequency === "ONE_TIME") return money;
+  if (sub.mode !== "SUBSCRIPTION") return money;
   return `${money} / ${FREQ_SHORT[sub.frequency] ?? sub.frequency.toLowerCase()}`;
 }
 
@@ -211,6 +211,19 @@ function toDateInput(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toISOString().slice(0, 10);
+}
+
+/** Public origin agents report to (falls back to prod when viewed on localhost). */
+function sentinelOrigin(): string {
+  const fallback = "https://sentinel.piratezparty.com";
+  if (typeof window === "undefined") return fallback;
+  const o = window.location.origin;
+  return o && !/localhost|127\.0\.0\.1/.test(o) ? o : fallback;
+}
+
+/** Full copy-paste install one-liner for a server's agent token. */
+function installCommand(token: string): string {
+  return `curl -fsSL ${sentinelOrigin()}/install.sh | sudo bash -s -- --token ${token}`;
 }
 
 /** Days until expiry (negative = already expired). */
@@ -353,11 +366,13 @@ function ApprovedServerCard({
   onDeleteRequest,
   onEditRequest,
   onRenew,
+  onRefund,
 }: {
   server: Server;
   onDeleteRequest: (id: string, name: string) => void;
   onEditRequest: (server: Server) => void;
   onRenew: (id: string) => Promise<void>;
+  onRefund: (id: string) => Promise<void>;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
@@ -366,6 +381,8 @@ function ApprovedServerCard({
   const [copiedKeysCommand, setCopiedKeysCommand] = useState(false);
   const [showAverages, setShowAverages] = useState(false);
   const [renewing, setRenewing] = useState(false);
+  const [refunding, setRefunding] = useState(false);
+  const [confirmRefund, setConfirmRefund] = useState(false);
   const isOnline = server.status === "online";
   const m = server.metrics;
   const sub = server.subscription ?? null;
@@ -539,6 +556,10 @@ function ApprovedServerCard({
                   <Pill color="var(--violet)" bg="rgba(167,139,250,0.12)" border="1px solid rgba(167,139,250,0.30)">
                     Lifetime
                   </Pill>
+                ) : sub.mode === "ONE_TIME" ? (
+                  <Pill color="var(--blue)" bg="rgba(96,165,250,0.12)" border="1px solid rgba(96,165,250,0.30)">
+                    One-time
+                  </Pill>
                 ) : (
                   <Pill color="var(--lime)" bg="rgba(111,209,215,0.10)">
                     {sub.frequency}
@@ -566,25 +587,52 @@ function ApprovedServerCard({
                 <span className="font-mono text-sm text-[var(--text-primary)]">
                   {formatRate(sub)}
                 </span>
-                {sub.mode === "SUBSCRIPTION" && sub.status !== "CANCELLED" && (
-                  <button
-                    type="button"
-                    disabled={renewing}
-                    onClick={async () => {
-                      setRenewing(true);
-                      try {
-                        await onRenew(server.id);
-                      } finally {
-                        setRenewing(false);
-                      }
-                    }}
-                    className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
-                    style={{ color: "var(--lime)", background: "rgba(111,209,215,0.10)" }}
-                    title="Log one more billing cycle now (deducts the rate + extends expiry)"
-                  >
-                    {renewing ? "Renewing…" : "Renew now"}
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {sub.mode === "SUBSCRIPTION" && sub.status !== "CANCELLED" && (
+                    <button
+                      type="button"
+                      disabled={renewing}
+                      onClick={async () => {
+                        setRenewing(true);
+                        try {
+                          await onRenew(server.id);
+                        } finally {
+                          setRenewing(false);
+                        }
+                      }}
+                      className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
+                      style={{ color: "var(--lime)", background: "rgba(111,209,215,0.10)" }}
+                      title="Log one more billing cycle now (deducts the rate + extends expiry)"
+                    >
+                      {renewing ? "Renewing…" : "Renew now"}
+                    </button>
+                  )}
+                  {sub.status !== "CANCELLED" && (sub.price ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      disabled={refunding}
+                      onClick={async () => {
+                        if (!confirmRefund) {
+                          setConfirmRefund(true);
+                          setTimeout(() => setConfirmRefund(false), 3000);
+                          return;
+                        }
+                        setConfirmRefund(false);
+                        setRefunding(true);
+                        try {
+                          await onRefund(server.id);
+                        } finally {
+                          setRefunding(false);
+                        }
+                      }}
+                      className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
+                      style={{ color: "var(--coral)", background: "rgba(248,113,113,0.08)" }}
+                      title="Credit the rate back to the balance and cancel this plan"
+                    >
+                      {refunding ? "Refunding…" : confirmRefund ? "Confirm refund?" : "Refund"}
+                    </button>
+                  )}
+                </div>
               </div>
             </>
           ) : (
@@ -1046,11 +1094,13 @@ function ServerForm({
   initial,
   onCreated,
   onClose,
+  existingTags = [],
 }: {
   mode: "add" | "edit";
   initial?: Server | null;
   onCreated: (token?: string) => void;
   onClose?: () => void;
+  existingTags?: string[];
 }) {
   const isEdit = mode === "edit";
   const initSub = initial?.subscription ?? null;
@@ -1069,7 +1119,7 @@ function ServerForm({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   // Plan link + duration/billing (admin-only).
   const [planLink, setPlanLink] = useState(initial?.planLink ?? "");
-  const [durationMode, setDurationMode] = useState<"NONE" | "LIFETIME" | "SUBSCRIPTION">(
+  const [durationMode, setDurationMode] = useState<"NONE" | "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION">(
     initSub ? initSub.mode : "NONE",
   );
   const [price, setPrice] = useState(initSub?.price != null ? String(initSub.price) : "");
@@ -1155,6 +1205,8 @@ function ServerForm({
           ? null
           : durationMode === "LIFETIME"
           ? { mode: "LIFETIME", price: priceNum, currency }
+          : durationMode === "ONE_TIME"
+          ? { mode: "ONE_TIME", price: priceNum, currency, expiryDate: expiryDate || null }
           : {
               mode: "SUBSCRIPTION",
               price: priceNum,
@@ -1375,6 +1427,32 @@ function ServerForm({
                     ))}
                   </span>
                 )}
+                {existingTags.filter((t) => !tags.includes(t)).length > 0 && (
+                  <span className="mt-1.5 block">
+                    <span className="block text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] mb-1">
+                      Existing — tap to add
+                    </span>
+                    <span className="flex flex-wrap gap-1.5">
+                      {existingTags
+                        .filter((t) => !tags.includes(t))
+                        .map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() =>
+                              setTagsInput((prev) => {
+                                const cur = parseTagsInput(prev);
+                                return cur.includes(tag) ? prev : [...cur, tag].join(", ");
+                              })
+                            }
+                            className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em] border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border-active)] transition-colors"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                    </span>
+                  </span>
+                )}
               </label>
               <label className="xl:col-span-12">
                 <span className={labelClass}>Dev SSH public keys</span>
@@ -1438,19 +1516,22 @@ function ServerForm({
                 <span className={labelClass}>Duration</span>
                 <select
                   value={durationMode}
-                  onChange={(e) => setDurationMode(e.target.value as "NONE" | "LIFETIME" | "SUBSCRIPTION")}
+                  onChange={(e) =>
+                    setDurationMode(e.target.value as "NONE" | "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION")
+                  }
                   className={inputClass}
                 >
                   <option value="NONE">No billing</option>
-                  <option value="LIFETIME">Lifetime (one-time)</option>
-                  <option value="SUBSCRIPTION">Subscription</option>
+                  <option value="LIFETIME">Lifetime (never expires)</option>
+                  <option value="ONE_TIME">One-time (optional expiry)</option>
+                  <option value="SUBSCRIPTION">Subscription (recurring)</option>
                 </select>
               </label>
             </div>
             {durationMode !== "NONE" && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
                 <label className="xl:col-span-3">
-                  <span className={labelClass}>{durationMode === "LIFETIME" ? "Price" : "Rate"}</span>
+                  <span className={labelClass}>{durationMode === "SUBSCRIPTION" ? "Rate" : "Price"}</span>
                   <input
                     type="number"
                     min={0}
@@ -1507,6 +1588,20 @@ function ServerForm({
                       </span>
                     </label>
                   </>
+                )}
+                {durationMode === "ONE_TIME" && (
+                  <label className="xl:col-span-6">
+                    <span className={labelClass}>Expiry (optional)</span>
+                    <input
+                      type="date"
+                      value={expiryDate}
+                      onChange={(e) => setExpiryDate(e.target.value)}
+                      className={inputClass}
+                    />
+                    <span className="mt-1 block text-[10px] text-[var(--text-tertiary)]">
+                      One-time charge now; never auto-renews. Set an expiry only to track when it lapses.
+                    </span>
+                  </label>
                 )}
               </div>
             )}
@@ -1616,12 +1711,14 @@ function TokenDisplay({
   token: string;
   onDismiss: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const command = installCommand(token);
 
-  function handleCopy() {
-    navigator.clipboard.writeText(token).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  function copy(text: string, mark: (v: boolean) => void) {
+    navigator.clipboard.writeText(text).then(() => {
+      mark(true);
+      setTimeout(() => mark(false), 2000);
     });
   }
 
@@ -1632,7 +1729,7 @@ function TokenDisplay({
     >
       <div className="flex items-center justify-between">
         <span className="font-mono text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          Agent Token for {name} (copy now — shown once)
+          Install command for {name} (copy now — token shown once)
         </span>
         <button
           onClick={onDismiss}
@@ -1648,19 +1745,40 @@ function TokenDisplay({
           </svg>
         </button>
       </div>
+      <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+        Run this on the target VPS (as root). The agent installs and starts reporting within ~30s.
+      </p>
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <code className="flex-1 font-mono text-xs text-[var(--lime)] bg-[var(--bg-deep)] px-3 py-2 rounded-lg break-all select-all">
+          {command}
+        </code>
+        <button
+          onClick={() => copy(command, setCopiedCmd)}
+          className="font-mono text-[10px] uppercase px-3 py-2 rounded-lg shrink-0 transition-colors"
+          style={{
+            color: copiedCmd ? "var(--mint)" : "var(--bg-deep)",
+            background: copiedCmd ? "var(--bg-deep)" : "var(--lime)",
+          }}
+        >
+          {copiedCmd ? "Copied" : "Copy command"}
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)] shrink-0">
+          Token
+        </span>
+        <code className="flex-1 min-w-0 font-mono text-[11px] text-[var(--text-secondary)] break-all select-all">
           {token}
         </code>
         <button
-          onClick={handleCopy}
-          className="font-mono text-[10px] uppercase px-3 py-2 rounded-lg shrink-0 transition-colors"
+          onClick={() => copy(token, setCopiedToken)}
+          className="font-mono text-[10px] uppercase px-2 py-1 rounded shrink-0 transition-colors"
           style={{
-            color: copied ? "var(--mint)" : "var(--text-secondary)",
+            color: copiedToken ? "var(--mint)" : "var(--text-secondary)",
             background: "var(--bg-deep)",
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copiedToken ? "Copied" : "Copy"}
         </button>
       </div>
     </div>
@@ -1801,6 +1919,22 @@ export default function AdminVpsPage() {
     }
   }
 
+  async function handleRefund(id: string) {
+    try {
+      const res = await fetch("/api/vps", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "refund" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Refund failed");
+      }
+    } finally {
+      await fetchServers();
+    }
+  }
+
   function requestEdit(server: Server) {
     setEditingServer(server);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1835,6 +1969,7 @@ export default function AdminVpsPage() {
 
   const approvedServers = servers.filter((s) => s.approved);
   const pendingServers = servers.filter((s) => !s.approved);
+  const existingTags = Array.from(new Set(servers.flatMap((s) => s.tags ?? []))).sort();
   const onlineCount = approvedServers.filter((s) => s.status === "online").length;
   const offlineCount = approvedServers.filter((s) => s.status === "offline").length;
 
@@ -1898,7 +2033,7 @@ export default function AdminVpsPage() {
 
       {/* Add Server form (full-width below header) */}
       <div className="mb-6">
-        <ServerForm mode="add" onCreated={handleCreated} />
+        <ServerForm mode="add" onCreated={handleCreated} existingTags={existingTags} />
       </div>
 
       {/* Edit Server form (full-width, shown when editing) */}
@@ -1910,6 +2045,7 @@ export default function AdminVpsPage() {
             initial={editingServer}
             onCreated={handleCreated}
             onClose={() => setEditingServer(null)}
+            existingTags={existingTags}
           />
         </div>
       )}
@@ -1971,6 +2107,7 @@ export default function AdminVpsPage() {
                 onDeleteRequest={requestDelete}
                 onEditRequest={requestEdit}
                 onRenew={handleRenew}
+                onRefund={handleRefund}
               />
             ))}
           </div>

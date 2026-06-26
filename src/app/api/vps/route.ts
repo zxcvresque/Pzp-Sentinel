@@ -138,7 +138,12 @@ export async function GET() {
           planLink: s.planLink ?? null,
           subscription: s.subscription
             ? {
-                mode: s.subscription.frequency === "ONE_TIME" ? "LIFETIME" : "SUBSCRIPTION",
+                mode:
+                  s.subscription.frequency === "LIFETIME"
+                    ? "LIFETIME"
+                    : s.subscription.frequency === "ONE_TIME"
+                    ? "ONE_TIME"
+                    : "SUBSCRIPTION",
                 frequency: s.subscription.frequency,
                 price: s.subscription.price != null ? Number(s.subscription.price) : null,
                 currency: s.subscription.currency,
@@ -430,6 +435,35 @@ export async function PATCH(req: NextRequest) {
         expiryDate: nextCycleDate(base, sub.frequency),
         status: "ACTIVE",
       },
+    });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "refund") {
+    // Credit the rate back to the balance (APPROVED IN) and cancel the plan.
+    const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
+    if (!sub || sub.price == null) {
+      return NextResponse.json({ error: "No charge to refund" }, { status: 400 });
+    }
+    const price = Number(sub.price);
+    if (!(price > 0)) return NextResponse.json({ error: "Subscription has no rate" }, { status: 400 });
+
+    await prisma.transaction.create({
+      data: {
+        amount: new Prisma.Decimal(price),
+        currency: sub.currency ?? "INR",
+        method: "OTHER",
+        direction: "IN",
+        type: "OTHER",
+        description: `VPS plan refund: ${sub.name}`,
+        status: "APPROVED",
+        date: new Date(),
+        createdById: user.id,
+      },
+    });
+    await prisma.service.update({
+      where: { id: sub.id },
+      data: { status: "CANCELLED", autoRenew: false },
     });
     return NextResponse.json({ ok: true });
   }

@@ -40,6 +40,7 @@ function frequencyLabel(f: string | null) {
   if (f === "YEARLY") return "/yr";
   if (f === "WEEKLY") return "/wk";
   if (f === "ONE_TIME") return " one-time";
+  if (f === "LIFETIME") return " lifetime";
   return "/mo";
 }
 
@@ -230,7 +231,7 @@ export default function ServicesPage() {
       const p = parseFloat(s.price!);
       if (s.frequency === "YEARLY") return sum + p / 12;
       if (s.frequency === "WEEKLY") return sum + (p * 52) / 12;
-      if (s.frequency === "ONE_TIME") return sum;
+      if (s.frequency === "ONE_TIME" || s.frequency === "LIFETIME") return sum;
       return sum + p;
     }, 0);
 

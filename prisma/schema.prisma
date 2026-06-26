@@ -66,6 +66,7 @@ enum Frequency {
   MONTHLY
   YEARLY
   ONE_TIME
+  LIFETIME
 }
 
 enum TaskStatus {
