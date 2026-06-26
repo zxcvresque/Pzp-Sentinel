@@ -97,10 +97,8 @@ export default function DevTasksPage() {
   const [filterPriority, setFilterPriority] = useState<string>("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
-  // The strict task API lets a DEV change only `status` (not title/priority/etc.),
-  // so the inline editor is admin-only. Status changes stay open to everyone here
-  // since /api/tasks/mine only ever returns the user's own assigned tasks.
-  const [isAdmin, setIsAdmin] = useState(false);
+  // /api/tasks/mine only ever returns the user's own assigned tasks, and a dev may
+  // fully edit their own tasks — so inline editing is open to everyone here.
 
   // Stable, data-only refresh used for both the initial mount load and the
   // background re-fetches. Never toggles loading/skeleton state and never clears
@@ -120,16 +118,6 @@ export default function DevTasksPage() {
   useEffect(() => {
     load().finally(() => setLoading(false));
   }, [load]);
-
-  // Fetch the current user once on mount to decide whether to offer inline editing.
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.user) setIsAdmin(data.user.roles.includes("ADMIN"));
-      })
-      .catch(() => {});
-  }, []);
 
   useAutoRefresh(load, 30000);
 
@@ -390,7 +378,7 @@ export default function DevTasksPage() {
                   <TaskRow
                     key={task.id}
                     task={task}
-                    canEdit={isAdmin}
+                    canEdit={true}
                     onStatusChange={handleStatusChange}
                     onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}
@@ -425,7 +413,7 @@ export default function DevTasksPage() {
                   <TaskRow
                     key={task.id}
                     task={task}
-                    canEdit={isAdmin}
+                    canEdit={true}
                     onStatusChange={handleStatusChange}
                     onTaskUpdate={handleTaskUpdate}
                     expanded={expandedTasks.has(task.id)}

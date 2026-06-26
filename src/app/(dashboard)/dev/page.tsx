@@ -252,7 +252,8 @@ export default function DevDashboard() {
   // Per-task permission gates mirroring the strict task API:
   //  - status: ADMIN, or the task's assignee (DEV may PATCH status on own tasks)
   //  - delete: ADMIN, or the task's creator
-  const canStatus = (t: Task) => isAdmin || t.assignee?.id === meId;
+  // A dev fully manages their own tasks (assigned to or created by them); admins manage all.
+  const canManage = (t: Task) => isAdmin || t.assignee?.id === meId || t.createdById === meId;
   const canDelete = (t: Task) => isAdmin || t.createdById === meId;
 
   async function handleStatusChange(taskId: string, newStatus: string) {
@@ -937,7 +938,7 @@ export default function DevDashboard() {
                         onEdit={openEdit}
                         expanded={expandedTasks.has(task.id)}
                         onToggleExpand={() => toggleExpand(task.id)}
-                        canChangeStatus={isAdmin || task.assignee?.id === meId}
+                        canChangeStatus={canManage(task)}
                       />
                     ))
                   )}
@@ -979,7 +980,7 @@ export default function DevDashboard() {
                       onEdit={openEdit}
                       expanded={expandedTasks.has(task.id)}
                       onToggleExpand={() => toggleExpand(task.id)}
-                      canChangeStatus={isAdmin || task.assignee?.id === meId}
+                      canChangeStatus={canManage(task)}
                     />
                   ))}
                 </div>
@@ -1107,8 +1108,8 @@ export default function DevDashboard() {
                 </div>
               )}
 
-              {/* ── Edit fields (ADMIN only — the strict API rejects DEV edits) ── */}
-              {isAdmin ? (
+              {/* ── Edit form: admins and the task's owner (assignee or creator) ── */}
+              {canManage(editingTask) ? (
                 <div className="border-t border-[var(--border)] pt-5">
                   <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-4">Edit Task</span>
                   <form onSubmit={handleSaveEdit} className="space-y-4">
@@ -1196,34 +1197,19 @@ export default function DevDashboard() {
                   </form>
                 </div>
               ) : (
-                /* ── DEV read-only detail. Status is editable only on their own assigned task. ── */
-                <div className="border-t border-[var(--border)] pt-5 space-y-4">
-                  {canStatus(editingTask) ? (
-                    <div>
-                      <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Status</label>
-                      <Dropdown
-                        value={editStatus}
-                        options={STATUS_OPTIONS.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))}
-                        onChange={(val) => {
-                          handleStatusChange(editingTask.id, val);
-                          setEditingTask({ ...editingTask, status: val });
-                          setEditStatus(val);
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-tertiary">
-                      Status: <span className={COLUMN_ACCENT[editingTask.status] || "text-text-secondary"}>{editingTask.status.replace(/_/g, " ")}</span>
-                    </div>
-                  )}
+                /* ── Read-only detail for tasks that aren't yours ── */
+                <div className="border-t border-[var(--border)] pt-5">
+                  <div className="font-mono text-[11px] uppercase tracking-[0.08em] text-text-tertiary">
+                    Status: <span className={COLUMN_ACCENT[editingTask.status] || "text-text-secondary"}>{editingTask.status.replace(/_/g, " ")}</span>
+                  </div>
                 </div>
               )}
             </div>
 
             {/* ── Sticky footer — only when there's an action the user is allowed to take ── */}
-            {(isAdmin || canDelete(editingTask)) && (
+            {(canManage(editingTask) || canDelete(editingTask)) && (
             <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--border)] shrink-0" style={{ background: "var(--bg-deep)" }}>
-              {isAdmin ? (
+              {canManage(editingTask) ? (
                 <button
                   onClick={(e) => { e.preventDefault(); handleSaveEdit(e as unknown as React.FormEvent); }}
                   disabled={saving || !editTitle.trim()}
