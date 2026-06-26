@@ -277,9 +277,9 @@ export default function AuditPage() {
                 <button
                   type="button"
                   onClick={() => setExpandedId(expanded ? null : log.id)}
-                  className="card px-4 py-3 flex items-center justify-between w-full text-left hover:border-[var(--lime)]/20 transition-colors"
+                  className="card px-4 py-3 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between w-full text-left hover:border-[var(--lime)]/20 transition-colors"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
                     <span
                       className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded shrink-0 ${actionColor(log.action)}`}
                     >
@@ -291,15 +291,19 @@ export default function AuditPage() {
                     <span className="text-text-tertiary text-xs font-mono shrink-0">
                       {log.entityId.substring(0, 8)}
                     </span>
+                    {/* Chevron sits at the end of the first line on mobile */}
+                    <span className="text-text-tertiary text-xs ml-auto shrink-0 sm:hidden">
+                      {expanded ? "▲" : "▼"}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-4 shrink-0">
-                    <span className="text-text-secondary text-xs">
+                  <div className="flex items-center gap-3 sm:gap-4 text-xs w-full justify-between sm:w-auto sm:justify-end shrink-0 sm:pl-4">
+                    <span className="text-text-secondary truncate">
                       {userMap[log.userId] || log.userId.substring(0, 8)}
                     </span>
-                    <span className="text-text-tertiary text-xs">
+                    <span className="text-text-tertiary whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleString()}
                     </span>
-                    <span className="text-text-tertiary text-xs">
+                    <span className="text-text-tertiary shrink-0 hidden sm:inline">
                       {expanded ? "▲" : "▼"}
                     </span>
                   </div>
