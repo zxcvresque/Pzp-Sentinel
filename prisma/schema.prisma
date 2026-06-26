@@ -27,7 +27,14 @@ enum DonateCadence {
   WEEKLY
   BIWEEKLY
   MONTHLY
+  CUSTOM
   OFF
+}
+
+enum ReminderUnit {
+  DAY
+  WEEK
+  MONTH
 }
 
 enum PaymentMethod {
@@ -138,6 +145,13 @@ model User {
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence DonateCadence @default(MONTHLY)
   lastDonateReminderAt  DateTime?
+  // CUSTOM cadence: remind every N units (e.g. every 3 DAYs / 2 WEEKs / 1 MONTH).
+  donateReminderEveryN  Int?
+  donateReminderUnit    ReminderUnit?
+  // Time of day the nudge fires (minutes from local midnight; 540 = 09:00) in the
+  // donor's timezone. Applies to ALL cadences. Default IST.
+  donateReminderTimeMin Int           @default(540)
+  donateReminderTz      String        @default("Asia/Kolkata")
 }
 
 model Transaction {

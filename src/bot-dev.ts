@@ -611,17 +611,79 @@ async function checkServiceExpiry() {
 }
 
 // ── Donor donate-reminders ─────────────────────────────────────────────
-const DONATE_REMINDER_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // every 6h
+// 30-min poll so the donor's chosen time-of-day is honored within ~30 min.
+const DONATE_REMINDER_CHECK_INTERVAL = 30 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Weekly/biweekly roll from the last reminder; monthly fires on/after the 5th, once per calendar month.
-function reminderDue(cadence: string, last: Date | null, now: Date): boolean {
+type ReminderDonor = {
+  donateReminderCadence: string;
+  lastDonateReminderAt: Date | null;
+  donateReminderEveryN: number | null;
+  donateReminderUnit: string | null;
+  donateReminderTimeMin: number;
+  donateReminderTz: string;
+};
+
+// {year, month(1-12), day, hour, minute} of `date` in the given IANA timezone.
+// Falls back to UTC if the zone is somehow invalid.
+function localParts(date: Date, tz: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(date);
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+    let hour = get("hour");
+    if (hour === 24) hour = 0; // some ICU builds emit 24 at midnight
+    return { year: get("year"), month: get("month"), day: get("day"), hour, minute: get("minute") };
+  } catch {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+    };
+  }
+}
+
+// A reminder fires only once the donor's local time-of-day has been reached, AND
+// the cadence interval has elapsed. Weekly/biweekly/custom-day/week roll from the
+// last reminder; monthly fires on/after the 5th once per local calendar month;
+// custom-month advances by whole local calendar months.
+function reminderDue(d: ReminderDonor, now: Date): boolean {
+  const tz = d.donateReminderTz || "Asia/Kolkata";
+  const nowL = localParts(now, tz);
+  const timeReached = nowL.hour * 60 + nowL.minute >= (d.donateReminderTimeMin ?? 540);
+  if (!timeReached) return false;
+
+  const last = d.lastDonateReminderAt;
+  const cadence = d.donateReminderCadence;
+
   if (cadence === "WEEKLY") return !last || now.getTime() - last.getTime() >= 7 * DAY_MS;
   if (cadence === "BIWEEKLY") return !last || now.getTime() - last.getTime() >= 14 * DAY_MS;
   if (cadence === "MONTHLY") {
-    if (now.getDate() < 5) return false;
+    if (nowL.day < 5) return false;
     if (!last) return true;
-    return last.getFullYear() !== now.getFullYear() || last.getMonth() !== now.getMonth();
+    const lastL = localParts(last, tz);
+    return lastL.year !== nowL.year || lastL.month !== nowL.month;
+  }
+  if (cadence === "CUSTOM") {
+    if (!last) return true;
+    const n = d.donateReminderEveryN ?? 1;
+    const unit = d.donateReminderUnit ?? "WEEK";
+    if (unit === "DAY") return now.getTime() - last.getTime() >= n * DAY_MS;
+    if (unit === "WEEK") return now.getTime() - last.getTime() >= n * 7 * DAY_MS;
+    if (unit === "MONTH") {
+      const lastL = localParts(last, tz);
+      const monthsElapsed = (nowL.year - lastL.year) * 12 + (nowL.month - lastL.month);
+      return monthsElapsed >= n;
+    }
   }
   return false;
 }
@@ -644,13 +706,17 @@ async function checkDonateReminders() {
           chatId: true,
           donateReminderCadence: true,
           lastDonateReminderAt: true,
+          donateReminderEveryN: true,
+          donateReminderUnit: true,
+          donateReminderTimeMin: true,
+          donateReminderTz: true,
         },
       }),
     );
 
     let sent = 0;
     for (const d of donors) {
-      if (!reminderDue(d.donateReminderCadence, d.lastDonateReminderAt, now)) continue;
+      if (!reminderDue(d, now)) continue;
       if (!d.chatId) continue;
       const isFirst = !d.lastDonateReminderAt;
       try {
