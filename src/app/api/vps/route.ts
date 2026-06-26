@@ -511,6 +511,29 @@ export async function DELETE(req: NextRequest) {
   const { id } = await req.json();
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
+  // Reverse any standing plan charge so a deleted server never leaves an orphaned
+  // expense behind (mirrors the manual Refund action). Skips already-cancelled subs.
+  const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
+  if (sub && sub.status === "ACTIVE" && sub.price != null && Number(sub.price) > 0) {
+    await prisma.transaction.create({
+      data: {
+        amount: new Prisma.Decimal(Number(sub.price)),
+        currency: sub.currency ?? "INR",
+        method: "OTHER",
+        direction: "IN",
+        type: "OTHER",
+        description: `VPS plan refund (server deleted): ${sub.name}`,
+        status: "APPROVED",
+        date: new Date(),
+        createdById: user.id,
+      },
+    });
+    await prisma.service.update({
+      where: { id: sub.id },
+      data: { status: "CANCELLED", autoRenew: false },
+    });
+  }
+
   await prisma.vpsServer.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

@@ -206,7 +206,7 @@ function SshAccessPanel({ server, onChanged }: { server: Server; onChanged: () =
       ? "var(--mint)"
       : access.status === "requested"
         ? "var(--amber)"
-        : "var(--text-tertiary)";
+        : "var(--coral)";
   const statusLabel =
     access.status === "granted"
       ? "✓ Access granted"
@@ -252,7 +252,11 @@ function SshAccessPanel({ server, onChanged }: { server: Server; onChanged: () =
           type="button"
           onClick={() => setShowForm(true)}
           className="mt-2 font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
-          style={{ color: "var(--text-secondary)", background: "var(--bg-card)" }}
+          style={
+            access.status === "none"
+              ? { color: "var(--rose)", background: "rgba(251,113,133,0.10)", border: "1px solid rgba(251,113,133,0.30)" }
+              : { color: "var(--text-secondary)", background: "var(--bg-card)" }
+          }
         >
           {access.status === "none" ? "Request access" : "Update key"}
         </button>

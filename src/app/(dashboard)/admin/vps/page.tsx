@@ -367,13 +367,13 @@ function ApprovedServerCard({
   onDeleteRequest,
   onEditRequest,
   onRenew,
-  onRefund,
+  onRefundRequest,
 }: {
   server: Server;
   onDeleteRequest: (id: string, name: string) => void;
   onEditRequest: (server: Server) => void;
   onRenew: (id: string) => Promise<void>;
-  onRefund: (id: string) => Promise<void>;
+  onRefundRequest: (server: Server) => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
@@ -382,8 +382,6 @@ function ApprovedServerCard({
   const [copiedKeysCommand, setCopiedKeysCommand] = useState(false);
   const [showAverages, setShowAverages] = useState(false);
   const [renewing, setRenewing] = useState(false);
-  const [refunding, setRefunding] = useState(false);
-  const [confirmRefund, setConfirmRefund] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
   const [copiedInstall, setCopiedInstall] = useState(false);
   const isOnline = server.status === "online";
@@ -613,26 +611,12 @@ function ApprovedServerCard({
                   {sub.status !== "CANCELLED" && (sub.price ?? 0) > 0 && (
                     <button
                       type="button"
-                      disabled={refunding}
-                      onClick={async () => {
-                        if (!confirmRefund) {
-                          setConfirmRefund(true);
-                          setTimeout(() => setConfirmRefund(false), 3000);
-                          return;
-                        }
-                        setConfirmRefund(false);
-                        setRefunding(true);
-                        try {
-                          await onRefund(server.id);
-                        } finally {
-                          setRefunding(false);
-                        }
-                      }}
-                      className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
+                      onClick={() => onRefundRequest(server)}
+                      className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors"
                       style={{ color: "var(--coral)", background: "rgba(248,113,113,0.08)" }}
                       title="Credit the rate back to the balance and cancel this plan"
                     >
-                      {refunding ? "Refunding…" : confirmRefund ? "Confirm refund?" : "Refund"}
+                      Refund
                     </button>
                   )}
                 </div>
@@ -1845,8 +1829,9 @@ export default function AdminVpsPage() {
     open: boolean;
     id: string;
     name: string;
-    action: "delete" | "reject";
+    action: "delete" | "reject" | "refund";
     loading: boolean;
+    detail?: string;
   }>({ open: false, id: "", name: "", action: "delete", loading: false });
 
   const fetchServers = useCallback(async () => {
@@ -1935,6 +1920,8 @@ export default function AdminVpsPage() {
     setConfirmState((s) => ({ ...s, loading: true }));
     if (confirmState.action === "delete") {
       await handleDelete(confirmState.id);
+    } else if (confirmState.action === "refund") {
+      await handleRefund(confirmState.id);
     } else {
       await handleReject(confirmState.id);
     }
@@ -1983,6 +1970,12 @@ export default function AdminVpsPage() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function requestRefund(server: Server) {
+    const sub = server.subscription;
+    const detail = sub ? `${formatMoney(sub.price, sub.currency)} will be credited back to the balance and the plan cancelled.` : "";
+    setConfirmState({ open: true, id: server.id, name: server.name, action: "refund", loading: false, detail });
+  }
+
   if (loading) {
     return (
       <div>
@@ -2022,14 +2015,24 @@ export default function AdminVpsPage() {
         open={confirmState.open}
         onClose={() => setConfirmState((s) => ({ ...s, open: false }))}
         onConfirm={handleConfirm}
-        title={confirmState.action === "delete" ? `Delete "${confirmState.name}"?` : `Reject "${confirmState.name}"?`}
+        title={
+          confirmState.action === "delete"
+            ? `Delete "${confirmState.name}"?`
+            : confirmState.action === "refund"
+            ? `Refund "${confirmState.name}"?`
+            : `Reject "${confirmState.name}"?`
+        }
         message={
           confirmState.action === "delete"
-            ? "This cannot be undone. Linked vault credentials and any developer access to them are also removed."
+            ? "This cannot be undone. Linked vault credentials and developer access are removed, and any active plan charge is refunded to the balance."
+            : confirmState.action === "refund"
+            ? confirmState.detail || "Credit the rate back to the balance and cancel this plan."
             : "This cannot be undone"
         }
-        confirmLabel={confirmState.action === "delete" ? "Delete" : "Reject"}
-        variant="danger"
+        confirmLabel={
+          confirmState.action === "delete" ? "Delete" : confirmState.action === "refund" ? "Refund" : "Reject"
+        }
+        variant={confirmState.action === "refund" ? "default" : "danger"}
         loading={confirmState.loading}
       />
       <PageTour pageKey="admin-vps" version={2} />
@@ -2150,7 +2153,7 @@ export default function AdminVpsPage() {
                 onDeleteRequest={requestDelete}
                 onEditRequest={requestEdit}
                 onRenew={handleRenew}
-                onRefund={handleRefund}
+                onRefundRequest={requestRefund}
               />
             ))}
           </div>
