@@ -93,38 +93,38 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Existing valid sessions should go straight to the dashboard for 24 hours.
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data?.user?.roles) return;
-        window.location.href = dashboardForRoles(data.user.roles);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Telegram Mini App path: use signed initData instead of opening a bot deep link.
+  // Single ordered entry flow. Inside Telegram's in-app browser the signed
+  // initData is the source of truth for WHO is signing in — it must win over any
+  // leftover `token` cookie. (Multiple Telegram accounts on one device share the
+  // same webview + cookie, so a stale cookie would otherwise show the previous
+  // account.) Only when there's no initData (a regular browser) do we fall back to
+  // the existing-session redirect.
   useEffect(() => {
     let cancelled = false;
 
     loadTelegramWebAppScript().then(() => {
       if (cancelled) return;
+
       const webApp = getTelegramWebApp();
       const initData = webApp?.initData;
-      if (!initData) return;
 
-      setIsTelegramMiniApp(true);
-      webApp.ready?.();
-      webApp.expand?.();
+      if (initData) {
+        // Telegram Mini App: authenticate as the CURRENT Telegram account.
+        setIsTelegramMiniApp(true);
+        webApp.ready?.();
+        webApp.expand?.();
+        verifyMiniAppSession(initData);
+        return;
+      }
 
-      verifyMiniAppSession(initData);
+      // Regular browser: an existing valid session goes straight to its dashboard.
+      fetch("/api/auth/me", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (cancelled || !data?.user?.roles) return;
+          window.location.href = dashboardForRoles(data.user.roles);
+        })
+        .catch(() => {});
     });
 
     return () => {
