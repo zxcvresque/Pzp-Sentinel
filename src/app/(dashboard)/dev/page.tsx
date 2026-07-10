@@ -6,6 +6,7 @@ import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Member {
@@ -146,6 +147,9 @@ export default function DevDashboard() {
   const [projDesc, setProjDesc] = useState("");
   const [projRepo, setProjRepo] = useState("");
   const [projSubmitting, setProjSubmitting] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   // Org-wide git activity
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -166,7 +170,9 @@ export default function DevDashboard() {
   // Keep the latest selected project in a ref so `load` can stay stable ([] deps)
   // while still refetching the currently-selected project's tasks.
   const selectedProjectIdRef = useRef(selectedProjectId);
-  selectedProjectIdRef.current = selectedProjectId;
+  useEffect(() => {
+    selectedProjectIdRef.current = selectedProjectId;
+  }, [selectedProjectId]);
 
   // Stable, data-only refresh used for background re-fetches. Refreshes every
   // endpoint the view is built from. Never toggles loading/skeleton state and
@@ -360,13 +366,37 @@ export default function DevDashboard() {
     setDeleting(false);
   }
 
-  async function handleCreateProject(e: React.FormEvent) {
+  function resetProjectForm() {
+    setShowProjectForm(false);
+    setEditingProjectId(null);
+    setProjName("");
+    setProjDesc("");
+    setProjRepo("");
+  }
+
+  function openCreateProject() {
+    resetProjectForm();
+    setShowProjectForm(true);
+    if (showForm) resetForm();
+  }
+
+  function openEditProject() {
+    if (!selectedProject) return;
+    setEditingProjectId(selectedProject.id);
+    setProjName(selectedProject.name);
+    setProjDesc(selectedProject.description);
+    setProjRepo(selectedProject.repoUrl || "");
+    setShowProjectForm(true);
+    if (showForm) resetForm();
+  }
+
+  async function handleSaveProject(e: React.FormEvent) {
     e.preventDefault();
     if (!projName.trim() || !projDesc.trim()) return;
     setProjSubmitting(true);
 
-    const res = await fetch("/api/projects", {
-      method: "POST",
+    const res = await fetch(editingProjectId ? `/api/projects/${editingProjectId}` : "/api/projects", {
+      method: editingProjectId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: projName.trim(),
@@ -378,24 +408,39 @@ export default function DevDashboard() {
     if (res.ok) {
       const data = await res.json();
       const newProj = data.project;
-      setProjects((prev) => [
-        {
-          id: newProj.id,
-          name: newProj.name,
-          description: newProj.description,
-          repoUrl: newProj.repoUrl,
-          members: newProj.members || [],
-          taskCounts: { BACKLOG: 0, TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 },
-        },
-        ...prev,
-      ]);
+      const normalized = {
+        id: newProj.id,
+        name: newProj.name,
+        description: newProj.description,
+        repoUrl: newProj.repoUrl,
+        members: newProj.members || [],
+        taskCounts: editingProjectId
+          ? selectedProject?.taskCounts || {}
+          : { BACKLOG: 0, TODO: 0, IN_PROGRESS: 0, REVIEW: 0, DONE: 0 },
+      };
+      setProjects((prev) => editingProjectId
+        ? prev.map((project) => project.id === editingProjectId ? normalized : project)
+        : [normalized, ...prev]);
       setSelectedProjectId(newProj.id);
-      setShowProjectForm(false);
-      setProjName("");
-      setProjDesc("");
-      setProjRepo("");
+      resetProjectForm();
     }
     setProjSubmitting(false);
+  }
+
+  async function handleDeleteProject() {
+    if (!selectedProject) return;
+    setDeletingProject(true);
+    const deletingId = selectedProject.id;
+    const res = await fetch(`/api/projects/${deletingId}`, { method: "DELETE" });
+    if (res.ok) {
+      const remaining = projects.filter((project) => project.id !== deletingId);
+      setProjects(remaining);
+      setSelectedProjectId(remaining[0]?.id || "");
+      setTasks([]);
+      resetProjectForm();
+      setConfirmProjectDelete(false);
+    }
+    setDeletingProject(false);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -567,13 +612,13 @@ export default function DevDashboard() {
           {!showProjectForm ? (
             <button
               data-tour="board-actions"
-              onClick={() => setShowProjectForm(true)}
+              onClick={openCreateProject}
               className="bg-lime text-bg-void font-semibold px-5 py-2 rounded-full text-sm hover:bg-lime/90 transition-colors mt-2"
             >
               + New Project
             </button>
           ) : (
-            <form onSubmit={handleCreateProject} className="text-left mt-4 max-w-md mx-auto space-y-4">
+            <form onSubmit={handleSaveProject} className="text-left mt-4 max-w-md mx-auto space-y-4">
               <FormExample lines={["Name: PzP Dashboard · Repo: github.com/org/repo", "Description: Internal finance management tool"]} />
               <div>
                 <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
@@ -623,7 +668,7 @@ export default function DevDashboard() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowProjectForm(false)}
+                  onClick={resetProjectForm}
                   className="px-4 py-2.5 rounded-full text-sm text-text-secondary hover:text-text-primary transition-colors"
                 >
                   Cancel
@@ -657,23 +702,44 @@ export default function DevDashboard() {
   if (untagged.length > 0) tasksByTag["_untagged"] = untagged;
 
   return (
+    <>
+    <ConfirmDialog
+      open={confirmProjectDelete}
+      onClose={() => setConfirmProjectDelete(false)}
+      onConfirm={handleDeleteProject}
+      title={`Delete ${selectedProject?.name || "project"}?`}
+      message="This permanently deletes the project and every task inside it. This cannot be undone."
+      confirmLabel="Delete Project"
+      loading={deletingProject}
+    />
     <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
       <div className="flex-1 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">
           Project <span className="font-display text-lime">Board</span>
         </h1>
-        <div data-tour="board-actions" className="flex items-center gap-3">
+        <div data-tour="board-actions" className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <Dropdown
             value={selectedProjectId}
             options={projects.map((p) => ({ value: p.id, label: p.name }))}
             onChange={setSelectedProjectId}
           />
           <button
-            onClick={() => {
-              setShowProjectForm(!showProjectForm);
-              if (showForm) resetForm();
-            }}
+            onClick={openEditProject}
+            className="px-3 py-2 rounded-full text-sm font-semibold border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
+            title="Edit selected project"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => setConfirmProjectDelete(true)}
+            className="px-3 py-2 rounded-full text-sm font-semibold border border-coral/20 text-coral hover:bg-coral/10 transition-colors"
+            title="Delete selected project"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => showProjectForm ? resetProjectForm() : openCreateProject()}
             className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors border ${
               showProjectForm
                 ? "border-coral/30 text-coral hover:bg-coral/10"
@@ -699,7 +765,15 @@ export default function DevDashboard() {
       </div>
 
       {showProjectForm && (
-        <form onSubmit={handleCreateProject} className="card p-6 mb-6">
+        <form onSubmit={handleSaveProject} className="card p-6 mb-6">
+          <div className="mb-5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+              {editingProjectId ? "Project settings" : "New project"}
+            </p>
+            <h2 className="text-lg font-bold mt-1">
+              {editingProjectId ? `Edit ${selectedProject?.name || "Project"}` : "Create Project"}
+            </h2>
+          </div>
           <FormExample lines={["Name: PzP Dashboard · Repo: github.com/org/repo", "Description: Internal finance management tool"]} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
@@ -746,7 +820,16 @@ export default function DevDashboard() {
             disabled={projSubmitting || !projName.trim() || !projDesc.trim()}
             className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
           >
-            {projSubmitting ? "Creating..." : "Create Project"}
+            {projSubmitting
+              ? editingProjectId ? "Saving..." : "Creating..."
+              : editingProjectId ? "Save Project" : "Create Project"}
+          </button>
+          <button
+            type="button"
+            onClick={resetProjectForm}
+            className="ml-3 px-4 py-2.5 rounded-full text-sm text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Cancel
           </button>
         </form>
       )}
@@ -1265,7 +1348,8 @@ export default function DevDashboard() {
       {/* Desktop Git Feed — sticky sidebar */}
       <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
       <PageTour pageKey="dev-board" />
-    </div>
+      </div>
+    </>
   );
 }
 
