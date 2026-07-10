@@ -5,6 +5,7 @@ import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
+import ServicesNav from "@/components/ServicesNav";
 
 interface ColumnDef {
   key: string;
@@ -253,6 +254,7 @@ export default function ServicesPage() {
 
   return (
     <div>
+      <ServicesNav role="ADMIN" />
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}

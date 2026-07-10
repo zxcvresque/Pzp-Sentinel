@@ -61,17 +61,6 @@ function IconBell(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function IconKey(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="6" cy="11" r="3.5" />
-      <path d="M8.5 8.5L14 3" />
-      <path d="M12 3l2 2" />
-      <path d="M10.5 6.5l1.5 1.5" />
-    </svg>
-  );
-}
-
 function IconAuditLog(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -128,33 +117,6 @@ function IconChecklist(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function IconGantt(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M2 4h8" />
-      <path d="M4 9h10" />
-      <path d="M3 14h6" />
-      <circle cx="10" cy="4" r="1" fill="currentColor" stroke="none" />
-      <circle cx="14" cy="9" r="1" fill="currentColor" stroke="none" />
-      <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function IconVps(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="3" y="2" width="12" height="5" rx="1.5" />
-      <rect x="3" y="11" width="12" height="5" rx="1.5" />
-      <circle cx="6" cy="4.5" r="0.75" fill="currentColor" stroke="none" />
-      <circle cx="6" cy="13.5" r="0.75" fill="currentColor" stroke="none" />
-      <path d="M10 4.5h2" />
-      <path d="M10 13.5h2" />
-      <path d="M9 7v4" />
-    </svg>
-  );
-}
-
 function IconGitRepo(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -198,6 +160,12 @@ interface NavItem {
   Icon: SvgIcon;
 }
 
+function roleLabelsForHome(role: Role) {
+  if (role === "ADMIN") return "Admin";
+  if (role === "DEV") return "Dev";
+  return "Donor";
+}
+
 const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
     { label: "Dashboard",     shortLabel: "Home",    href: "/admin",                icon: "", Icon: IconDashboardGrid },
@@ -206,8 +174,6 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Donors",        shortLabel: "Donors",  href: "/admin/donors",         icon: "", Icon: IconTrophy },
     { label: "Users",         shortLabel: "Users",   href: "/admin/users",          icon: "", Icon: IconUsers },
     { label: "Reminders",     shortLabel: "Remind",  href: "/admin/reminders",      icon: "", Icon: IconBell },
-    { label: "Credentials",   shortLabel: "Creds",   href: "/admin/credentials",    icon: "", Icon: IconKey },
-    { label: "VPS Stats",     shortLabel: "VPS",     href: "/admin/vps",            icon: "", Icon: IconVps },
     { label: "Repos",         shortLabel: "Repos",   href: "/admin/repos",          icon: "", Icon: IconGitRepo },
   ],
   DONOR: [
@@ -216,9 +182,7 @@ const navByRole: Record<string, NavItem[]> = {
   DEV: [
     { label: "Board",       shortLabel: "Board",  href: "/dev",              icon: "", Icon: IconKanban },
     { label: "My Tasks",    shortLabel: "Tasks",  href: "/dev/tasks",        icon: "", Icon: IconChecklist },
-    { label: "Gantt",       shortLabel: "Gantt",  href: "/dev/gantt",        icon: "", Icon: IconGantt },
-    { label: "VPS Stats",   shortLabel: "VPS",    href: "/dev/vps",          icon: "", Icon: IconVps },
-    { label: "Credentials", shortLabel: "Creds",  href: "/dev/credentials",  icon: "", Icon: IconKey },
+    { label: "Services",    shortLabel: "Svc",    href: "/dev/vps",          icon: "", Icon: IconServer },
   ],
 };
 
@@ -244,6 +208,7 @@ export default function Sidebar({
   const primaryRole: Role = isAdmin ? "ADMIN" : roles.includes("DEV") ? "DEV" : "DONOR";
 
   const settingsNav: NavItem[] = [
+    { label: `${roleLabelsForHome(activeRole)} Home`, shortLabel: "Home", href: `/${activeRole.toLowerCase()}`, icon: "", Icon: IconDashboardGrid },
     { label: "General",   shortLabel: "General", href: "/profile",      icon: "", Icon: IconDashboardGrid },
     ...(isAdmin ? [{ label: "Audit Log", shortLabel: "Audit", href: "/admin/audit", icon: "", Icon: IconAuditLog }] : []),
   ];
@@ -256,6 +221,14 @@ export default function Sidebar({
     DEV: "Dev",
     DONOR: "Donor",
   };
+
+  function isItemActive(item: NavItem) {
+    if (pathname === item.href) return true;
+    if (item.label === "Services") {
+      return pathname.endsWith("/credentials") || pathname.endsWith("/vps");
+    }
+    return false;
+  }
 
   return (
     <>
@@ -524,7 +497,7 @@ export default function Sidebar({
         {/* ── Nav items ── */}
         <nav data-tour="nav" style={{ flex: 1, padding: !collapsed ? "2px 8px" : "6px 6px", transition: "padding 200ms ease", overflowY: "auto" }}>
           {items.map((item) => {
-            const active = pathname === item.href;
+            const active = isItemActive(item);
             const { Icon } = item;
 
             if (!!collapsed) {
@@ -624,7 +597,7 @@ export default function Sidebar({
       >
         <div style={{ display: "flex", justifyContent: "space-around", padding: "6px 0" }}>
           {items.slice(0, 4).map((item) => {
-            const active = pathname === item.href;
+            const active = isItemActive(item);
             const { Icon } = item;
             return (
               <Link
@@ -705,17 +678,35 @@ export default function Sidebar({
               left: 0,
               right: 0,
               zIndex: 60,
-              bottom: moreOpen ? 56 : -400,
-              transition: "bottom 300ms cubic-bezier(0.4,0,0.2,1)",
+              bottom: 0,
+              transform: moreOpen ? "translateY(0)" : "translateY(110%)",
+              transition: "transform 300ms cubic-bezier(0.4,0,0.2,1)",
               background: "var(--bg-deep)",
               borderTop: "1px solid var(--border)",
               borderRadius: "18px 18px 0 0",
               paddingBottom: "max(16px, env(safe-area-inset-bottom))",
+              boxShadow: "0 -20px 60px rgba(0,0,0,0.48)",
+              maxHeight: "min(78vh, 620px)",
+              overflowY: "auto",
             }}
           >
             {/* Handle */}
             <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 4px" }}>
               <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-hover)" }} />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 16px 6px" }}>
+              <div>
+                <p style={{ color: "var(--text-primary)", fontSize: 15, fontWeight: 650 }}>More</p>
+                <p style={{ color: "var(--text-tertiary)", fontSize: 11, marginTop: 2 }}>Switch workspace or open another page</p>
+              </div>
+              <button
+                onClick={() => setMoreOpen(false)}
+                aria-label="Close more menu"
+                style={{ width: 32, height: 32, borderRadius: 10, border: "1px solid var(--border)", background: "rgba(255,255,255,0.035)", color: "var(--text-secondary)", display: "grid", placeItems: "center", cursor: "pointer" }}
+              >
+                <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>×</span>
+              </button>
             </div>
 
             {/* Role switcher — only shown when user has multiple roles */}
@@ -761,7 +752,7 @@ export default function Sidebar({
             {/* Remaining nav items */}
             <div style={{ padding: "4px 12px 8px" }}>
               {items.slice(4).map((item) => {
-                const active = pathname === item.href;
+                const active = isItemActive(item);
                 const { Icon } = item;
                 return (
                   <Link

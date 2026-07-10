@@ -53,7 +53,7 @@ export const devTourSteps: TourStep[] = [
   {
     target: "[data-tour='nav']",
     title: "Your Workspace",
-    body: "Board for projects, My Tasks for your assignments, Gantt for timelines, and Credentials for shared access keys.",
+    body: "Board and My Tasks keep project work focused, while Services groups VPS access and shared credentials in one place.",
     placement: "right",
   },
   {
@@ -288,21 +288,6 @@ export const pageTourSteps: Record<string, TourStep[]> = {
       title: "Filter & Group",
       body: "Group by status or tag, filter by priority level. Helps you focus on what matters most right now.",
       placement: "bottom",
-    },
-  ],
-
-  "dev-gantt": [
-    {
-      target: "[data-tour='gantt-header']",
-      title: "Gantt Timeline",
-      body: "Visualize task timelines across projects. The dashed line marks today. Filter by project to focus.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='gantt-chart']",
-      title: "Reading the Chart",
-      body: "Bars represent task duration. Color indicates status, border thickness shows priority. Hover for details.",
-      placement: "top",
     },
   ],
 

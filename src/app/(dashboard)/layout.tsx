@@ -130,10 +130,10 @@ export default function DashboardLayout({
       router.replace(highestRoleRoute(user.roles));
       return;
     }
-    if (user.roles.includes(roleFromPath)) {
+    if (isGated && user.roles.includes(roleFromPath)) {
       setActiveRole(roleFromPath);
-    } else {
-      setActiveRole(user.roles[0]);
+    } else if (!isGated) {
+      setActiveRole((current) => user.roles.includes(current) ? current : user.roles[0]);
     }
   }, [pathname, user, router]);
 
@@ -161,7 +161,6 @@ export default function DashboardLayout({
     "/admin/audit": "Settings / Audit Log",
     "/dev": "Dev / Board",
     "/dev/tasks": "Dev / My Tasks",
-    "/dev/gantt": "Dev / Gantt",
     "/dev/vps": "Dev / VPS Stats",
     "/dev/credentials": "Dev / Credentials",
     "/donor": "Donor / Overview",

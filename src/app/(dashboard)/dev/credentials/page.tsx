@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import ServicesNav from "@/components/ServicesNav";
 
 interface UserRef {
   id: string;
@@ -177,6 +178,7 @@ export default function DevCredentialsPage() {
 
   return (
     <div>
+      <ServicesNav role="DEV" />
       <div className="flex items-center justify-between mb-6">
         <h1 data-tour="dev-creds-title" className="text-3xl font-extrabold">
           My <span className="font-display text-lime">Credentials</span>

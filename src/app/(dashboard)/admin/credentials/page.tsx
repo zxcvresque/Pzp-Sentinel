@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import ServicesNav from "@/components/ServicesNav";
 
 type AccessLevel = "PUBLIC_KEY" | "FULL";
 
@@ -294,6 +295,7 @@ export default function CredentialsPage() {
 
   return (
     <div>
+      <ServicesNav role="ADMIN" />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           Credential <span className="font-display text-lime">Vault</span>

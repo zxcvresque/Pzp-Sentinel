@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import PageTour from "@/components/PageTour";
+import ServicesNav from "@/components/ServicesNav";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 /* ------------------------------------------------------------------ */
@@ -783,6 +784,7 @@ export default function VpsPage() {
 
   return (
     <div className="pb-20 md:pb-0">
+      <ServicesNav role="DEV" />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 data-tour="dev-vps-title" className="text-3xl font-extrabold">

@@ -296,8 +296,8 @@ Three roles with distinct navigation, theming, and permissions.
 
 | Role | Theme | Access |
 |------|-------|--------|
-| **ADMIN** | Violet | Dashboard, Transactions, Services, Donors, Users, Reminders, Credentials, VPS Stats, Audit Log |
-| **DEV** | Cyan | Board, My Tasks, Gantt, VPS Stats, Credentials |
+| **ADMIN** | Violet | Dashboard, Transactions, Services (catalogue, credentials, VPS), Donors, Users, Reminders, Audit Log |
+| **DEV** | Cyan | Board, My Tasks, Services (VPS and credentials) |
 | **DONOR** | Amber | My Donations, Receipts |
 
 Users can hold multiple roles. The sidebar switches context per role, with settings pages (General + Audit Log) accessible from any role.
@@ -327,7 +327,6 @@ Users can hold multiple roles. The sidebar switches context per role, with setti
 - Kanban board with 5 status columns (Backlog, To Do, In Progress, Review, Done)
 - Task management with priority levels, subtasks, deadlines, and color-coded tags
 - 8 tags: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
-- Gantt chart view for timeline planning
 - VPS stats (read-only monitoring + request new servers pending admin approval); request SSH access by submitting your own public key — an admin installs it and the server password/private key is never shared
 - Credential access — public-key (your installed key shown for reference) or full (reveal the secret); propose/approve workflow for credentials you own
 
@@ -524,9 +523,9 @@ src/
         transactions/        #   Transaction management
         users/               #   User management
         vps/                 #   VPS monitoring
-      dev/                   # 5 dev pages
+      dev/                   # Developer pages
         tasks/               #   My tasks
-        gantt/               #   Gantt chart
+        gantt/               #   Archived Gantt source (route disabled)
         vps/                 #   VPS stats (read-only)
         credentials/         #   Credential access
       donor/                 # Donations + receipts
@@ -563,6 +562,22 @@ src/
     role-colors.ts           # Role-based color system
   bot-dev.ts                 # Standalone bot server (polling)
 ```
+
+---
+
+## Archived Features
+
+### Gantt timeline
+
+The developer Gantt feature is archived and unavailable in navigation, tours, and direct routing. Its implementation remains at `src/app/(dashboard)/dev/gantt/page.tsx` so it can be restored later.
+
+To rejuvenate it:
+
+1. Remove the `/dev/gantt` redirect in `src/middleware.ts`.
+2. Restore the Gantt navigation item and icon in `src/components/Sidebar.tsx`.
+3. Restore the `/dev/gantt` breadcrumb in `src/app/(dashboard)/layout.tsx`.
+4. Restore the developer overview and `dev-gantt` page-tour copy in `src/lib/tour-steps.ts`.
+5. Update the role and feature lists above, then run `npm run lint`, `npm test`, and `npm run build`.
 
 ---
 

@@ -5,6 +5,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import ServicesNav from "@/components/ServicesNav";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -2010,6 +2011,7 @@ export default function AdminVpsPage() {
 
   return (
     <div className="pb-20 md:pb-0">
+      <ServicesNav role="ADMIN" />
       <ConfirmDialog
         open={confirmState.open}
         onClose={() => setConfirmState((s) => ({ ...s, open: false }))}
