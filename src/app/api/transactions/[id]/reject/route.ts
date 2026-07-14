@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { logTransactionReview } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 export async function POST(
   req: NextRequest,
@@ -106,6 +107,8 @@ export async function POST(
       ),
     }).catch((err) => console.error("[reject] notify failed:", err));
   }
+
+  scheduleFinanceAutomation({ action: "REJECTED", actorName: user.name, transactionId: id });
 
   return NextResponse.json({ transaction: updated });
 }

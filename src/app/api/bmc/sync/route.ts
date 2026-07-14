@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { Prisma } from "@/generated/prisma/client";
 
 const BMC_BASE = "https://developers.buymeacoffee.com/api/v1";
@@ -223,6 +224,12 @@ export async function POST() {
           `${synced} new donation${synced > 1 ? "s" : ""} imported`,
           `Skipped ${skipped} existing · By: ${user.name}`,
         ),
+      });
+      scheduleFinanceAutomation({
+        action: "CREATED",
+        actorName: user.name,
+        transactionId: `bmc-batch-${synced}`,
+        sendBackup: true,
       });
     }
 

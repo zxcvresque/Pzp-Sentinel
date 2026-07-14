@@ -7,6 +7,7 @@ import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
 import { groupThanks, dmThanks, donorHandle } from "@/lib/donation-thanks";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 export async function POST(
   req: NextRequest,
@@ -140,6 +141,8 @@ export async function POST(
       console.error("[approve] group thanks failed:", err),
     );
   }
+
+  scheduleFinanceAutomation({ action: "APPROVED", actorName: user.name, transactionId: id });
 
   return NextResponse.json({ transaction: updated });
 }

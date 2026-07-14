@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
 import { logAuditEvent } from "./lib/telegram-log";
 import { donateReminderMessage } from "./lib/donation-thanks";
+import { scheduleFinanceAutomation } from "./lib/finance-sheets";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -811,6 +812,12 @@ async function checkSubscriptionRenewals() {
             },
           }),
         );
+        scheduleFinanceAutomation({
+          action: "CREATED",
+          actorName: "Sentinel Auto-Renewal",
+          transactionId: tx.id,
+          sendBackup: true,
+        });
         renewed++;
       } catch (e) {
         console.error(`[sub-renewal] Renewal failed for ${sub.id}:`, (e as Error).message);

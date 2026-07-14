@@ -226,7 +226,7 @@ export default function DashboardLayout({
           />
         </header>
         <main className="flex-1 p-6 md:p-8 pb-24 md:pb-8">
-          <div key={pathname} className="animate-fade-in">
+          <div key={pathname} className="page-transition">
             {children}
           </div>
         </main>

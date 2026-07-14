@@ -4,6 +4,8 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
+import { logTransactionMutation } from "@/lib/telegram-log";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 export async function PATCH(
   req: NextRequest,
@@ -88,6 +90,21 @@ export async function PATCH(
     details: `Updated: ${updated.description}`,
   });
 
+  const changes = Object.keys(after)
+    .filter((key) => before[key as keyof typeof before] !== after[key as keyof typeof after])
+    .map((key) => `${key}: ${before[key as keyof typeof before]} → ${after[key as keyof typeof after]}`);
+  logTransactionMutation({
+    action: "UPDATED",
+    id,
+    actorName: user.name,
+    amount: updated.amount,
+    currency: updated.currency,
+    direction: updated.direction,
+    description: updated.description,
+    changes,
+  });
+  scheduleFinanceAutomation({ action: "UPDATED", actorName: user.name, transactionId: id });
+
   return NextResponse.json({ transaction: updated });
 }
 
@@ -147,6 +164,17 @@ export async function DELETE(
     entityId: id,
     details: `Deleted: ${transaction.description}`,
   });
+
+  logTransactionMutation({
+    action: "DELETED",
+    id,
+    actorName: user.name,
+    amount: transaction.amount,
+    currency: transaction.currency,
+    direction: transaction.direction,
+    description: transaction.description,
+  });
+  scheduleFinanceAutomation({ action: "DELETED", actorName: user.name, transactionId: id });
 
   return NextResponse.json({ success: true });
 }

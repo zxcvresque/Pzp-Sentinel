@@ -80,6 +80,12 @@ TG_TOPIC_SCREENSHOTS=topic-id
 TG_DONATION_GROUP_ID=your-donation-group-id
 TG_DONATION_TOPIC_ID=
 
+# Google Sheets finance mirror + Telegram workbook backups
+GOOGLE_SHEETS_ID=your-spreadsheet-id
+GOOGLE_SERVICE_ACCOUNT_EMAIL=sentinel-sheets@your-project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+TG_TOPIC_BACKUPS=topic-id
+
 # GitHub Audit Logs
 GITHUB_LOGS_TOKEN=your-github-pat
 
@@ -163,6 +169,49 @@ Two separate processes:
 npm run dev        # Next.js dev server
 npm run bot:dev    # Telegram bot (separate terminal)
 ```
+
+### Google Sheets finance mirror
+
+Sentinel can maintain a read-only finance workbook with pastel dashboard cards, native charts, transaction data, monthly and expense summaries, donor totals, service costs, change history, and reconciliation checks. Sentinel remains the only data-entry surface; the service account needs Editor access while human viewers can remain Viewer-only.
+
+Enable the Google Sheets and Drive APIs, share the target spreadsheet with `GOOGLE_SERVICE_ACCOUNT_EMAIL`, configure the variables above, then initialize or manually refresh it with:
+
+```bash
+npm run sheets:sync
+```
+
+Transaction creation refreshes the workbook and sends a timestamped XLSX snapshot to `TG_TOPIC_BACKUPS`. Updates, approvals, rejections, and deletions refresh the workbook and are recorded in Telegram transaction/audit logs. Admins can also use **Sync Sheets** and **Backup Now** from the Transactions page.
+
+### Razorpay donations
+
+Sentinel uses Razorpay Standard Checkout for dashboard donations. Orders are created on the server, the checkout HMAC is verified against the server-stored order ID, and the payment is fetched from Razorpay before Sentinel records an automatically approved transaction. Only a matching `captured` payment is accepted. A signed webhook provides a recovery path when the browser closes before verification finishes.
+
+Configure:
+
+```env
+RAZORPAY_KEY_ID="rzp_test_..."
+RAZORPAY_KEY_SECRET="..."
+RAZORPAY_WEBHOOK_SECRET="a-separate-random-webhook-secret"
+```
+
+In Razorpay Dashboard, create a webhook pointing to:
+
+```text
+https://your-domain.com/api/webhooks/razorpay
+```
+
+Subscribe it to `payment.captured`, `order.paid`, and `payment.failed`, and use exactly the same dedicated webhook secret in both places. Test-mode payments are visibly recorded for QA but excluded from real treasury totals, burn-rate calculations, donor rankings, and Google Sheets dashboard calculations.
+
+Admins can also create expiring, revocable **one-time guest payment links** from the Treasury dashboard. Each link is bound to the guest's name, Telegram username, and numeric Telegram ID; it grants access only to the checkout page and is consumed after the first captured payment. The secret URL token is stored only as a SHA-256 hash and is shown to the admin once.
+
+Before production deployment, apply the new Prisma models and enum:
+
+```bash
+npm run db:generate
+npm run db:push
+```
+
+Replace test keys with live keys only after an end-to-end test. Payment methods (UPI Intent/QR, cards, netbanking, and wallets) are controlled by the Razorpay account's enabled methods. Never expose `RAZORPAY_KEY_SECRET` or `RAZORPAY_WEBHOOK_SECRET` to client code.
 
 ### Scripts
 

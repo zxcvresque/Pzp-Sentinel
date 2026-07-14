@@ -94,6 +94,9 @@ const auditEmoji: Record<string, string> = {
   REMINDER_UPDATE: "🔔",
   SERVICE_CREATE: "🛠️",
   SERVICE_UPDATE: "⚙️",
+  RAZORPAY_CAPTURED: "💳",
+  RAZORPAY_INVITE_CREATE: "🔗",
+  RAZORPAY_INVITE_REVOKE: "⛔",
 };
 
 export function logTransaction(tx: {
@@ -141,6 +144,35 @@ export function logTransactionReview(tx: {
     `<code>${tx.id}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function logTransactionMutation(tx: {
+  action: "UPDATED" | "DELETED";
+  id: string;
+  actorName: string;
+  amount: unknown;
+  currency: string;
+  direction: string;
+  description: string;
+  changes?: string[];
+}) {
+  const symbol = tx.currency === "INR" ? "₹" : "$";
+  const lines = [
+    `${tx.action === "DELETED" ? "🗑️" : "✏️"} <b>Transaction ${tx.action}</b>`,
+    `<b>${symbol}${escapeHtml(tx.amount)}</b> · ${escapeHtml(tx.direction)}`,
+    escapeHtml(tx.description),
+    `👤 By: ${escapeHtml(tx.actorName)}`,
+    ...(tx.changes || []).map((change) => `• ${escapeHtml(change)}`),
+    `<code>${escapeHtml(tx.id)}</code>`,
+  ];
+  return sendToTopic("transactions", lines.join("\n"));
 }
 
 /** Replace "IN INR 500" / "OUT USD 20" with emoji + symbol in audit details */

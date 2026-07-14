@@ -72,6 +72,15 @@ function IconAuditLog(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function IconSettings(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="9" cy="9" r="2.4" />
+      <path d="M7.8 2.2h2.4l.5 1.8a5.6 5.6 0 011.3.7l1.8-.5 1.2 2.1-1.3 1.3c.1.5.1 1 0 1.5l1.3 1.3-1.2 2.1-1.8-.5a5.6 5.6 0 01-1.3.7l-.5 1.8H7.8l-.5-1.8A5.6 5.6 0 016 12l-1.8.5L3 10.4l1.3-1.3a6.2 6.2 0 010-1.5L3 6.3l1.2-2.1 1.8.5A5.6 5.6 0 017.3 4l.5-1.8z" />
+    </svg>
+  );
+}
+
 function IconTrophy(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -209,7 +218,7 @@ export default function Sidebar({
 
   const settingsNav: NavItem[] = [
     { label: `${roleLabelsForHome(activeRole)} Home`, shortLabel: "Home", href: `/${activeRole.toLowerCase()}`, icon: "", Icon: IconDashboardGrid },
-    { label: "General",   shortLabel: "General", href: "/profile",      icon: "", Icon: IconDashboardGrid },
+    { label: "General",   shortLabel: "General", href: "/profile",      icon: "", Icon: IconSettings },
     ...(isAdmin ? [{ label: "Audit Log", shortLabel: "Audit", href: "/admin/audit", icon: "", Icon: IconAuditLog }] : []),
   ];
 

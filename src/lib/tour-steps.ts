@@ -124,6 +124,12 @@ export const pageTourSteps: Record<string, TourStep[]> = {
   /* ── Admin pages ── */
   "admin-dashboard": [
     {
+      target: "[data-tour='razorpay-donation']",
+      title: "Test Razorpay Checkout",
+      body: "Create a test-mode donation through the same secure checkout donors use. Captured payments are tracked automatically.",
+      placement: "bottom",
+    },
+    {
       target: "[data-tour='currency-toggle']",
       title: "Currency Toggle",
       body: "Switch between INR and USD. All figures on this page update instantly, including stats and charts.",
@@ -294,6 +300,12 @@ export const pageTourSteps: Record<string, TourStep[]> = {
   /* ── Donor page ── */
   "donor-overview": [
     {
+      target: "[data-tour='razorpay-donation']",
+      title: "Pay Securely",
+      body: "Donate inside Sentinel with Razorpay. UPI, QR, cards, and netbanking appear according to the payment methods enabled on the account.",
+      placement: "bottom",
+    },
+    {
       target: "[data-tour='donor-stats']",
       title: "Your Contributions",
       body: "Total contributed, pending submissions, and approved donations — your giving history at a glance.",
@@ -302,7 +314,7 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     {
       target: "[data-tour='new-donation']",
       title: "Submit a Donation",
-      body: "Record your contribution with amount, method, and optional proof screenshots. An admin will review it.",
+      body: "Already paid elsewhere? Record that contribution with an optional proof screenshot for admin review.",
       placement: "bottom",
     },
     {

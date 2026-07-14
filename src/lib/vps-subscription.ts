@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 /**
  * Duration / billing block submitted from the VPS add/edit form.
@@ -135,5 +136,11 @@ export async function syncVpsSubscription(
       paidTxId: tx.id,
       lastRenewalDate: new Date(),
     },
+  });
+  scheduleFinanceAutomation({
+    action: "CREATED",
+    actorName: "Sentinel VPS Billing",
+    transactionId: tx.id,
+    sendBackup: true,
   });
 }

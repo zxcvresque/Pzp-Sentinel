@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { logAudit } from "@/lib/audit";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 /* ------------------------------------------------------------------ */
 /*  BMC Webhook signature verification                                 */
@@ -165,6 +166,7 @@ export async function POST(req: NextRequest) {
           console.error("BMC webhook: notification failed:", notifErr);
         }
 
+        scheduleFinanceAutomation({ action: "CREATED", actorName: "Buy Me a Coffee", transactionId: tx.id, sendBackup: true });
         return NextResponse.json({ status: "created", id: tx.id });
       }
 
@@ -197,6 +199,7 @@ export async function POST(req: NextRequest) {
           });
         }
 
+        scheduleFinanceAutomation({ action: "UPDATED", actorName: "Buy Me a Coffee" });
         return NextResponse.json({ status: "refund_processed" });
       }
 
@@ -244,6 +247,7 @@ export async function POST(req: NextRequest) {
           ),
         });
 
+        scheduleFinanceAutomation({ action: "CREATED", actorName: "Buy Me a Coffee", transactionId: tx.id, sendBackup: true });
         return NextResponse.json({ status: "created", id: tx.id });
       }
 
@@ -269,6 +273,7 @@ export async function POST(req: NextRequest) {
           });
         }
 
+        scheduleFinanceAutomation({ action: "UPDATED", actorName: "Buy Me a Coffee" });
         return NextResponse.json({ status: "refund_processed" });
       }
 
@@ -321,6 +326,7 @@ export async function POST(req: NextRequest) {
           ),
         });
 
+        scheduleFinanceAutomation({ action: "CREATED", actorName: "Buy Me a Coffee", transactionId: tx.id, sendBackup: true });
         return NextResponse.json({ status: "created", id: tx.id });
       }
 
@@ -382,6 +388,7 @@ export async function POST(req: NextRequest) {
           ),
         });
 
+        scheduleFinanceAutomation({ action: "CREATED", actorName: "Buy Me a Coffee", transactionId: tx.id, sendBackup: true });
         return NextResponse.json({ status: "created", id: tx.id });
       }
 
@@ -427,6 +434,7 @@ export async function POST(req: NextRequest) {
           ),
         });
 
+        scheduleFinanceAutomation({ action: "CREATED", actorName: "Buy Me a Coffee", transactionId: tx.id, sendBackup: true });
         return NextResponse.json({ status: "created", id: tx.id });
       }
 
@@ -440,6 +448,7 @@ export async function POST(req: NextRequest) {
             data: { status: "REJECTED", reviewNote: "Refunded via BMC" },
           });
         }
+        scheduleFinanceAutomation({ action: "UPDATED", actorName: "Buy Me a Coffee" });
         return NextResponse.json({ status: "refund_processed" });
       }
 
@@ -452,6 +461,7 @@ export async function POST(req: NextRequest) {
             data: { status: "REJECTED", reviewNote: "Refunded via BMC" },
           });
         }
+        scheduleFinanceAutomation({ action: "UPDATED", actorName: "Buy Me a Coffee" });
         return NextResponse.json({ status: "refund_processed" });
       }
 

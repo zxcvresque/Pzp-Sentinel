@@ -56,6 +56,9 @@ export default function TransactionsPage() {
   const [directionFilter, setDirectionFilter] = useState("ALL");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sheetsSyncing, setSheetsSyncing] = useState(false);
+  const [backupSending, setBackupSending] = useState(false);
+  const [sheetsMessage, setSheetsMessage] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [amount, setAmount] = useState("");
@@ -212,6 +215,28 @@ export default function TransactionsPage() {
     }
   }
 
+  async function handleSheetsSync(sendBackup = false) {
+    if (sendBackup) setBackupSending(true);
+    else setSheetsSyncing(true);
+    setSheetsMessage(null);
+    try {
+      const res = await fetch("/api/integrations/google-sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sendBackup }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setSheetsMessage(res.ok
+        ? sendBackup ? "Sheets updated and XLSX backup sent to Telegram" : `Sheets updated · ${data.transactionCount || 0} transactions`
+        : data.error || "Sheets sync failed");
+    } catch {
+      setSheetsMessage("Network error syncing Google Sheets");
+    } finally {
+      if (sendBackup) setBackupSending(false);
+      else setSheetsSyncing(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -293,7 +318,21 @@ export default function TransactionsPage() {
         <h1 className="text-3xl font-extrabold">
           All <span className="font-display text-lime">Transactions</span>
         </h1>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            onClick={() => handleSheetsSync(false)}
+            disabled={sheetsSyncing}
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2.5 rounded-full border border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary disabled:opacity-40 transition-colors"
+          >
+            {sheetsSyncing ? "Syncing..." : "Sync Sheets"}
+          </button>
+          <button
+            onClick={() => handleSheetsSync(true)}
+            disabled={backupSending}
+            className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-2.5 rounded-full border border-[var(--border)] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary disabled:opacity-40 transition-colors"
+          >
+            {backupSending ? "Sending..." : "Backup Now"}
+          </button>
           <button
             onClick={() => {
               const params = new URLSearchParams();
@@ -318,6 +357,12 @@ export default function TransactionsPage() {
           </button>
         </div>
       </div>
+
+      {sheetsMessage && (
+        <div className="mb-4 text-xs text-text-secondary" role="status">
+          {sheetsMessage}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">

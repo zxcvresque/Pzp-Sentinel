@@ -6,6 +6,7 @@ import { logTransaction, logProofScreenshot, logProofScreenshots } from "@/lib/t
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { Prisma } from "@/generated/prisma/client";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -177,6 +178,13 @@ export async function POST(req: NextRequest) {
       ),
     }).catch((err) => console.error("[tx] notifyAdmins failed:", err));
   }
+
+  scheduleFinanceAutomation({
+    action: "CREATED",
+    actorName: user.name,
+    transactionId: transaction.id,
+    sendBackup: true,
+  });
 
   return NextResponse.json({ transaction }, { status: 201 });
 }

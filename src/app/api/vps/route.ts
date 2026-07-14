@@ -8,6 +8,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { logCredentialAction } from "@/lib/github-log";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 
 export const dynamic = "force-dynamic";
 
@@ -437,6 +438,7 @@ export async function PATCH(req: NextRequest) {
         status: "ACTIVE",
       },
     });
+    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: tx.id, sendBackup: true });
     return NextResponse.json({ ok: true });
   }
 
@@ -449,7 +451,7 @@ export async function PATCH(req: NextRequest) {
     const price = Number(sub.price);
     if (!(price > 0)) return NextResponse.json({ error: "Subscription has no rate" }, { status: 400 });
 
-    await prisma.transaction.create({
+    const refundTx = await prisma.transaction.create({
       data: {
         amount: new Prisma.Decimal(price),
         currency: sub.currency ?? "INR",
@@ -466,6 +468,7 @@ export async function PATCH(req: NextRequest) {
       where: { id: sub.id },
       data: { status: "CANCELLED", autoRenew: false },
     });
+    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: refundTx.id, sendBackup: true });
     return NextResponse.json({ ok: true });
   }
 
@@ -515,7 +518,7 @@ export async function DELETE(req: NextRequest) {
   // expense behind (mirrors the manual Refund action). Skips already-cancelled subs.
   const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
   if (sub && sub.status === "ACTIVE" && sub.price != null && Number(sub.price) > 0) {
-    await prisma.transaction.create({
+    const refundTx = await prisma.transaction.create({
       data: {
         amount: new Prisma.Decimal(Number(sub.price)),
         currency: sub.currency ?? "INR",
@@ -532,6 +535,7 @@ export async function DELETE(req: NextRequest) {
       where: { id: sub.id },
       data: { status: "CANCELLED", autoRenew: false },
     });
+    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: refundTx.id, sendBackup: true });
   }
 
   await prisma.vpsServer.delete({ where: { id } });

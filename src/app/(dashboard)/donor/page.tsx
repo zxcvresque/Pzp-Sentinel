@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
+import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
@@ -15,6 +16,7 @@ interface Transaction {
   status: string;
   date: string;
   attachments?: string[];
+  isTest?: boolean;
 }
 
 export default function DonorDashboard() {
@@ -61,7 +63,7 @@ export default function DonorDashboard() {
   // Background refresh on focus / visibility regain + every 30s while visible.
   useAutoRefresh(load, 30000);
 
-  const approved = transactions.filter((t) => t.status === "APPROVED");
+  const approved = transactions.filter((t) => t.status === "APPROVED" && !t.isTest);
   const totalContributed = approved.reduce(
     (sum, t) => sum + parseFloat(t.amount),
     0
@@ -191,9 +193,11 @@ export default function DonorDashboard() {
           }}
           className="bg-lime text-bg-void font-semibold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm whitespace-nowrap hover:bg-lime/90 transition-colors shrink-0"
         >
-          {showForm ? "Cancel" : "New Donation"}
+          {showForm ? "Cancel" : "Record Manual"}
         </button>
       </div>
+
+      <RazorpayDonationCard onSuccess={load} />
 
       {/* Stats summary */}
       <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
@@ -223,7 +227,7 @@ export default function DonorDashboard() {
       {/* Success banner */}
       {success && (
         <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm animate-fade-in">
-          Payment submitted! Your donation is pending admin approval.
+          Manual payment submitted! Your donation is pending admin approval.
         </div>
       )}
 
@@ -231,7 +235,7 @@ export default function DonorDashboard() {
       {showForm && (
         <div className="glass-card p-4 sm:p-6 mb-6 animate-scale-in">
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
-            New Donation
+            Record an existing payment
           </div>
           <FormExample lines={["Amount: 1000 · Currency: INR · Method: UPI", "Reference: UPI transaction ID or note"]} />
           <form onSubmit={handleSubmit}>
@@ -403,6 +407,7 @@ export default function DonorDashboard() {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">
                   {tx.description}
+                  {tx.isTest && <span className="ml-2 rounded bg-violet/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-violet">Test</span>}
                 </div>
                 <div className="text-text-tertiary text-xs mt-1">
                   {new Date(tx.date).toLocaleDateString()} &middot; {tx.method}

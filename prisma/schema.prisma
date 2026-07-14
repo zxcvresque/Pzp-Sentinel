@@ -39,9 +39,17 @@ enum ReminderUnit {
 
 enum PaymentMethod {
   UPI
+  RAZORPAY
   BMC
   BANK
   OTHER
+}
+
+enum RazorpayOrderStatus {
+  CREATED
+  PAID
+  FAILED
+  EXPIRED
 }
 
 enum Direction {
@@ -141,6 +149,8 @@ model User {
   credentialsReviewed  Credential[]  @relation("CredReviewedBy")
   credentialAccess     CredentialAccess[] @relation("CredAccessUser")
   notifications        Notification[]
+  razorpayOrders       RazorpayOrder[]
+  oneTimeInvitesCreated OneTimeDonationInvite[] @relation("OneTimeInviteCreator")
 
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence DonateCadence @default(MONTHLY)
@@ -168,6 +178,7 @@ model Transaction {
   attachments  String[]      @default([])
   date        DateTime      @default(now())
   status      TxStatus      @default(PENDING)
+  isTest      Boolean       @default(false)
   reviewedById String?
   reviewedBy   User?        @relation("TxReviewedBy", fields: [reviewedById], references: [id])
   reviewNote   String?
@@ -178,6 +189,58 @@ model Transaction {
 
   service      Service?     @relation("SubPaidTx")
   auditLogs    AuditLog[]
+  razorpayOrder RazorpayOrder?
+}
+
+// Server-owned Razorpay order state. Checkout responses are never trusted until
+// they match one of these records and Razorpay confirms the payment is captured.
+model RazorpayOrder {
+  id              String                @id @default(cuid())
+  razorpayOrderId String                @unique
+  paymentId       String?               @unique
+  receipt         String                @unique
+  userId          String?
+  user            User?                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  inviteId        String?               @unique
+  invite          OneTimeDonationInvite? @relation(fields: [inviteId], references: [id], onDelete: Restrict)
+  transactionId   String?               @unique
+  transaction     Transaction?          @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  amount          Int                   // smallest currency unit (paise for INR)
+  currency        Currency              @default(INR)
+  description     String
+  testMode        Boolean               @default(false)
+  status          RazorpayOrderStatus   @default(CREATED)
+  paidAt          DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model OneTimeDonationInvite {
+  id             String    @id @default(cuid())
+  tokenHash      String    @unique
+  guestName      String
+  telegramUser   String
+  telegramId     String
+  note           String?
+  createdById    String
+  createdBy      User      @relation("OneTimeInviteCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  expiresAt      DateTime
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  order          RazorpayOrder?
+  createdAt      DateTime  @default(now())
+
+  @@index([createdById, createdAt])
+  @@index([expiresAt])
+}
+
+model RazorpayWebhookEvent {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  eventType String
+  createdAt DateTime @default(now())
 }
 
 model Service {

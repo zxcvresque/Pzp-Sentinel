@@ -9,10 +9,10 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 // next.config, but middleware runs BEFORE rewrites and sees the raw path — so
 // they must be allow-listed here or unauthenticated `curl .../install.sh` gets
 // redirected to /login (and piped into bash, breaks).
-const publicPaths = ["/", "/login", "/plan", "/install.sh", "/agent.sh"];
+const publicPaths = ["/", "/login", "/plan", "/donate", "/install.sh", "/agent.sh"];
 
 // Public API routes — no JWT needed
-const publicApiPaths = ["/api/auth", "/api/bot", "/api/exchange-rate", "/api/bmc/webhook", "/api/vps/heartbeat", "/api/vps/install", "/api/vps/agent"];
+const publicApiPaths = ["/api/auth", "/api/bot", "/api/exchange-rate", "/api/bmc/webhook", "/api/payments/razorpay/guest", "/api/webhooks/razorpay", "/api/vps/heartbeat", "/api/vps/install", "/api/vps/agent"];
 
 const roleRoutes: Record<string, Role> = {
   "/admin": "ADMIN",

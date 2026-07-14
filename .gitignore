@@ -26,6 +26,8 @@
 # misc
 .DS_Store
 *.pem
+sentinel-gsheets-*.json
+*service-account*.json
 sentinel-secrets.html
 CLAUDE.md
 
