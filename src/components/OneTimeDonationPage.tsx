@@ -6,7 +6,7 @@ import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 
 type Invite = {
   guestName: string;
-  telegramUser: string;
+  telegramUser: string | null;
   note: string | null;
   expiresAt: string;
   state: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
@@ -64,7 +64,7 @@ export default function OneTimeDonationPage({ token }: { token: string }) {
         ) : invite ? (
           <>
             <section className="mb-5 rounded-2xl border border-[var(--border)] bg-bg-deep/70 p-4 sm:flex sm:items-center sm:justify-between sm:p-5">
-              <div><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Prepared for</p><h1 className="mt-1 text-xl font-extrabold">{invite.guestName}</h1><p className="mt-1 text-xs text-text-secondary">@{invite.telegramUser}</p></div>
+              <div><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Prepared for</p><h1 className="mt-1 text-xl font-extrabold">{invite.guestName}</h1>{invite.telegramUser && <p className="mt-1 text-xs text-text-secondary">@{invite.telegramUser}</p>}</div>
               <div className="mt-4 text-left sm:mt-0 sm:text-right"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Valid until</p><p className="mt-1 text-sm text-text-secondary">{new Date(invite.expiresAt).toLocaleString()}</p></div>
             </section>
             <RazorpayDonationCard guestToken={token} onSuccess={() => setComplete(true)} />

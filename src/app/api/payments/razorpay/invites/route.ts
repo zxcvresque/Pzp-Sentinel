@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       entityId: invite.id,
       after: { guestName: invite.guestName, telegramUser: invite.telegramUser, telegramId: invite.telegramId, expiresAt: invite.expiresAt },
       userName: user.name,
-      details: `${invite.guestName} · @${invite.telegramUser} · TG ${invite.telegramId}`,
+      details: `${invite.guestName}${invite.telegramUser ? ` · @${invite.telegramUser}` : ""} · TG ${invite.telegramId}`,
     });
     return NextResponse.json({ invite, paymentUrl: `${baseUrl}/donate/${token}` }, { status: 201 });
   } catch (error) {

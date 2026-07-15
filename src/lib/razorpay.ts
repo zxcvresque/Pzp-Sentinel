@@ -7,6 +7,7 @@ import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { groupThanks, donorHandle, dmThanks } from "@/lib/donation-thanks";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { verifyCheckoutHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
+import { normalizeTelegramUsername, resolveRegisteredTelegramUser } from "@/lib/telegram-identity";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -94,12 +95,23 @@ export async function createOneTimeDonationInvite(params: {
   expiresInHours?: unknown;
 }) {
   const guestName = typeof params.guestName === "string" ? params.guestName.trim().slice(0, 80) : "";
-  const telegramUser = typeof params.telegramUser === "string" ? params.telegramUser.trim().replace(/^@/, "").slice(0, 64) : "";
-  const telegramId = typeof params.telegramId === "string" ? params.telegramId.trim().slice(0, 32) : "";
+  const telegramUser = normalizeTelegramUsername(params.telegramUser);
+  let telegramId = typeof params.telegramId === "string" ? params.telegramId.trim().slice(0, 32) : "";
   const note = typeof params.note === "string" ? params.note.trim().slice(0, 120) : "";
   const expiresInHours = Math.min(Math.max(Number(params.expiresInHours) || 24, 1), 168);
-  if (!guestName || !telegramUser || !/^\d{5,20}$/.test(telegramId)) {
-    throw new RazorpayError("Name, Telegram username, and a valid Telegram numeric ID are required", 400);
+  if (!guestName) {
+    throw new RazorpayError("Guest name is required", 400);
+  }
+
+  const registeredUser = telegramUser
+    ? await resolveRegisteredTelegramUser(telegramUser)
+    : null;
+  if (registeredUser && telegramId && registeredUser.telegramId !== telegramId) {
+    throw new RazorpayError("The Telegram numeric ID does not match the registered username", 400);
+  }
+  if (registeredUser && !telegramId) telegramId = registeredUser.telegramId;
+  if (!/^\d{5,20}$/.test(telegramId)) {
+    throw new RazorpayError("A valid Telegram numeric ID is required. Registered Sentinel usernames can be resolved automatically.", 400);
   }
 
   const token = randomBytes(32).toString("base64url");
@@ -107,7 +119,7 @@ export async function createOneTimeDonationInvite(params: {
     data: {
       tokenHash: hashInviteToken(token),
       guestName,
-      telegramUser,
+      telegramUser: registeredUser?.telegramUser || telegramUser || null,
       telegramId,
       note: note || null,
       createdById: params.createdById,
@@ -330,7 +342,7 @@ export async function finalizeCapturedDonation(params: {
           direction: "IN",
           type: "DONATION",
           fromUserId: stored.userId,
-          description: `${stored.testMode ? "[TEST] " : ""}${stored.description}${stored.invite ? ` · @${stored.invite.telegramUser} · TG ${stored.invite.telegramId}` : ""} · ${payment.id}`,
+          description: `${stored.testMode ? "[TEST] " : ""}${stored.description}${stored.invite ? `${stored.invite.telegramUser ? ` · @${stored.invite.telegramUser}` : ""} · TG ${stored.invite.telegramId}` : ""} · ${payment.id}`,
           date: payment.created_at ? new Date(payment.created_at * 1000) : new Date(),
           status: "APPROVED",
           isTest: stored.testMode,

@@ -109,7 +109,7 @@ npx tsx prisma/seed.ts
 
 Sentinel uses Buy Me a Coffee in two ways:
 
-- Hosted checkout: donors open the configured BMC creator page from their Sentinel dashboard. BMC owns checkout and payment capture.
+- Embedded checkout: the donor opens BMC's official checkout widget over the Sentinel dashboard, so payment stays in the Sentinel experience while BMC owns checkout and capture. If the widget cannot load, Sentinel safely falls back to the configured creator page.
 - Live updates: `POST /api/bmc/webhook` verifies `x-signature-sha256`, stores the delivery, creates or updates the matching Sentinel transaction, logs the event to Telegram/audit history, and refreshes the Sheets mirror.
 - Optional legacy sync: `POST /api/bmc/sync` remains available only when an older account still has a working `BMC_TOKEN`.
 
@@ -168,6 +168,8 @@ Then verify from the admin dashboard:
 4. Complete one small real BMC payment and confirm it appears automatically in `Admin -> Transactions`, Telegram audit logs, and the Sheets mirror.
 
 Previously imported BMC transactions remain in the database. `BMC_ACCOUNT_SLUG` namespaces new provider IDs so replacing an account cannot collide with the previous account's records. The webhook signing secret must never be exposed to client code.
+
+One-time Razorpay guest links always store a Telegram numeric ID. The username is optional: when it matches an active user already registered in Sentinel, the admin form fills the numeric ID automatically and the API rejects mismatched identities. Telegram does not expose a general username-to-ID lookup, so an unregistered username still requires the numeric ID to be entered manually.
 
 ### Run
 

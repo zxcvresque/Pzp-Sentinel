@@ -222,7 +222,7 @@ model OneTimeDonationInvite {
   id             String    @id @default(cuid())
   tokenHash      String    @unique
   guestName      String
-  telegramUser   String
+  telegramUser   String?
   telegramId     String
   note           String?
   createdById    String
