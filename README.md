@@ -169,7 +169,7 @@ Then verify from the admin dashboard:
 
 Previously imported BMC transactions remain in the database. `BMC_ACCOUNT_SLUG` namespaces new provider IDs so replacing an account cannot collide with the previous account's records. The webhook signing secret must never be exposed to client code.
 
-One-time Razorpay guest links use a Telegram bot deep link. The admin enters only a payer label, optional note, and expiry, then sends the generated `https://t.me/<BOT_USERNAME>?start=donate_<token>` link privately. When the recipient taps **Start**, Telegram supplies the sender's immutable numeric ID and optional username. The bot atomically binds that identity to the invitation and only then returns the single-use Sentinel checkout button.
+One-time guest links use a Telegram bot deep link. The admin enters a payer label, optional note, expiry, and whether Razorpay should be available alongside the default BMC option, then sends the generated `https://t.me/<BOT_USERNAME>?start=donate_<token>` link privately. When the recipient taps **Start**, Telegram supplies the sender's immutable numeric ID and optional username. The bot atomically binds that identity to the invitation and only then returns the Sentinel payment options.
 
 ### Run
 
@@ -212,7 +212,17 @@ https://your-domain.com/api/webhooks/razorpay
 
 Subscribe it to `payment.captured`, `order.paid`, and `payment.failed`, and use exactly the same dedicated webhook secret in both places. Test-mode payments are visibly recorded for QA but excluded from real treasury totals, burn-rate calculations, donor rankings, and Google Sheets dashboard calculations.
 
-Admins can also create expiring, revocable **one-time guest payment links** from the Treasury dashboard. The generated link opens the configured Telegram bot, which captures the payer's numeric Telegram ID directly from the `/start` sender and returns checkout only after a successful one-account claim. The checkout is consumed after the first captured payment, while Sentinel stores only a SHA-256 hash of the secret token.
+Admins can also create expiring, revocable **one-time guest payment links** from **Admin > Donors**. The generated link opens the configured Telegram bot, which captures the payer's numeric Telegram ID directly from the `/start` sender and returns payment options only after a successful one-account claim. BMC is included by default; optional Razorpay access is enforced by the invitation and that invitation is consumed after a server-verified Razorpay capture. Sentinel stores only a SHA-256 hash of the secret token.
+
+### Donor payment access
+
+Payment controls live under **Admin → Donors**:
+
+- Buy Me a Coffee is enabled for every donor by default and can be hidden per donor inside Sentinel.
+- Razorpay is disabled by default. An admin can enable or disable it persistently for selected donors with **Allow Razorpay**.
+- One-time guest invitations include BMC by default. Admins can select **Also allow Razorpay** while creating an invitation when that guest should see both methods.
+- Donor Razorpay permission is checked server-side whenever an order is created. Guest Razorpay permission is checked independently against the claimed invitation. Test or live behavior is selected exclusively by `RAZORPAY_KEY_ID`; production UI does not use demo orders.
+- Payment method logos are display guidance only. Razorpay Checkout remains authoritative and shows the methods enabled on the Razorpay account and supported by the payer's device.
 
 Before production deployment, apply the new Prisma models and enum:
 

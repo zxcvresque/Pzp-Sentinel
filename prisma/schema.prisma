@@ -162,6 +162,11 @@ model User {
   // donor's timezone. Applies to ALL cadences. Default IST.
   donateReminderTimeMin Int           @default(540)
   donateReminderTz      String        @default("Asia/Kolkata")
+
+  // Donor checkout access. BMC is available by default; Razorpay remains
+  // available only while an administrator has enabled it for the donor.
+  bmcAccess      Boolean @default(true)
+  razorpayAccess Boolean @default(false)
 }
 
 model Transaction {
@@ -225,6 +230,7 @@ model OneTimeDonationInvite {
   telegramUser   String?
   telegramId     String?
   note           String?
+  allowRazorpay  Boolean   @default(false)
   createdById    String
   createdBy      User      @relation("OneTimeInviteCreator", fields: [createdById], references: [id], onDelete: Restrict)
   expiresAt      DateTime

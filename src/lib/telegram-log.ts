@@ -97,6 +97,9 @@ const auditEmoji: Record<string, string> = {
   RAZORPAY_CAPTURED: "💳",
   RAZORPAY_INVITE_CREATE: "🔗",
   RAZORPAY_INVITE_REVOKE: "⛔",
+  PAYMENT_INVITE_CREATE: "🔗",
+  PAYMENT_INVITE_CLAIM: "✅",
+  PAYMENT_INVITE_REVOKE: "⛔",
 };
 
 export function logTransaction(tx: {

@@ -87,6 +87,7 @@ export async function createOneTimeDonationInvite(params: {
   guestName: unknown;
   note?: unknown;
   expiresInHours?: unknown;
+  allowRazorpay?: unknown;
 }) {
   const guestName = typeof params.guestName === "string" ? params.guestName.trim().slice(0, 80) : "";
   const note = typeof params.note === "string" ? params.note.trim().slice(0, 120) : "";
@@ -101,6 +102,7 @@ export async function createOneTimeDonationInvite(params: {
       tokenHash: hashInviteToken(token),
       guestName,
       note: note || null,
+      allowRazorpay: params.allowRazorpay === true,
       createdById: params.createdById,
       expiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000),
     },
@@ -131,6 +133,9 @@ export async function createGuestDonationOrder(params: {
   const invite = await getOneTimeDonationInvite(params.token);
   if (!invite) throw new RazorpayError("One-time payment link not found", 404);
   assertInviteAvailable(invite);
+  if (!invite.allowRazorpay) {
+    throw new RazorpayError("Razorpay is not enabled for this payment invitation", 403);
+  }
 
   if (invite.order) {
     const config = credentials();
@@ -189,6 +194,7 @@ export async function createDonationOrder(params: {
   userId: string;
   amount: unknown;
   description?: unknown;
+  requireAccess?: boolean;
 }) {
   const amountRupees = typeof params.amount === "number"
     ? params.amount
@@ -200,16 +206,27 @@ export async function createDonationOrder(params: {
 
   const user = await prisma.user.findUnique({
     where: { id: params.userId },
-    select: { id: true, name: true, telegramUser: true },
+    select: {
+      id: true,
+      name: true,
+      telegramUser: true,
+      razorpayAccess: true,
+    },
   });
   if (!user) throw new RazorpayError("User not found", 404);
+
+  const config = credentials();
+  if (params.requireAccess) {
+    if (!user.razorpayAccess) {
+      throw new RazorpayError("Razorpay checkout is not currently enabled for your account", 403);
+    }
+  }
 
   const note = typeof params.description === "string"
     ? params.description.trim().slice(0, 120)
     : "";
   const description = note || "Donation through Sentinel";
   const receipt = `sentinel_${Date.now()}_${user.id.slice(-6)}`.slice(0, 40);
-  const config = credentials();
   const remote = await razorpayRequest<RazorpayOrderResponse>("/orders", {
     method: "POST",
     body: JSON.stringify({

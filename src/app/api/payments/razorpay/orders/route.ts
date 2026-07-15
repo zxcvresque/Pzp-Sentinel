@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       amount: body.amount,
       description: body.description,
+      requireAccess: !hasRole(user.roles, "ADMIN"),
     });
     return NextResponse.json({ order });
   } catch (error) {

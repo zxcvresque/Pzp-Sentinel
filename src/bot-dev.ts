@@ -299,7 +299,7 @@ bot.command("start", async (ctx) => {
         await dbRetry(() => prisma.auditLog.create({
           data: {
             userId: invite!.createdById,
-            action: "RAZORPAY_INVITE_CLAIM",
+            action: "PAYMENT_INVITE_CLAIM",
             entityType: "OneTimeDonationInvite",
             entityId: invite!.id,
             after: {
@@ -310,7 +310,7 @@ bot.command("start", async (ctx) => {
           },
         }));
         await logAuditEvent({
-          action: "RAZORPAY_INVITE_CLAIM",
+          action: "PAYMENT_INVITE_CLAIM",
           entityType: "OneTimeDonationInvite",
           entityId: invite.id,
           userName: firstName,
@@ -324,12 +324,12 @@ bot.command("start", async (ctx) => {
         `<blockquote><b>✅ Telegram identity verified</b></blockquote>\n` +
         `<b>${escapeBotHtml(invite.guestName)}</b>\n` +
         `${username ? `@${username} · ` : ""}<code>${telegramId}</code>\n\n` +
-        `<i>This checkout is tied to your Telegram account and can be used only once.</i>`,
+        `<i>This payment invitation is tied to your Telegram account and its expiry.</i>`,
         {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [[
-              { text: "Continue to secure payment", web_app: { url: paymentUrl } },
+              { text: "Continue to payment options", web_app: { url: paymentUrl } },
             ]],
           },
         },

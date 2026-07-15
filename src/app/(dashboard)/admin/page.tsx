@@ -2,9 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
-import RazorpayDonationCard from "@/components/RazorpayDonationCard";
-import BmcSupportCard from "@/components/BmcSupportCard";
-import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
@@ -252,10 +249,6 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
-
-      <RazorpayDonationCard adminPreview onSuccess={load} />
-      <BmcSupportCard adminPreview />
-      <OneTimeDonationLinks />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {/* Balance */}

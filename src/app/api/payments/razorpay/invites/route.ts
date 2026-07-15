@@ -34,13 +34,14 @@ export async function POST(request: NextRequest) {
       guestName: body.guestName,
       note: body.note,
       expiresInHours: body.expiresInHours,
+      allowRazorpay: body.allowRazorpay,
     });
     await logAudit({
       userId: user.id,
-      action: "RAZORPAY_INVITE_CREATE",
+      action: "PAYMENT_INVITE_CREATE",
       entityType: "OneTimeDonationInvite",
       entityId: invite.id,
-      after: { guestName: invite.guestName, expiresAt: invite.expiresAt },
+      after: { guestName: invite.guestName, expiresAt: invite.expiresAt, allowRazorpay: invite.allowRazorpay },
       userName: user.name,
       details: `${invite.guestName} · awaiting Telegram identity claim`,
     });
@@ -63,7 +64,7 @@ export async function DELETE(request: NextRequest) {
   if (!result.count) return NextResponse.json({ error: "Active link not found" }, { status: 404 });
   await logAudit({
     userId: user.id,
-    action: "RAZORPAY_INVITE_REVOKE",
+    action: "PAYMENT_INVITE_REVOKE",
     entityType: "OneTimeDonationInvite",
     entityId: id,
     userName: user.name,

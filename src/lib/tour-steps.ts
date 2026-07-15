@@ -124,18 +124,6 @@ export const pageTourSteps: Record<string, TourStep[]> = {
   /* ── Admin pages ── */
   "admin-dashboard": [
     {
-      target: "[data-tour='razorpay-donation']",
-      title: "Test Razorpay Checkout",
-      body: "Create a test-mode donation through the same secure checkout donors use. Captured payments are tracked automatically.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='bmc-support']",
-      title: "BMC Hosted Checkout",
-      body: "Open the active Buy Me a Coffee page. Signed webhook events automatically record payments, refunds, extras, memberships, commissions, and wishlist activity in Sentinel.",
-      placement: "bottom",
-    },
-    {
       target: "[data-tour='currency-toggle']",
       title: "Currency Toggle",
       body: "Switch between INR and USD. All figures on this page update instantly, including stats and charts.",
@@ -152,6 +140,33 @@ export const pageTourSteps: Record<string, TourStep[]> = {
       title: "Recent Activity",
       body: "The latest 10 transactions appear here. For the full list with filters and actions, visit Transactions.",
       placement: "top",
+    },
+  ],
+
+  "admin-donors": [
+    {
+      target: "[data-tour='donor-payment-access']",
+      title: "Donor Payment Access",
+      body: "BMC is available by default. Enable Razorpay for selected donors; it stays available until an administrator switches it off.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='guest-payment-links']",
+      title: "One-time Guest Links",
+      body: "Create a Telegram bot link for a one-time payer. The bot captures the sender's Telegram identity before revealing checkout.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='razorpay-donation']",
+      title: "Razorpay Checkout",
+      body: "Razorpay uses whichever live or test key is configured on the server. Captures are verified server-side and recorded automatically.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='bmc-support']",
+      title: "Buy Me a Coffee",
+      body: "The embedded BMC checkout remains webhook-tracked for payments, refunds, extras, memberships, commissions, and wishlist activity.",
+      placement: "bottom",
     },
   ],
 

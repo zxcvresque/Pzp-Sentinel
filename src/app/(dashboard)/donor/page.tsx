@@ -27,6 +27,7 @@ export default function DonorDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [formError, setFormError] = useState("");
+  const [paymentAccess, setPaymentAccess] = useState<{ bmc: boolean; razorpay: boolean } | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
@@ -51,15 +52,23 @@ export default function DonorDashboard() {
     setTransactions(data.transactions || []);
   }, []);
 
+  const loadPaymentAccess = useCallback(async () => {
+    const response = await fetch("/api/payments/access", { cache: "no-store" });
+    if (!response.ok) throw new Error("Failed to load payment access");
+    const data = await response.json();
+    setPaymentAccess(data.access);
+  }, []);
+
   useEffect(() => {
     // Initial mount load: show the skeleton until the first fetch resolves.
     // Preserve the original initial-load error handling (empty the list), then
     // drop the skeleton once settled.
-    load()
+    // Both callbacks intentionally populate client state from external APIs.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    Promise.all([load(), loadPaymentAccess()])
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load, loadPaymentAccess]);
 
   // Background refresh on focus / visibility regain + every 30s while visible.
   useAutoRefresh(load, 30000);
@@ -198,8 +207,17 @@ export default function DonorDashboard() {
         </button>
       </div>
 
-      <RazorpayDonationCard onSuccess={load} />
-      <BmcSupportCard />
+      {paymentAccess?.razorpay && (
+        <RazorpayDonationCard onSuccess={async () => {
+          await Promise.all([load(), loadPaymentAccess()]);
+        }} />
+      )}
+      {paymentAccess?.bmc && <BmcSupportCard />}
+      {paymentAccess && !paymentAccess.bmc && !paymentAccess.razorpay && (
+        <div className="mb-6 rounded-2xl border border-[var(--border)] bg-bg-deep p-5 text-sm text-text-secondary">
+          Online checkout is not enabled for this account. Contact an administrator if you need a payment link.
+        </div>
+      )}
 
       {/* Stats summary */}
       <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">

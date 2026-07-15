@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
+import BmcSupportCard from "@/components/BmcSupportCard";
 
 type Invite = {
   guestName: string;
   telegramUser: string | null;
   note: string | null;
   expiresAt: string;
+  allowRazorpay: boolean;
   state: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
 };
 
@@ -44,7 +46,7 @@ export default function OneTimeDonationPage({ token }: { token: string }) {
             <Image src="/logo-icon.webp" alt="Sentinel" width={36} height={36} className="h-9 w-9 rounded-xl" priority />
             <div><div className="text-sm font-extrabold tracking-[.16em]">SENTINEL</div><div className="font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">One-time donor checkout</div></div>
           </div>
-          <span className="rounded-full border border-mint/20 bg-mint/8 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.12em] text-mint">Single use</span>
+          <span className="rounded-full border border-mint/20 bg-mint/8 px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.12em] text-mint">Telegram verified</span>
         </header>
 
         {loading ? (
@@ -67,11 +69,12 @@ export default function OneTimeDonationPage({ token }: { token: string }) {
               <div><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Prepared for</p><h1 className="mt-1 text-xl font-extrabold">{invite.guestName}</h1>{invite.telegramUser && <p className="mt-1 text-xs text-text-secondary">@{invite.telegramUser}</p>}</div>
               <div className="mt-4 text-left sm:mt-0 sm:text-right"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Valid until</p><p className="mt-1 text-sm text-text-secondary">{new Date(invite.expiresAt).toLocaleString()}</p></div>
             </section>
-            <RazorpayDonationCard guestToken={token} onSuccess={() => setComplete(true)} />
+            <BmcSupportCard guestToken={token} />
+            {invite.allowRazorpay && <RazorpayDonationCard guestToken={token} onSuccess={() => setComplete(true)} />}
           </>
         ) : null}
 
-        <footer className="mt-8 text-center font-mono text-[9px] uppercase tracking-[.1em] text-text-tertiary">Payment handled by Razorpay · Access limited to this checkout</footer>
+        <footer className="mt-8 text-center font-mono text-[9px] uppercase tracking-[.1em] text-text-tertiary">Access is tied to the verified Telegram account and invitation expiry</footer>
       </div>
       <div className="grain" />
     </main>

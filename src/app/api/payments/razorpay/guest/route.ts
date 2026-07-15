@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       guestName: invite.guestName,
       telegramUser: invite.telegramUser,
       note: invite.note,
+      allowRazorpay: invite.allowRazorpay,
       expiresAt: invite.expiresAt,
       state,
     },

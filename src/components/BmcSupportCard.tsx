@@ -7,16 +7,17 @@ type BmcConfig = {
   configured: boolean;
 };
 
-export default function BmcSupportCard({ adminPreview = false }: { adminPreview?: boolean }) {
+export default function BmcSupportCard({ adminPreview = false, guestToken }: { adminPreview?: boolean; guestToken?: string }) {
   const [config, setConfig] = useState<BmcConfig | null>(null);
   const [opening, setOpening] = useState(false);
 
   useEffect(() => {
-    fetch("/api/bmc/config", { cache: "no-store" })
+    const url = guestToken ? `/api/bmc/config?token=${encodeURIComponent(guestToken)}` : "/api/bmc/config";
+    fetch(url, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then(setConfig)
       .catch(() => setConfig(null));
-  }, []);
+  }, [guestToken]);
 
   function openCheckout() {
     if (!config?.checkoutUrl) return;

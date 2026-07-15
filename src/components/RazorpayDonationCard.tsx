@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 
 type CheckoutSuccess = {
   razorpay_payment_id: string;
@@ -50,6 +51,20 @@ function QrGlyph() {
       <rect x="2.5" y="2.5" width="8" height="8" rx="1.5" /><rect x="17.5" y="2.5" width="8" height="8" rx="1.5" />
       <rect x="2.5" y="17.5" width="8" height="8" rx="1.5" /><path d="M15 15h4v4h-4zM21 15h4M25 15v5M15 21v4h4M21 22h4v4" />
     </svg>
+  );
+}
+
+const PAYMENT_ICON_ROOT = "/Payment%20Apps%20Icons";
+
+function PaymentLogo({ file, alt, wide = false }: { file: string; alt: string; wide?: boolean }) {
+  return (
+    <Image
+      src={`${PAYMENT_ICON_ROOT}/${file}`}
+      alt={alt}
+      width={wide ? 60 : 32}
+      height={20}
+      className={`${wide ? "h-4 max-w-[60px]" : "h-4 max-w-8"} w-auto object-contain`}
+    />
   );
 }
 
@@ -103,7 +118,7 @@ export default function RazorpayDonationCard({
         image: `${window.location.origin}/logo-icon.webp`,
         order_id: order.id,
         prefill: order.prefill,
-        notes: { source: adminPreview ? "admin_dashboard" : "donor_dashboard" },
+        notes: { source: adminPreview ? "admin_donors" : "donor_dashboard" },
         theme: { color: getComputedStyle(document.documentElement).getPropertyValue("--lime").trim() || "#6FD1D7" },
         retry: { enabled: true },
         modal: {
@@ -139,7 +154,7 @@ export default function RazorpayDonationCard({
       });
       checkout.on("payment.failed", (response) => {
         setBusy(false);
-        setMessage({ type: "error", text: response.error?.description || "The test payment failed. Please try again." });
+        setMessage({ type: "error", text: response.error?.description || "The payment failed. Please try again." });
       });
       setMessage(null);
       checkout.open();
@@ -160,7 +175,7 @@ export default function RazorpayDonationCard({
             <span className="rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-violet">Razorpay checkout</span>
           </div>
           <h2 className="max-w-xl text-xl font-extrabold leading-tight sm:text-2xl">
-            {adminPreview ? "Run a " : "Make a "}<span className="font-display text-lime">donation</span>{adminPreview ? " test" : guestToken ? " securely" : " without leaving Sentinel"}
+            Make a <span className="font-display text-lime">donation</span>{guestToken ? " securely" : " without leaving Sentinel"}
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
             Choose an amount, then pay in Razorpay&apos;s protected checkout. Successful captures are verified server-side and added to Transactions automatically.
@@ -211,14 +226,39 @@ export default function RazorpayDonationCard({
             <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">Methods depend on Razorpay account settings</p></div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            {["UPI & QR", "Cards", "Netbanking", "Wallets"].map((label, index) => (
-              <div key={label} className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5 text-xs text-text-secondary">
-                <span className={`h-2 w-2 rounded-full ${index === 0 ? "bg-lime" : index === 1 ? "bg-violet" : index === 2 ? "bg-cyan" : "bg-amber"}`} />{label}
+            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
+              <p className="mb-2 text-[10px] font-semibold text-text-secondary">UPI & QR</p>
+              <div className="flex items-center gap-1.5">
+                <PaymentLogo file="Google_Pay-Logo.wine.svg" alt="Google Pay" />
+                <PaymentLogo file="PhonePe-Logo.wine.svg" alt="PhonePe" />
+                <PaymentLogo file="Paytm-Logo.wine.svg" alt="Paytm UPI" />
               </div>
-            ))}
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
+              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Cards</p>
+              <div className="flex items-center gap-1">
+                <PaymentLogo file="variant=dark-5.svg" alt="Mastercard" />
+                <PaymentLogo file="variant=dark-7.svg" alt="Visa" />
+                <PaymentLogo file="variant=dark-6.svg" alt="American Express" />
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
+              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Netbanking</p>
+              <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
+                <span className="grid h-6 w-6 place-items-center rounded-md border border-cyan/20 bg-cyan/8 text-cyan" aria-hidden="true">▥</span>
+                Supported banks
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
+              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Wallets</p>
+              <div className="flex items-center gap-2">
+                <PaymentLogo file="Paytm-Logo.wine.svg" alt="Paytm Wallet" wide />
+                <PaymentLogo file="MobiKwik-Logo.wine.svg" alt="MobiKwik" wide />
+              </div>
+            </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">
-            The current test keys use simulated payments—no money moves. With live keys, desktop checkout can present UPI QR and supported mobile devices prioritise UPI apps/Intent.
+            Checkout shows only the methods enabled on your Razorpay account and supported on the payer&apos;s device.
           </div>
         </div>
       </div>
