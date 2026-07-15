@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
@@ -7,7 +7,7 @@ import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { groupThanks, donorHandle, dmThanks } from "@/lib/donation-thanks";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { verifyCheckoutHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
-import { normalizeTelegramUsername, resolveRegisteredTelegramUser } from "@/lib/telegram-identity";
+import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -82,36 +82,17 @@ export function razorpayPublicConfig() {
   return { keyId, testMode };
 }
 
-function hashInviteToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
 export async function createOneTimeDonationInvite(params: {
   createdById: string;
   guestName: unknown;
-  telegramUser: unknown;
-  telegramId: unknown;
   note?: unknown;
   expiresInHours?: unknown;
 }) {
   const guestName = typeof params.guestName === "string" ? params.guestName.trim().slice(0, 80) : "";
-  const telegramUser = normalizeTelegramUsername(params.telegramUser);
-  let telegramId = typeof params.telegramId === "string" ? params.telegramId.trim().slice(0, 32) : "";
   const note = typeof params.note === "string" ? params.note.trim().slice(0, 120) : "";
   const expiresInHours = Math.min(Math.max(Number(params.expiresInHours) || 24, 1), 168);
   if (!guestName) {
     throw new RazorpayError("Guest name is required", 400);
-  }
-
-  const registeredUser = telegramUser
-    ? await resolveRegisteredTelegramUser(telegramUser)
-    : null;
-  if (registeredUser && telegramId && registeredUser.telegramId !== telegramId) {
-    throw new RazorpayError("The Telegram numeric ID does not match the registered username", 400);
-  }
-  if (registeredUser && !telegramId) telegramId = registeredUser.telegramId;
-  if (!/^\d{5,20}$/.test(telegramId)) {
-    throw new RazorpayError("A valid Telegram numeric ID is required. Registered Sentinel usernames can be resolved automatically.", 400);
   }
 
   const token = randomBytes(32).toString("base64url");
@@ -119,8 +100,6 @@ export async function createOneTimeDonationInvite(params: {
     data: {
       tokenHash: hashInviteToken(token),
       guestName,
-      telegramUser: registeredUser?.telegramUser || telegramUser || null,
-      telegramId,
       note: note || null,
       createdById: params.createdById,
       expiresAt: new Date(Date.now() + expiresInHours * 60 * 60 * 1000),
@@ -130,7 +109,7 @@ export async function createOneTimeDonationInvite(params: {
 }
 
 export async function getOneTimeDonationInvite(token: string) {
-  if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return null;
+  if (!INVITE_TOKEN_PATTERN.test(token)) return null;
   return prisma.oneTimeDonationInvite.findUnique({
     where: { tokenHash: hashInviteToken(token) },
     include: { order: { include: { transaction: true } } },
@@ -141,6 +120,7 @@ function assertInviteAvailable(invite: NonNullable<Awaited<ReturnType<typeof get
   if (invite.revokedAt) throw new RazorpayError("This one-time payment link was revoked", 410);
   if (invite.usedAt || invite.order?.transaction) throw new RazorpayError("This one-time payment link has already been used", 410);
   if (invite.expiresAt.getTime() <= Date.now()) throw new RazorpayError("This one-time payment link has expired", 410);
+  if (!invite.telegramId || !invite.claimedAt) throw new RazorpayError("Open the Telegram bot link to verify your identity first", 403);
 }
 
 export async function createGuestDonationOrder(params: {

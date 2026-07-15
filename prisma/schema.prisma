@@ -223,11 +223,12 @@ model OneTimeDonationInvite {
   tokenHash      String    @unique
   guestName      String
   telegramUser   String?
-  telegramId     String
+  telegramId     String?
   note           String?
   createdById    String
   createdBy      User      @relation("OneTimeInviteCreator", fields: [createdById], references: [id], onDelete: Restrict)
   expiresAt      DateTime
+  claimedAt      DateTime?
   usedAt         DateTime?
   revokedAt      DateTime?
   order          RazorpayOrder?

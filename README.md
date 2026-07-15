@@ -169,7 +169,7 @@ Then verify from the admin dashboard:
 
 Previously imported BMC transactions remain in the database. `BMC_ACCOUNT_SLUG` namespaces new provider IDs so replacing an account cannot collide with the previous account's records. The webhook signing secret must never be exposed to client code.
 
-One-time Razorpay guest links always store a Telegram numeric ID. The username is optional: when it matches an active user already registered in Sentinel, the admin form fills the numeric ID automatically and the API rejects mismatched identities. Telegram does not expose a general username-to-ID lookup, so an unregistered username still requires the numeric ID to be entered manually.
+One-time Razorpay guest links use a Telegram bot deep link. The admin enters only a payer label, optional note, and expiry, then sends the generated `https://t.me/<BOT_USERNAME>?start=donate_<token>` link privately. When the recipient taps **Start**, Telegram supplies the sender's immutable numeric ID and optional username. The bot atomically binds that identity to the invitation and only then returns the single-use Sentinel checkout button.
 
 ### Run
 
@@ -212,7 +212,7 @@ https://your-domain.com/api/webhooks/razorpay
 
 Subscribe it to `payment.captured`, `order.paid`, and `payment.failed`, and use exactly the same dedicated webhook secret in both places. Test-mode payments are visibly recorded for QA but excluded from real treasury totals, burn-rate calculations, donor rankings, and Google Sheets dashboard calculations.
 
-Admins can also create expiring, revocable **one-time guest payment links** from the Treasury dashboard. Each link is bound to the guest's name, Telegram username, and numeric Telegram ID; it grants access only to the checkout page and is consumed after the first captured payment. The secret URL token is stored only as a SHA-256 hash and is shown to the admin once.
+Admins can also create expiring, revocable **one-time guest payment links** from the Treasury dashboard. The generated link opens the configured Telegram bot, which captures the payer's numeric Telegram ID directly from the `/start` sender and returns checkout only after a successful one-account claim. The checkout is consumed after the first captured payment, while Sentinel stores only a SHA-256 hash of the secret token.
 
 Before production deployment, apply the new Prisma models and enum:
 

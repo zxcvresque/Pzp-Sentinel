@@ -6,6 +6,7 @@ import pg from "pg";
 import { logAuditEvent } from "./lib/telegram-log";
 import { donateReminderMessage } from "./lib/donation-thanks";
 import { scheduleFinanceAutomation } from "./lib/finance-sheets";
+import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -19,6 +20,10 @@ pool.on("error", (err) => {
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const bot = new Bot(process.env.BOT_TOKEN!);
+
+function escapeBotHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 // Check if an error is a transient DB connection failure worth retrying
 function isTransientDbError(err: unknown): boolean {
@@ -219,6 +224,119 @@ bot.command("start", async (ctx) => {
       );
     } catch (err) {
       console.error("Failed to reply with user ID:", err);
+    }
+    return;
+  }
+
+  // Claim a one-time checkout through Telegram before revealing its payment URL.
+  if (payload && payload.startsWith("donate_")) {
+    const token = payload.slice(7);
+    if (!INVITE_TOKEN_PATTERN.test(token)) {
+      await ctx.reply("❌ This payment invitation is invalid. Ask the administrator for a new link.");
+      return;
+    }
+
+    try {
+      const now = new Date();
+      let invite = await dbRetry(() => prisma.oneTimeDonationInvite.findUnique({
+        where: { tokenHash: hashInviteToken(token) },
+      }));
+
+      if (!invite) {
+        await ctx.reply("❌ This payment invitation was not found.");
+        return;
+      }
+      if (invite.revokedAt) {
+        await ctx.reply("⛔ This payment invitation was revoked by an administrator.");
+        return;
+      }
+      if (invite.usedAt) {
+        await ctx.reply("✅ This one-time payment invitation has already been used.");
+        return;
+      }
+      if (invite.expiresAt <= now) {
+        await ctx.reply("⌛ This payment invitation has expired. Ask the administrator for a new link.");
+        return;
+      }
+      if (invite.telegramId && invite.telegramId !== telegramId) {
+        await ctx.reply("🔒 This payment invitation has already been claimed by another Telegram account.");
+        return;
+      }
+
+      let claimedNow = false;
+      if (!invite.telegramId) {
+        const claimed = await dbRetry(() => prisma.oneTimeDonationInvite.updateMany({
+          where: {
+            id: invite!.id,
+            telegramId: null,
+            revokedAt: null,
+            usedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: {
+            telegramId,
+            telegramUser: username || null,
+            claimedAt: now,
+          },
+        }));
+        claimedNow = claimed.count === 1;
+        invite = await dbRetry(() => prisma.oneTimeDonationInvite.findUnique({
+          where: { id: invite!.id },
+        }));
+      } else if (username && username !== invite.telegramUser) {
+        invite = await dbRetry(() => prisma.oneTimeDonationInvite.update({
+          where: { id: invite!.id },
+          data: { telegramUser: username, claimedAt: invite!.claimedAt || now },
+        }));
+      }
+
+      if (!invite || invite.telegramId !== telegramId) {
+        await ctx.reply("🔒 This payment invitation was claimed by another Telegram account.");
+        return;
+      }
+
+      if (claimedNow) {
+        await dbRetry(() => prisma.auditLog.create({
+          data: {
+            userId: invite!.createdById,
+            action: "RAZORPAY_INVITE_CLAIM",
+            entityType: "OneTimeDonationInvite",
+            entityId: invite!.id,
+            after: {
+              telegramId,
+              telegramUser: username || null,
+              claimedAt: now.toISOString(),
+            },
+          },
+        }));
+        await logAuditEvent({
+          action: "RAZORPAY_INVITE_CLAIM",
+          entityType: "OneTimeDonationInvite",
+          entityId: invite.id,
+          userName: firstName,
+          details: `${username ? `@${username} · ` : ""}TG ${telegramId} verified through the bot`,
+        });
+      }
+
+      const webappUrl = (process.env.WEBAPP_URL || "https://pzp.finance").replace(/\/$/, "");
+      const paymentUrl = `${webappUrl}/donate/${token}`;
+      await ctx.reply(
+        `<blockquote><b>✅ Telegram identity verified</b></blockquote>\n` +
+        `<b>${escapeBotHtml(invite.guestName)}</b>\n` +
+        `${username ? `@${username} · ` : ""}<code>${telegramId}</code>\n\n` +
+        `<i>This checkout is tied to your Telegram account and can be used only once.</i>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "Continue to secure payment", web_app: { url: paymentUrl } },
+            ]],
+          },
+        },
+      );
+    } catch (err) {
+      console.error("Failed to claim one-time payment invitation:", err);
+      await ctx.reply("❌ Something went wrong while verifying this payment invitation. Please try again.");
     }
     return;
   }

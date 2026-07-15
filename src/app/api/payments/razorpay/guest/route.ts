@@ -7,6 +7,9 @@ export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token") || "";
   const invite = await getOneTimeDonationInvite(token);
   if (!invite) return NextResponse.json({ error: "Payment link not found" }, { status: 404 });
+  if (!invite.telegramId || !invite.claimedAt) {
+    return NextResponse.json({ error: "Verify your identity through the Telegram bot link first" }, { status: 403 });
+  }
   const state = invite.revokedAt ? "REVOKED" : invite.usedAt ? "USED" : invite.expiresAt <= new Date() ? "EXPIRED" : "ACTIVE";
   return NextResponse.json({
     invite: {

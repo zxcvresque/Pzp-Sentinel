@@ -27,25 +27,24 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   try {
     const body = await request.json();
+    const botUsername = process.env.BOT_USERNAME?.trim().replace(/^@/, "");
+    if (!botUsername) throw new RazorpayError("BOT_USERNAME is not configured", 503);
     const { invite, token } = await createOneTimeDonationInvite({
       createdById: user.id,
       guestName: body.guestName,
-      telegramUser: body.telegramUser,
-      telegramId: body.telegramId,
       note: body.note,
       expiresInHours: body.expiresInHours,
     });
-    const baseUrl = (process.env.WEBAPP_URL || request.nextUrl.origin).replace(/\/$/, "");
     await logAudit({
       userId: user.id,
       action: "RAZORPAY_INVITE_CREATE",
       entityType: "OneTimeDonationInvite",
       entityId: invite.id,
-      after: { guestName: invite.guestName, telegramUser: invite.telegramUser, telegramId: invite.telegramId, expiresAt: invite.expiresAt },
+      after: { guestName: invite.guestName, expiresAt: invite.expiresAt },
       userName: user.name,
-      details: `${invite.guestName}${invite.telegramUser ? ` · @${invite.telegramUser}` : ""} · TG ${invite.telegramId}`,
+      details: `${invite.guestName} · awaiting Telegram identity claim`,
     });
-    return NextResponse.json({ invite, paymentUrl: `${baseUrl}/donate/${token}` }, { status: 201 });
+    return NextResponse.json({ invite, botLink: `https://t.me/${botUsername}?start=donate_${token}` }, { status: 201 });
   } catch (error) {
     const status = error instanceof RazorpayError ? error.status : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not create link" }, { status });
