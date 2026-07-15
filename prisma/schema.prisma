@@ -190,6 +190,7 @@ model Transaction {
   service      Service?     @relation("SubPaidTx")
   auditLogs    AuditLog[]
   razorpayOrder RazorpayOrder?
+  bmcWebhookEvents BmcWebhookEvent[]
 }
 
 // Server-owned Razorpay order state. Checkout responses are never trusted until
@@ -241,6 +242,33 @@ model RazorpayWebhookEvent {
   eventId   String   @unique
   eventType String
   createdAt DateTime @default(now())
+}
+
+// Durable receipt log for Buy Me a Coffee webhook deliveries. The event key
+// makes retries idempotent while the raw payload preserves provider data for
+// support/debugging without exposing it to donors.
+model BmcWebhookEvent {
+  id            String       @id @default(cuid())
+  eventKey      String       @unique
+  providerEventId String?
+  eventType     String
+  liveMode      Boolean      @default(true)
+  attempt       Int          @default(1)
+  resourceId    String?
+  supporterName String?
+  amount        Decimal?
+  currency      Currency?
+  status        String       @default("PROCESSING")
+  payload       Json
+  transactionId String?
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  processedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([eventType, createdAt])
+  @@index([resourceId])
+  @@index([transactionId])
 }
 
 model Service {

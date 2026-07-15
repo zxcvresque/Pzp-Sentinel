@@ -5,6 +5,7 @@ import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
+import BmcSupportCard from "@/components/BmcSupportCard";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
@@ -198,6 +199,7 @@ export default function DonorDashboard() {
       </div>
 
       <RazorpayDonationCard onSuccess={load} />
+      <BmcSupportCard />
 
       {/* Stats summary */}
       <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">

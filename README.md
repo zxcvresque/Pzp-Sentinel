@@ -90,8 +90,11 @@ TG_TOPIC_BACKUPS=topic-id
 GITHUB_LOGS_TOKEN=your-github-pat
 
 # Buy Me a Coffee
-BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
-BMC_TOKEN=your-bmc-api-token
+BMC_PAGE_URL=https://buymeacoffee.com/your-creator-slug
+BMC_ACCOUNT_SLUG=your-creator-slug
+BMC_WEBHOOK_SECRET=your-webhook-signing-secret
+# Optional legacy API token; new accounts may not offer one.
+BMC_TOKEN=
 ```
 
 ### Database Setup
@@ -106,14 +109,17 @@ npx tsx prisma/seed.ts
 
 Sentinel uses Buy Me a Coffee in two ways:
 
-- Manual sync: `POST /api/bmc/sync` imports supporters and extras through the BMC API.
-- Live updates: `POST /api/bmc/webhook` receives signed BMC webhook events.
+- Hosted checkout: donors open the configured BMC creator page from their Sentinel dashboard. BMC owns checkout and payment capture.
+- Live updates: `POST /api/bmc/webhook` verifies `x-signature-sha256`, stores the delivery, creates or updates the matching Sentinel transaction, logs the event to Telegram/audit history, and refreshes the Sheets mirror.
+- Optional legacy sync: `POST /api/bmc/sync` remains available only when an older account still has a working `BMC_TOKEN`.
 
 From the active Buy Me a Coffee account, collect:
 
 ```env
-BMC_TOKEN=your-bmc-api-token
+BMC_PAGE_URL=https://buymeacoffee.com/your-creator-slug
+BMC_ACCOUNT_SLUG=your-creator-slug
 BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
+BMC_TOKEN=
 ```
 
 In the BMC developer/webhook settings, set the webhook URL to:
@@ -125,21 +131,22 @@ https://sentinel.piratezparty.com/api/bmc/webhook
 Enable all available events, or at minimum the events Sentinel handles:
 
 ```text
-payment.created
-payment.refunded
-extras.purchased
-extras.refunded
-monthly_support.started
-monthly_support.cancelled
+donation.created
+donation.refunded
+extra_purchase.created
+extra_purchase.refunded
+extra_purchase.updated
+recurring_donation.started
+recurring_donation.cancelled
+recurring_donation.updated
 membership.started
 membership.cancelled
+membership.paused
+membership.updated
 commission_order.created
 commission_order.refunded
 wishlist_payment.created
 wishlist_payment.refunded
-monthly_support.updated
-membership.updated
-extras.updated
 ```
 
 To replace an existing BMC account on the VPS:
@@ -147,7 +154,8 @@ To replace an existing BMC account on the VPS:
 ```bash
 cd ~/Sentinel
 nano .env
-# replace BMC_TOKEN and BMC_WEBHOOK_SECRET only
+# replace BMC_PAGE_URL, BMC_ACCOUNT_SLUG, and BMC_WEBHOOK_SECRET
+npm run db:push
 pm2 restart sentinel-web
 pm2 save
 ```
@@ -155,11 +163,11 @@ pm2 save
 Then verify from the admin dashboard:
 
 1. Open `Admin -> Dashboard`.
-2. Click `Sync BMC`.
-3. Confirm imported BMC transactions appear in `Admin -> Transactions`.
-4. Trigger a small test payment/webhook event if possible and confirm it appears automatically.
+2. Open the webhook in BMC and use **Send test event** for `donation.created`.
+3. Confirm BMC shows a `2xx` delivery and Sentinel shows the test receipt without adding it to live treasury totals.
+4. Complete one small real BMC payment and confirm it appears automatically in `Admin -> Transactions`, Telegram audit logs, and the Sheets mirror.
 
-Previously imported BMC transactions remain in the database. Replacing the BMC account only changes future syncs/webhooks unless old BMC transactions are manually deleted.
+Previously imported BMC transactions remain in the database. `BMC_ACCOUNT_SLUG` namespaces new provider IDs so replacing an account cannot collide with the previous account's records. The webhook signing secret must never be exposed to client code.
 
 ### Run
 

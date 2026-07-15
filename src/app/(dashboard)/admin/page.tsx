@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
+import BmcSupportCard from "@/components/BmcSupportCard";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
@@ -40,9 +41,24 @@ interface Stats {
 }
 
 interface BmcStats {
+  webhookConfigured: boolean;
+  legacySyncAvailable: boolean;
+  checkoutUrl: string | null;
   totalSupporters: number;
   totalEarned: number;
+  totalsByCurrency: Record<string, number>;
   totalTransactions: number;
+  eventBreakdown: Record<string, number>;
+  recentEvents: {
+    id: string;
+    eventType: string;
+    liveMode: boolean;
+    supporterName: string | null;
+    amount: string | null;
+    currency: string | null;
+    status: string;
+    createdAt: string;
+  }[];
   recent: {
     id: string;
     amount: string;
@@ -238,6 +254,7 @@ export default function AdminDashboard() {
       </div>
 
       <RazorpayDonationCard adminPreview onSuccess={load} />
+      <BmcSupportCard adminPreview />
       <OneTimeDonationLinks />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -558,7 +575,12 @@ export default function AdminDashboard() {
           <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
             Buy Me a Coffee
           </h2>
-          <button
+          <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.1em] ${bmcStats?.webhookConfigured ? "border-mint/20 bg-mint/8 text-mint" : "border-amber/20 bg-amber/8 text-amber"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${bmcStats?.webhookConfigured ? "bg-mint" : "bg-amber"}`} />
+            {bmcStats?.webhookConfigured ? "Webhook ready" : "Not configured"}
+          </span>
+          {bmcStats?.legacySyncAvailable && <button
             onClick={handleBmcSync}
             disabled={bmcSyncing}
             className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-1.5 rounded-full border transition-colors flex items-center gap-2"
@@ -585,7 +607,8 @@ export default function AdminDashboard() {
               <path d="M1.5 14v-3h3" />
             </svg>
             {bmcSyncing ? "Syncing..." : "Sync BMC"}
-          </button>
+          </button>}
+          </div>
         </div>
 
         {bmcResult && (
@@ -618,7 +641,10 @@ export default function AdminDashboard() {
                 Total Earned
               </div>
               <div className="text-2xl font-extrabold text-mint">
-                ${bmcStats?.totalEarned?.toLocaleString("en-US") ?? "0"}
+                ${(bmcStats?.totalsByCurrency?.USD ?? bmcStats?.totalEarned ?? 0).toLocaleString("en-US")}
+                {(bmcStats?.totalsByCurrency?.INR ?? 0) > 0 && (
+                  <span className="ml-2 text-sm text-text-secondary">+ ₹{bmcStats?.totalsByCurrency.INR.toLocaleString("en-IN")}</span>
+                )}
               </div>
             </div>
             <div>
@@ -630,6 +656,16 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+
+          {bmcStats?.eventBreakdown && Object.keys(bmcStats.eventBreakdown).length > 0 && (
+            <div className="mb-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+              {Object.entries(bmcStats.eventBreakdown).map(([event, count]) => (
+                <span key={event} className="rounded-full border border-[var(--border)] bg-white/[.02] px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.08em] text-text-secondary">
+                  {event.replaceAll("_", " ")} · {count}
+                </span>
+              ))}
+            </div>
+          )}
 
           {bmcStats?.recent && bmcStats.recent.length > 0 && (
             <>
@@ -652,7 +688,7 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                       <div className="text-mint font-semibold text-sm ml-3 shrink-0">
-                        +${parseFloat(tx.amount).toLocaleString()}
+                        +{tx.currency === "INR" ? "₹" : "$"}{parseFloat(tx.amount).toLocaleString(tx.currency === "INR" ? "en-IN" : "en-US")}
                       </div>
                     </div>
                   ))}
@@ -661,10 +697,32 @@ export default function AdminDashboard() {
             </>
           )}
 
+          {bmcStats?.recentEvents && bmcStats.recentEvents.length > 0 && (
+            <div className="mt-4 border-t border-[var(--border)] pt-4">
+              <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Webhook activity</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {bmcStats.recentEvents.slice(0, 6).map((event) => (
+                  <div key={event.id} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white/[.015] px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-text-primary">{event.eventType.replaceAll("_", " ")}</div>
+                      <div className="mt-0.5 truncate font-mono text-[9px] uppercase tracking-[.07em] text-text-tertiary">
+                        {event.supporterName || "Anonymous"} · {new Date(event.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {!event.liveMode && <span className="rounded-full bg-violet/10 px-2 py-1 font-mono text-[8px] uppercase text-violet">Test</span>}
+                      <span className="rounded-full bg-mint/8 px-2 py-1 font-mono text-[8px] uppercase text-mint">{event.status.replaceAll("_", " ")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {(!bmcStats || bmcStats.totalTransactions === 0) && (
             <div className="text-center py-4">
               <p className="text-text-tertiary text-sm">
-                No BMC donations synced yet. Click Sync to import from Buy Me a Coffee.
+                No live BMC payments received yet. Send a dashboard test event to verify the webhook, then real payments will appear here automatically.
               </p>
             </div>
           )}

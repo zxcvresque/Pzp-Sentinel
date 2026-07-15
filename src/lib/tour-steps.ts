@@ -130,6 +130,12 @@ export const pageTourSteps: Record<string, TourStep[]> = {
       placement: "bottom",
     },
     {
+      target: "[data-tour='bmc-support']",
+      title: "BMC Hosted Checkout",
+      body: "Open the active Buy Me a Coffee page. Signed webhook events automatically record payments, refunds, extras, memberships, commissions, and wishlist activity in Sentinel.",
+      placement: "bottom",
+    },
+    {
       target: "[data-tour='currency-toggle']",
       title: "Currency Toggle",
       body: "Switch between INR and USD. All figures on this page update instantly, including stats and charts.",
@@ -303,6 +309,12 @@ export const pageTourSteps: Record<string, TourStep[]> = {
       target: "[data-tour='razorpay-donation']",
       title: "Pay Securely",
       body: "Donate inside Sentinel with Razorpay. UPI, QR, cards, and netbanking appear according to the payment methods enabled on the account.",
+      placement: "bottom",
+    },
+    {
+      target: "[data-tour='bmc-support']",
+      title: "Support with BMC",
+      body: "Prefer Buy Me a Coffee? Open its hosted checkout here; successful payments return to Sentinel automatically through the verified webhook.",
       placement: "bottom",
     },
     {
