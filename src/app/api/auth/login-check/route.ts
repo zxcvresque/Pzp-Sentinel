@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
-import { fetchTelegramPhotoUrl } from "@/lib/bot";
+import { fetchTelegramPhotoUrl, retainedArchivedTelegramPhoto } from "@/lib/bot";
 
 export const dynamic = "force-dynamic";
 
@@ -80,15 +80,14 @@ export async function GET(req: NextRequest) {
     path: "/",
   });
 
-  fetchTelegramPhotoUrl(telegramId)
-    .then((botPhoto) => {
-      if (!botPhoto || botPhoto === user.photoUrl) return null;
-      return prisma.user.update({
-        where: { telegramId },
-        data: { photoUrl: botPhoto },
-      });
-    })
-    .catch(() => {});
+  const botPhoto = await fetchTelegramPhotoUrl(telegramId, user.name);
+  const photoUrl = botPhoto || retainedArchivedTelegramPhoto(user.photoUrl);
+  if (photoUrl !== user.photoUrl) {
+    await prisma.user.update({
+      where: { telegramId },
+      data: { photoUrl },
+    });
+  }
 
   return response;
 }

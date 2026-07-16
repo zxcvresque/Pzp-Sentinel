@@ -13,9 +13,9 @@ bot.command("start", async (ctx) => {
   if (!telegramId) return;
 
   // Fetch profile photo from Telegram
-  const photoUrl = await fetchTelegramPhotoUrl(telegramId);
+  const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName);
 
-  let user = await prisma.user.findUnique({ where: { telegramId } });
+  const user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (user) {
     await prisma.user.update({

@@ -56,17 +56,30 @@ function QrGlyph() {
 
 const PAYMENT_ICON_ROOT = "/Payment%20Apps%20Icons";
 
-function PaymentLogo({ file, alt }: { file: string; alt: string }) {
+function PaymentLogo({ file, alt, compact = false }: { file: string; alt: string; compact?: boolean }) {
   return (
     <Image
       src={`${PAYMENT_ICON_ROOT}/${file}`}
       alt={alt}
-      width={48}
-      height={20}
-      className="h-5 w-auto max-w-12 object-contain"
+      width={compact ? 60 : 88}
+      height={compact ? 40 : 34}
+      className={compact ? "h-8 w-12 object-contain sm:h-9 sm:w-[54px]" : "h-6 w-[58px] object-contain sm:h-7 sm:w-[68px]"}
     />
   );
 }
+
+const PAYMENT_METHODS = [
+  { file: "variant=dark.svg", alt: "Amazon Pay", label: "Amazon Pay", compact: true },
+  { file: "PhonePe-Logo.wine.svg", alt: "PhonePe", label: "PhonePe", compact: false },
+  { file: "variant=dark-3.svg", alt: "Google Pay", label: "Google Pay", compact: true },
+  { file: "Paytm-Logo.wine.svg", alt: "Paytm", label: "Paytm", compact: false },
+  { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik", label: "MobiKwik", compact: false },
+  { file: "variant=dark-2.svg", alt: "Apple Pay", label: "Apple Pay", compact: true },
+  { file: "variant=dark-4.svg", alt: "Samsung Pay", label: "Samsung Pay", compact: true },
+  { file: "variant=dark-5.svg", alt: "Mastercard", label: "Mastercard", compact: true },
+  { file: "variant=dark-7.svg", alt: "Visa", label: "Visa", compact: true },
+  { file: "variant=dark-6.svg", alt: "American Express", label: "Amex", compact: true },
+] as const;
 
 export default function RazorpayDonationCard({
   onSuccess,
@@ -172,7 +185,9 @@ export default function RazorpayDonationCard({
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-lime/20 bg-lime/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-lime">Secure checkout</span>
-            <span className="rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-violet">Razorpay checkout</span>
+            <span className="flex h-8 items-center rounded-lg border border-[#3395ff]/25 bg-[#f3f7ff] px-2.5 shadow-[0_5px_20px_rgba(51,149,255,.12)]">
+              <Image src={`${PAYMENT_ICON_ROOT}/razorpay-icon.svg`} alt="Razorpay checkout" width={123} height={27} className="h-[18px] w-auto" priority />
+            </span>
           </div>
           <h2 className="max-w-xl text-xl font-extrabold leading-tight sm:text-2xl">
             Make a <span className="font-display text-lime">donation</span>{guestToken ? " securely" : " without leaving Sentinel"}
@@ -225,23 +240,16 @@ export default function RazorpayDonationCard({
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-lime/20 bg-lime/8 text-lime"><QrGlyph /></div>
             <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">Methods depend on Razorpay account settings</p></div>
           </div>
-          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-black/10 p-3.5">
-            <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment examples</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { file: "Google_Pay-Logo.wine.svg", alt: "Google Pay" },
-                { file: "PhonePe-Logo.wine.svg", alt: "PhonePe" },
-                { file: "Paytm-Logo.wine.svg", alt: "Paytm" },
-                { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik" },
-              ].map((method) => (
-                <span key={method.file} className="flex h-9 min-w-14 items-center justify-center rounded-xl border border-white/[.07] bg-white/[.025] px-2.5">
-                  <PaymentLogo file={method.file} alt={method.alt} />
+          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-black/15 p-3.5 sm:p-4">
+            <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment methods</p>
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((method) => (
+                <span key={method.file} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-16 sm:px-3">
+                  <PaymentLogo file={method.file} alt={method.alt} compact={method.compact} />
+                  <span className="min-w-0 text-[10px] font-medium leading-tight text-text-secondary sm:text-[11px]">{method.label}</span>
                 </span>
               ))}
-              <span className="flex h-9 items-center rounded-xl border border-white/[.07] bg-white/[.025] px-2.5">
-                <Image src={`${PAYMENT_ICON_ROOT}/cards.webp`} alt="Visa, Mastercard and American Express" width={108} height={27} className="h-5 w-auto object-contain" />
-              </span>
-              <span className="flex h-9 items-center rounded-xl border border-lime/15 bg-lime/5 px-3 text-[10px] font-semibold text-lime">and more…</span>
+              <span className="flex min-h-14 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[11px] font-semibold text-lime sm:min-h-16">and more…</span>
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">

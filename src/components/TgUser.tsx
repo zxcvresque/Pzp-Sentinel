@@ -51,7 +51,7 @@ export default function TgUser({
   const initial = name.charAt(0).toUpperCase();
   const bg = color || pickColor(name);
   const fontSize = Math.max(9, Math.round(size * 0.42));
-  const [imgError, setImgError] = useState(false);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
 
   const fallback = (
     <span
@@ -68,14 +68,14 @@ export default function TgUser({
     </span>
   );
 
-  const avatar = photoUrl && !imgError ? (
+  const avatar = photoUrl && failedPhotoUrl !== photoUrl ? (
     <img
       src={photoUrl}
       alt={name}
       className="rounded-full object-cover flex-shrink-0"
       style={{ width: size, height: size }}
       referrerPolicy="no-referrer"
-      onError={() => setImgError(true)}
+      onError={() => setFailedPhotoUrl(photoUrl)}
     />
   ) : (
     fallback

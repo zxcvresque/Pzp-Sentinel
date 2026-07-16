@@ -7,6 +7,7 @@ import { logAuditEvent } from "./lib/telegram-log";
 import { donateReminderMessage } from "./lib/donation-thanks";
 import { scheduleFinanceAutomation } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
+import { fetchTelegramPhotoUrl } from "./lib/bot";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -122,46 +123,6 @@ async function notifyAdminsFromBot(
     }
   } catch (err) {
     console.error("[notifyAdmins] Top-level failure:", err);
-  }
-}
-
-/**
- * Fetch user's profile photo via the bot API (bypasses privacy settings),
- * upload it to the TG group for permanent storage, and return a proxy URL.
- */
-async function fetchAndSaveProfilePhoto(
-  botInstance: typeof bot,
-  telegramId: string,
-  userName?: string,
-): Promise<string | null> {
-  const groupId = process.env.TG_GROUP_ID;
-  const topicId = process.env.TG_TOPIC_SCREENSHOTS;
-
-  try {
-    const photos = await botInstance.api.getUserProfilePhotos(parseInt(telegramId), { limit: 1 });
-    if (photos.total_count === 0) return null;
-
-    const photo = photos.photos[0];
-    const bestSize = photo[photo.length - 1]; // largest available
-    const fileId = bestSize.file_id;
-
-    // Upload to TG group for permanent storage
-    if (groupId && topicId) {
-      try {
-        await botInstance.api.sendPhoto(groupId, fileId, {
-          message_thread_id: parseInt(topicId),
-          caption: `📸 Avatar: ${userName || telegramId}`,
-        });
-      } catch (err) {
-        console.error(`[avatar] Failed to upload to TG group:`, err);
-      }
-    }
-
-    // Return proxy URL — the API route will fetch from TG on demand
-    return `/api/avatar/${fileId}`;
-  } catch (err) {
-    console.error(`Failed to fetch profile photo for ${telegramId}:`, err);
-    return null;
   }
 }
 
@@ -384,7 +345,7 @@ bot.command("start", async (ctx) => {
 
       if (!authUser) {
         // Fetch profile photo before creating user
-        const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId, firstName);
+        const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
 
         authUser = await dbRetry(() =>
           prisma.user.create({
@@ -420,7 +381,7 @@ bot.command("start", async (ctx) => {
         });
       } else {
         // Update chatId + refresh profile photo
-        const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId, firstName);
+        const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
         const updates: Record<string, string | null> = {};
         if (!authUser.chatId || authUser.chatId !== chatId) updates.chatId = chatId;
         if (photoUrl) updates.photoUrl = photoUrl;
@@ -481,7 +442,7 @@ bot.command("start", async (ctx) => {
   const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
   // Always refresh profile photo on /start
-  const photoUrl = await fetchAndSaveProfilePhoto(bot, telegramId, firstName);
+  const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
 
   if (user) {
     const updates: Record<string, string | null> = { chatId };

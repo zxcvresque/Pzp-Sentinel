@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
-import { fetchTelegramPhotoUrl } from "@/lib/bot";
+import { fetchTelegramPhotoUrl, retainedArchivedTelegramPhoto } from "@/lib/bot";
 
 export async function POST(req: NextRequest) {
   const { telegramId, otp } = await req.json();
@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Clear OTP and refresh profile photo from Telegram
-  const photoUrl = await fetchTelegramPhotoUrl(user.telegramId);
+  const photoUrl = await fetchTelegramPhotoUrl(user.telegramId, user.name);
 
   await prisma.user.update({
     where: { id: user.id },
     data: {
       otpCode: null,
       otpExpiresAt: null,
-      ...(photoUrl ? { photoUrl } : {}),
+      photoUrl: photoUrl || retainedArchivedTelegramPhoto(user.photoUrl),
     },
   });
 
