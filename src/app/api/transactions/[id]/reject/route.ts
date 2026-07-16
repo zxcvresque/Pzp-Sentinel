@@ -21,7 +21,7 @@ export async function POST(
 
   const transaction = await prisma.transaction.findUnique({
     where: { id },
-    include: { fromUser: true },
+    include: { fromUser: true, createdBy: true },
   });
 
   if (!transaction) {
@@ -39,8 +39,9 @@ export async function POST(
       reviewedById: user.id,
       reviewNote: reason || null,
     },
-    include: { fromUser: true },
+    include: { fromUser: true, createdBy: true },
   });
+  const identityUser = updated.fromUser || updated.createdBy;
 
   await logAudit({
     userId: user.id,
@@ -81,6 +82,9 @@ export async function POST(
     description: updated.description,
     status: "REJECTED",
     reviewerName: user.name,
+    identityName: identityUser.name,
+    identityTelegramUser: identityUser.telegramUser,
+    identityTelegramId: identityUser.telegramId,
     reason,
   });
 

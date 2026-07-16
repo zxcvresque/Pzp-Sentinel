@@ -37,6 +37,7 @@ export async function POST(
     data: { status: "APPROVED", reviewedById: user.id },
     include: { fromUser: true, createdBy: true },
   });
+  const identityUser = updated.fromUser || updated.createdBy;
 
   await logAudit({
     userId: user.id,
@@ -76,6 +77,9 @@ export async function POST(
     description: updated.description,
     status: "APPROVED",
     reviewerName: user.name,
+    identityName: identityUser.name,
+    identityTelegramUser: identityUser.telegramUser,
+    identityTelegramId: identityUser.telegramId,
   });
 
   // Compute donor's average for appreciation message

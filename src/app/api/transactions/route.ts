@@ -7,6 +7,7 @@ import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { Prisma } from "@/generated/prisma/client";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
     },
     include: { fromUser: true, createdBy: true },
   });
+  const identityUser = transaction.fromUser || transaction.createdBy;
 
   await logAudit({
     userId: user.id,
@@ -128,7 +130,9 @@ export async function POST(req: NextRequest) {
     type: transaction.type,
     description: transaction.description,
     status: transaction.status,
-    fromUserName: transaction.fromUser?.name,
+    identityName: identityUser.name,
+    identityTelegramUser: identityUser.telegramUser,
+    identityTelegramId: identityUser.telegramId,
     createdByName: transaction.createdBy?.name,
   });
 
@@ -167,14 +171,14 @@ export async function POST(req: NextRequest) {
     notifyAdmins({
       type: "TX_PENDING",
       title: "Approval Required",
-      message: `${user.name} donated ${symbol}${transaction.amount} via ${transaction.method} — approve or reject.`,
+      message: `${identityUser.name} donated ${symbol}${transaction.amount} via ${transaction.method} — approve or reject.`,
       entityId: transaction.id,
       priority: "HIGH",
       actionUrl: "/admin/transactions",
       telegramMessage: formatTgMessage(
         "🔔 Approval Required",
         `${symbol}${transaction.amount} via ${transaction.method}`,
-        `👤 ${user.name} · ${description}`,
+        `${formatTelegramIdentity({ name: identityUser.name, username: identityUser.telegramUser, telegramId: identityUser.telegramId })}\n${escapeTelegramHtml(description)}`,
       ),
     }).catch((err) => console.error("[tx] notifyAdmins failed:", err));
   }

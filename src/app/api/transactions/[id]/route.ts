@@ -55,6 +55,7 @@ export async function PATCH(
     data,
     include: { fromUser: true, createdBy: true, reviewedBy: true },
   });
+  const identityUser = updated.fromUser || updated.createdBy;
 
   const after = {
     amount: updated.amount.toString(),
@@ -101,6 +102,9 @@ export async function PATCH(
     currency: updated.currency,
     direction: updated.direction,
     description: updated.description,
+    identityName: identityUser.name,
+    identityTelegramUser: identityUser.telegramUser,
+    identityTelegramId: identityUser.telegramId,
     changes,
   });
   scheduleFinanceAutomation({ action: "UPDATED", actorName: user.name, transactionId: id });
@@ -119,7 +123,10 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const transaction = await prisma.transaction.findUnique({ where: { id } });
+  const transaction = await prisma.transaction.findUnique({
+    where: { id },
+    include: { fromUser: true, createdBy: true },
+  });
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
@@ -130,6 +137,7 @@ export async function DELETE(
       { status: 400 }
     );
   }
+  const identityUser = transaction.fromUser || transaction.createdBy;
 
   // Delete related audit logs first, then the transaction
   await prisma.auditLog.deleteMany({ where: { transactionId: id } });
@@ -173,6 +181,9 @@ export async function DELETE(
     currency: transaction.currency,
     direction: transaction.direction,
     description: transaction.description,
+    identityName: identityUser.name,
+    identityTelegramUser: identityUser.telegramUser,
+    identityTelegramId: identityUser.telegramId,
   });
   scheduleFinanceAutomation({ action: "DELETED", actorName: user.name, transactionId: id });
 

@@ -8,6 +8,7 @@ import { groupThanks, donorHandle, dmThanks } from "@/lib/donation-thanks";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { verifyCheckoutHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
+import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -313,6 +314,8 @@ export async function finalizeCapturedDonation(params: {
   const amount = (stored.amount / 100).toFixed(2);
   const payerName = stored.user?.name || stored.invite?.guestName || "Guest donor";
   const payerTelegramUser = stored.user?.telegramUser || stored.invite?.telegramUser;
+  const payerTelegramId = stored.user?.telegramId || stored.invite?.telegramId;
+  if (!payerTelegramId) throw new RazorpayError("Payer Telegram ID is missing", 500);
   const creatorId = stored.userId || stored.invite?.createdById;
   if (!creatorId) throw new RazorpayError("Payment order has no valid owner", 500);
   let transaction;
@@ -390,7 +393,9 @@ export async function finalizeCapturedDonation(params: {
     type: transaction.type,
     description: transaction.description,
     status: transaction.status,
-    fromUserName: payerName,
+    identityName: payerName,
+    identityTelegramUser: payerTelegramUser,
+    identityTelegramId: payerTelegramId,
     createdByName: actorName,
   });
   ghLogTransaction({
@@ -427,8 +432,8 @@ export async function finalizeCapturedDonation(params: {
     actionUrl: "/admin/transactions",
     telegramMessage: formatTgMessage(
       stored.testMode ? "Razorpay Test Captured" : "Razorpay Donation Captured",
-      `${symbolAmount} from ${payerName}`,
-      `${payerTelegramUser ? `@${payerTelegramUser}\n` : ""}<code>${payment.id}</code>`,
+      `${symbolAmount} from ${escapeTelegramHtml(payerName)}`,
+      formatTelegramIdentity({ username: payerTelegramUser, telegramId: payerTelegramId }),
     ),
   }).catch(() => {});
 

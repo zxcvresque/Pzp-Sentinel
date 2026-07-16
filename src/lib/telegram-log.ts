@@ -1,4 +1,5 @@
 import { bot } from "./bot";
+import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 
 const GROUP_ID = process.env.TG_GROUP_ID;
 const TOPIC_AUDIT = process.env.TG_TOPIC_AUDIT;
@@ -111,7 +112,9 @@ export function logTransaction(tx: {
   type: string;
   description: string;
   status: string;
-  fromUserName?: string;
+  identityName: string;
+  identityTelegramUser?: string | null;
+  identityTelegramId: string;
   createdByName?: string;
 }) {
   const arrow = tx.direction === "IN" ? "💰" : "💸";
@@ -119,11 +122,15 @@ export function logTransaction(tx: {
   const lines = [
     `${arrow} <b>New Transaction</b>`,
     `<b>${symbol}${tx.amount}</b> · ${tx.method} · ${tx.type}`,
-    tx.description,
+    escapeTelegramHtml(tx.description),
     `Status: <b>${tx.status}</b>`,
-    tx.fromUserName ? `👤 From: ${tx.fromUserName}` : null,
-    tx.createdByName ? `🖊️ By: ${tx.createdByName}` : null,
-    `<code>${tx.id}</code>`,
+    formatTelegramIdentity({
+      name: tx.identityName,
+      username: tx.identityTelegramUser,
+      telegramId: tx.identityTelegramId,
+    }),
+    tx.createdByName && tx.createdByName !== tx.identityName ? `Recorded by: ${escapeTelegramHtml(tx.createdByName)}` : null,
+    `Transaction: <code>${escapeTelegramHtml(tx.id)}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
 }
@@ -135,6 +142,9 @@ export function logTransactionReview(tx: {
   description: string;
   status: string;
   reviewerName: string;
+  identityName: string;
+  identityTelegramUser?: string | null;
+  identityTelegramId: string;
   reason?: string | null;
 }) {
   const icon = tx.status === "APPROVED" ? "✅" : "🚫";
@@ -142,6 +152,7 @@ export function logTransactionReview(tx: {
   const lines = [
     `${icon} <b>Transaction ${tx.status}</b>`,
     `<b>${symbol}${tx.amount}</b> — ${tx.description}`,
+    formatTelegramIdentity({ name: tx.identityName, username: tx.identityTelegramUser, telegramId: tx.identityTelegramId }),
     `👁️ Reviewed by: ${tx.reviewerName}`,
     tx.reason ? `💬 Reason: ${tx.reason}` : null,
     `<code>${tx.id}</code>`,
@@ -164,6 +175,9 @@ export function logTransactionMutation(tx: {
   currency: string;
   direction: string;
   description: string;
+  identityName: string;
+  identityTelegramUser?: string | null;
+  identityTelegramId: string;
   changes?: string[];
 }) {
   const symbol = tx.currency === "INR" ? "₹" : "$";
@@ -171,6 +185,7 @@ export function logTransactionMutation(tx: {
     `${tx.action === "DELETED" ? "🗑️" : "✏️"} <b>Transaction ${tx.action}</b>`,
     `<b>${symbol}${escapeHtml(tx.amount)}</b> · ${escapeHtml(tx.direction)}`,
     escapeHtml(tx.description),
+    formatTelegramIdentity({ name: tx.identityName, username: tx.identityTelegramUser, telegramId: tx.identityTelegramId }),
     `👤 By: ${escapeHtml(tx.actorName)}`,
     ...(tx.changes || []).map((change) => `• ${escapeHtml(change)}`),
     `<code>${escapeHtml(tx.id)}</code>`,
