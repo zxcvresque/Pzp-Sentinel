@@ -56,14 +56,14 @@ function QrGlyph() {
 
 const PAYMENT_ICON_ROOT = "/Payment%20Apps%20Icons";
 
-function PaymentLogo({ file, alt, wide = false }: { file: string; alt: string; wide?: boolean }) {
+function PaymentLogo({ file, alt }: { file: string; alt: string }) {
   return (
     <Image
       src={`${PAYMENT_ICON_ROOT}/${file}`}
       alt={alt}
-      width={wide ? 60 : 32}
+      width={48}
       height={20}
-      className={`${wide ? "h-4 max-w-[60px]" : "h-4 max-w-8"} w-auto object-contain`}
+      className="h-5 w-auto max-w-12 object-contain"
     />
   );
 }
@@ -225,36 +225,23 @@ export default function RazorpayDonationCard({
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-lime/20 bg-lime/8 text-lime"><QrGlyph /></div>
             <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">Methods depend on Razorpay account settings</p></div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
-              <p className="mb-2 text-[10px] font-semibold text-text-secondary">UPI & QR</p>
-              <div className="flex items-center gap-1.5">
-                <PaymentLogo file="Google_Pay-Logo.wine.svg" alt="Google Pay" />
-                <PaymentLogo file="PhonePe-Logo.wine.svg" alt="PhonePe" />
-                <PaymentLogo file="Paytm-Logo.wine.svg" alt="Paytm UPI" />
-              </div>
-            </div>
-            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
-              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Cards</p>
-              <div className="flex items-center gap-1">
-                <PaymentLogo file="variant=dark-5.svg" alt="Mastercard" />
-                <PaymentLogo file="variant=dark-7.svg" alt="Visa" />
-                <PaymentLogo file="variant=dark-6.svg" alt="American Express" />
-              </div>
-            </div>
-            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
-              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Netbanking</p>
-              <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
-                <span className="grid h-6 w-6 place-items-center rounded-md border border-cyan/20 bg-cyan/8 text-cyan" aria-hidden="true">▥</span>
-                Supported banks
-              </div>
-            </div>
-            <div className="rounded-xl border border-[var(--border)] bg-black/10 px-3 py-2.5">
-              <p className="mb-2 text-[10px] font-semibold text-text-secondary">Wallets</p>
-              <div className="flex items-center gap-2">
-                <PaymentLogo file="Paytm-Logo.wine.svg" alt="Paytm Wallet" wide />
-                <PaymentLogo file="MobiKwik-Logo.wine.svg" alt="MobiKwik" wide />
-              </div>
+          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-black/10 p-3.5">
+            <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment examples</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { file: "Google_Pay-Logo.wine.svg", alt: "Google Pay" },
+                { file: "PhonePe-Logo.wine.svg", alt: "PhonePe" },
+                { file: "Paytm-Logo.wine.svg", alt: "Paytm" },
+                { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik" },
+              ].map((method) => (
+                <span key={method.file} className="flex h-9 min-w-14 items-center justify-center rounded-xl border border-white/[.07] bg-white/[.025] px-2.5">
+                  <PaymentLogo file={method.file} alt={method.alt} />
+                </span>
+              ))}
+              <span className="flex h-9 items-center rounded-xl border border-white/[.07] bg-white/[.025] px-2.5">
+                <Image src={`${PAYMENT_ICON_ROOT}/cards.webp`} alt="Visa, Mastercard and American Express" width={108} height={27} className="h-5 w-auto object-contain" />
+              </span>
+              <span className="flex h-9 items-center rounded-xl border border-lime/15 bg-lime/5 px-3 text-[10px] font-semibold text-lime">and more…</span>
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">

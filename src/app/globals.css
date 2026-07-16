@@ -358,5 +358,12 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 }
 
 #bmc-wbtn {
-  display: none !important;
+  position: fixed !important;
+  left: -9999px !important;
+  bottom: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }

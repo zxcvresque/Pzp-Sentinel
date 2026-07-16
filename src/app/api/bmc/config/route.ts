@@ -4,6 +4,16 @@ import { getOneTimeDonationInvite } from "@/lib/razorpay";
 
 export const runtime = "nodejs";
 
+function publicConfig() {
+  const checkoutUrl = process.env.BMC_PAGE_URL?.trim() || null;
+  const accountSlug = process.env.BMC_ACCOUNT_SLUG?.trim().replace(/^@/, "") || null;
+  return {
+    checkoutUrl,
+    accountSlug,
+    configured: Boolean(checkoutUrl && accountSlug && process.env.BMC_WEBHOOK_SECRET?.trim()),
+  };
+}
+
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token") || "";
   if (token) {
@@ -16,11 +26,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Payment link is no longer available" }, { status: 410 });
     }
 
-    const checkoutUrl = process.env.BMC_PAGE_URL?.trim() || null;
-    return NextResponse.json({
-      checkoutUrl,
-      configured: Boolean(checkoutUrl && process.env.BMC_WEBHOOK_SECRET?.trim()),
-    }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(publicConfig(), { headers: { "Cache-Control": "no-store" } });
   }
 
   const user = await getCurrentUser();
@@ -32,9 +38,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Buy Me a Coffee is not enabled for this donor" }, { status: 403 });
   }
 
-  const checkoutUrl = process.env.BMC_PAGE_URL?.trim() || null;
-  return NextResponse.json({
-    checkoutUrl,
-    configured: Boolean(checkoutUrl && process.env.BMC_WEBHOOK_SECRET?.trim()),
-  }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(publicConfig(), { headers: { "Cache-Control": "no-store" } });
 }
