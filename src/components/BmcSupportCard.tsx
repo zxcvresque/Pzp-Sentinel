@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 type BmcConfig = {
   checkoutUrl: string | null;
@@ -9,6 +10,7 @@ type BmcConfig = {
 };
 
 const BMC_SCRIPT_ID = "sentinel-bmc-widget-script";
+const BMC_ASSET_ROOT = "/Payment%20Apps%20Icons";
 let bmcWidgetPromise: Promise<void> | null = null;
 
 function widgetButton() {
@@ -67,7 +69,6 @@ function ensureBmcWidget(accountSlug: string) {
 export default function BmcSupportCard({ adminPreview = false, guestToken }: { adminPreview?: boolean; guestToken?: string }) {
   const [config, setConfig] = useState<BmcConfig | null>(null);
   const [opening, setOpening] = useState(false);
-  const [widgetReady, setWidgetReady] = useState(false);
   const [widgetError, setWidgetError] = useState("");
 
   useEffect(() => {
@@ -82,9 +83,6 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
     if (!config?.accountSlug) return;
     let active = true;
     void ensureBmcWidget(config.accountSlug)
-      .then(() => {
-        if (active) setWidgetReady(true);
-      })
       .catch((error) => {
         if (active) setWidgetError(error instanceof Error ? error.message : "BMC checkout could not load");
       });
@@ -100,7 +98,6 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
       const button = widgetButton();
       if (!button) throw new Error("Buy Me a Coffee checkout is unavailable");
       button.click();
-      setWidgetReady(true);
     } catch (error) {
       setWidgetError(error instanceof Error ? error.message : "BMC checkout could not load");
     } finally {
@@ -116,18 +113,20 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
       <div className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-amber/10 blur-3xl" />
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3.5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber/25 bg-amber/10 text-xl" aria-hidden="true">☕</div>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber/25 bg-amber/10" aria-hidden="true">
+            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={34} height={34} className="h-7 w-auto object-contain" />
+          </div>
           <div>
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-bold text-text-primary">Buy Me a Coffee</h2>
-              <span className="rounded-full border border-amber/20 bg-amber/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-amber">In-app checkout</span>
+              <span className="rounded-full border border-amber/20 bg-amber/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-amber">Support Sentinel</span>
             </div>
             <p className="max-w-2xl text-sm leading-6 text-text-secondary">
-              Support through Buy Me a Coffee without leaving Sentinel. Completed support, extras, memberships, commissions, and wishlist payments are verified by the signed webhook and recorded automatically.
+              Support Sentinel with a contribution, membership, commission, or wishlist payment.
             </p>
             <div className="mt-3 flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">
               <span className={`h-1.5 w-1.5 rounded-full ${config.configured ? "bg-mint" : "bg-amber"}`} />
-              {config.configured ? "Embedded checkout · automatic tracking" : "Add BMC account slug, page URL, and webhook secret"}
+              {config.configured ? "Secure checkout" : "Currently unavailable"}
             </div>
           </div>
         </div>
@@ -136,13 +135,16 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
             type="button"
             onClick={() => void openCheckout()}
             disabled={opening}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
+            aria-label={opening ? "Opening Buy Me a Coffee checkout" : "Support Sentinel on Buy Me a Coffee"}
+            aria-busy={opening}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70 sm:min-h-0 sm:bg-transparent sm:p-0"
           >
-            {opening ? "Opening checkout…" : widgetReady ? "Support on BMC" : "Load BMC checkout"}
-            {!opening && <span aria-hidden="true">→</span>}
+            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={28} height={34} className="h-6 w-auto object-contain sm:hidden" />
+            <span className="sm:hidden">{opening ? "Opening checkout…" : "Buy me a coffee"}</span>
+            <Image src={`${BMC_ASSET_ROOT}/bmc-button.png`} alt="" width={218} height={61} className="hidden h-12 w-auto object-contain sm:block" />
           </button>
         ) : (
-          <span className="shrink-0 rounded-full border border-amber/20 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-amber">Setup required</span>
+          <span className="shrink-0 rounded-full border border-amber/20 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-amber">Unavailable</span>
         )}
       </div>
       {widgetError && <p role="status" className="relative mt-4 rounded-xl border border-coral/20 bg-coral/8 px-3.5 py-3 text-sm text-coral">{widgetError}. Please refresh and try again.</p>}

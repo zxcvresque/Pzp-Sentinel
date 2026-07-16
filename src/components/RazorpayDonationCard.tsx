@@ -192,10 +192,10 @@ export default function RazorpayDonationCard({
             </span>
           </div>
           <h2 className="max-w-xl text-xl font-extrabold leading-tight sm:text-2xl">
-            Make a <span className="font-display text-lime">donation</span>{guestToken ? " securely" : " without leaving Sentinel"}
+            Make a <span className="font-display text-lime">donation</span> securely
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
-            Choose an amount, then pay in Razorpay&apos;s protected checkout. Successful captures are verified server-side and added to Transactions automatically.
+            Choose an amount and complete your payment securely with Razorpay.
           </p>
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -240,7 +240,7 @@ export default function RazorpayDonationCard({
         <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-lime/20 bg-lime/8 text-lime"><QrGlyph /></div>
-            <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">Methods depend on Razorpay account settings</p></div>
+            <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">UPI, cards, wallets and more</p></div>
           </div>
           <div className="mt-3 rounded-2xl border border-[var(--border)] bg-black/15 p-3">
             <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment methods</p>
@@ -255,7 +255,7 @@ export default function RazorpayDonationCard({
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">
-            Checkout shows only the methods enabled on your Razorpay account and supported on the payer&apos;s device.
+            Payments are processed securely by Razorpay.
           </div>
         </div>
       </div>

@@ -159,13 +159,13 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     {
       target: "[data-tour='razorpay-donation']",
       title: "Razorpay Checkout",
-      body: "Razorpay uses whichever live or test key is configured on the server. Captures are verified server-side and recorded automatically.",
+      body: "Preview the secure Razorpay checkout available to donors with Razorpay access.",
       placement: "bottom",
     },
     {
       target: "[data-tour='bmc-support']",
       title: "Buy Me a Coffee",
-      body: "The embedded BMC checkout remains webhook-tracked for payments, refunds, extras, memberships, commissions, and wishlist activity.",
+      body: "Preview the Buy Me a Coffee support option available to donors.",
       placement: "bottom",
     },
   ],
@@ -323,13 +323,13 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     {
       target: "[data-tour='razorpay-donation']",
       title: "Pay Securely",
-      body: "Donate inside Sentinel with Razorpay. UPI, QR, cards, and netbanking appear according to the payment methods enabled on the account.",
+      body: "Donate securely with Razorpay using UPI, QR, cards, wallets, or netbanking.",
       placement: "bottom",
     },
     {
       target: "[data-tour='bmc-support']",
       title: "Support with BMC",
-      body: "Prefer Buy Me a Coffee? Open its hosted checkout here; successful payments return to Sentinel automatically through the verified webhook.",
+      body: "Prefer Buy Me a Coffee? Choose it here to support Sentinel.",
       placement: "bottom",
     },
     {
