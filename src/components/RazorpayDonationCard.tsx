@@ -63,22 +63,22 @@ function PaymentLogo({ file, alt, compact = false }: { file: string; alt: string
       alt={alt}
       width={compact ? 60 : 88}
       height={compact ? 40 : 34}
-      className={compact ? "h-8 w-12 object-contain sm:h-9 sm:w-[54px]" : "h-6 w-[58px] object-contain sm:h-7 sm:w-[68px]"}
+      className={compact ? "h-7 w-11 object-contain sm:h-8 sm:w-12" : "h-5 w-[54px] object-contain sm:h-6 sm:w-[60px]"}
     />
   );
 }
 
 const PAYMENT_METHODS = [
-  { file: "variant=dark.svg", alt: "Amazon Pay", label: "Amazon Pay", compact: true },
+  { file: "amazon-pay-dark.svg", alt: "Amazon Pay", label: "Amazon Pay", compact: true },
   { file: "PhonePe-Logo.wine.svg", alt: "PhonePe", label: "PhonePe", compact: false },
-  { file: "variant=dark-3.svg", alt: "Google Pay", label: "Google Pay", compact: true },
+  { file: "google-pay-dark.svg", alt: "Google Pay", label: "Google Pay", compact: true },
   { file: "Paytm-Logo.wine.svg", alt: "Paytm", label: "Paytm", compact: false },
   { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik", label: "MobiKwik", compact: false },
-  { file: "variant=dark-2.svg", alt: "Apple Pay", label: "Apple Pay", compact: true },
-  { file: "variant=dark-4.svg", alt: "Samsung Pay", label: "Samsung Pay", compact: true },
-  { file: "variant=dark-5.svg", alt: "Mastercard", label: "Mastercard", compact: true },
-  { file: "variant=dark-7.svg", alt: "Visa", label: "Visa", compact: true },
-  { file: "variant=dark-6.svg", alt: "American Express", label: "Amex", compact: true },
+  { file: "apple-pay-dark.svg", alt: "Apple Pay", label: "Apple Pay", compact: true },
+  { file: "samsung-pay-dark.svg", alt: "Samsung Pay", label: "Samsung Pay", compact: true },
+  { file: "mastercard-dark.svg", alt: "Mastercard", label: "Mastercard", compact: true },
+  { file: "visa-dark.svg", alt: "Visa", label: "Visa", compact: true },
+  { file: "amex-dark.svg", alt: "American Express", label: "Amex", compact: true },
 ] as const;
 
 export default function RazorpayDonationCard({
@@ -235,21 +235,21 @@ export default function RazorpayDonationCard({
           )}
         </div>
 
-        <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-4 sm:p-5">
+        <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-lime/20 bg-lime/8 text-lime"><QrGlyph /></div>
             <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">Methods depend on Razorpay account settings</p></div>
           </div>
-          <div className="mt-4 rounded-2xl border border-[var(--border)] bg-black/15 p-3.5 sm:p-4">
+          <div className="mt-3 rounded-2xl border border-[var(--border)] bg-black/15 p-3">
             <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment methods</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {PAYMENT_METHODS.map((method) => (
-                <span key={method.file} className="flex min-h-14 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-16 sm:px-3">
+                <span key={method.file} className="flex min-h-12 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-13 sm:px-2.5">
                   <PaymentLogo file={method.file} alt={method.alt} compact={method.compact} />
-                  <span className="min-w-0 text-[10px] font-medium leading-tight text-text-secondary sm:text-[11px]">{method.label}</span>
+                  <span className="min-w-0 text-[9px] font-medium leading-tight text-text-secondary sm:text-[10px]">{method.label}</span>
                 </span>
               ))}
-              <span className="flex min-h-14 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[11px] font-semibold text-lime sm:min-h-16">and more…</span>
+              <span className="col-span-2 flex min-h-10 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[10px] font-semibold text-lime">and more…</span>
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">
