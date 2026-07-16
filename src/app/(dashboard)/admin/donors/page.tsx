@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import TgUser from "@/components/TgUser";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 import BmcSupportCard from "@/components/BmcSupportCard";
@@ -150,16 +151,20 @@ export default function DonorsLeaderboard() {
                     <TgUser name={donor.name} telegramUser={donor.telegramUser} photoUrl={donor.photoUrl} size={24} />
                     <p className="mt-1 font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">Payment access managed per donor</p>
                   </div>
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
-                    <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-amber/20 bg-amber/5 px-3 text-xs text-text-secondary">
+                  <div className="flex gap-2 sm:justify-end">
+                    <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.bmcAccess ? "border-amber/40 bg-amber/12 text-text-primary shadow-[0_0_18px_rgba(251,191,36,.08)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.bmcAccess} disabled={savingAccess === bmcKey}
-                        onChange={(event) => void toggleAccess(donor, "BMC", event.target.checked)} className="h-4 w-4 accent-amber" />
-                      Allow BMC
+                        onChange={(event) => void toggleAccess(donor, "BMC", event.target.checked)} className="sr-only" aria-label={`Allow Buy Me a Coffee for ${donor.name}`} />
+                      <Image src="/Payment%20Apps%20Icons/bmc-logo-no-background.png" alt="" width={18} height={26}
+                        className={`h-6 w-auto object-contain transition-opacity ${donor.bmcAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
+                      <span className="hidden text-xs sm:inline">Allow BMC</span>
                     </label>
-                    <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-lime/20 bg-lime/5 px-3 text-xs text-text-secondary">
+                    <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.razorpayAccess ? "border-lime/40 bg-lime/10 text-text-primary shadow-[0_0_18px_var(--lime-glow)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.razorpayAccess} disabled={savingAccess === razorpayKey}
-                        onChange={(event) => void toggleAccess(donor, "RAZORPAY", event.target.checked)} className="h-4 w-4 accent-lime" />
-                      Allow Razorpay
+                        onChange={(event) => void toggleAccess(donor, "RAZORPAY", event.target.checked)} className="sr-only" aria-label={`Allow Razorpay for ${donor.name}`} />
+                      <Image src="/Payment%20Apps%20Icons/razorpay-logo-notext.png" alt="" width={32} height={24}
+                        className={`h-6 w-8 object-contain transition-opacity ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
+                      <span className="hidden text-xs sm:inline">Allow Razorpay</span>
                     </label>
                   </div>
                 </div>

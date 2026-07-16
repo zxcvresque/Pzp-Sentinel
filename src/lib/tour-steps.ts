@@ -329,7 +329,7 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     {
       target: "[data-tour='bmc-support']",
       title: "Support with BMC",
-      body: "Prefer Buy Me a Coffee? Choose it here to support Sentinel.",
+      body: "Prefer Buy Me a Coffee? Choose it here to support Piratezparty.",
       placement: "bottom",
     },
     {
