@@ -56,29 +56,31 @@ function QrGlyph() {
 
 const PAYMENT_ICON_ROOT = "/Payment%20Apps%20Icons";
 
-function PaymentLogo({ file, alt, compact = false }: { file: string; alt: string; compact?: boolean }) {
+function PaymentLogo({ file, alt, wordmark = false }: { file: string; alt: string; wordmark?: boolean }) {
   return (
-    <Image
-      src={`${PAYMENT_ICON_ROOT}/${file}`}
-      alt={alt}
-      width={compact ? 60 : 88}
-      height={compact ? 40 : 34}
-      className={compact ? "h-7 w-11 object-contain sm:h-8 sm:w-12" : "h-5 w-[54px] object-contain sm:h-6 sm:w-[60px]"}
-    />
+    <span className="grid h-9 w-[68px] shrink-0 place-items-center overflow-hidden rounded-lg border border-white/70 bg-[#f7f8fb] shadow-[0_3px_12px_rgba(0,0,0,.24)] sm:h-10 sm:w-[72px]">
+      <Image
+        src={`${PAYMENT_ICON_ROOT}/${file}`}
+        alt={alt}
+        width={wordmark ? 112 : 60}
+        height={wordmark ? 34 : 40}
+        className={wordmark ? "h-7 w-[64px] object-contain sm:h-8 sm:w-[68px]" : "h-full w-auto object-contain"}
+      />
+    </span>
   );
 }
 
 const PAYMENT_METHODS = [
-  { file: "amazon-pay-dark.svg", alt: "Amazon Pay", label: "Amazon Pay", compact: true },
-  { file: "PhonePe-Logo.wine.svg", alt: "PhonePe", label: "PhonePe", compact: false },
-  { file: "google-pay-dark.svg", alt: "Google Pay", label: "Google Pay", compact: true },
-  { file: "Paytm-Logo.wine.svg", alt: "Paytm", label: "Paytm", compact: false },
-  { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik", label: "MobiKwik", compact: false },
-  { file: "apple-pay-dark.svg", alt: "Apple Pay", label: "Apple Pay", compact: true },
-  { file: "samsung-pay-dark.svg", alt: "Samsung Pay", label: "Samsung Pay", compact: true },
-  { file: "mastercard-dark.svg", alt: "Mastercard", label: "Mastercard", compact: true },
-  { file: "visa-dark.svg", alt: "Visa", label: "Visa", compact: true },
-  { file: "amex-dark.svg", alt: "American Express", label: "Amex", compact: true },
+  { file: "amazon-pay-light.svg", alt: "Amazon Pay", label: "Amazon Pay", wordmark: false },
+  { file: "PhonePe-Logo.wine.svg", alt: "PhonePe", label: "PhonePe", wordmark: true },
+  { file: "google-pay-light.svg", alt: "Google Pay", label: "Google Pay", wordmark: false },
+  { file: "Paytm-Logo.wine.svg", alt: "Paytm", label: "Paytm", wordmark: true },
+  { file: "MobiKwik-Logo.wine.svg", alt: "MobiKwik", label: "MobiKwik", wordmark: true },
+  { file: "apple-pay-light.svg", alt: "Apple Pay", label: "Apple Pay", wordmark: false },
+  { file: "samsung-pay-light.svg", alt: "Samsung Pay", label: "Samsung Pay", wordmark: false },
+  { file: "mastercard-light.svg", alt: "Mastercard", label: "Mastercard", wordmark: false },
+  { file: "visa-light.svg", alt: "Visa", label: "Visa", wordmark: false },
+  { file: "amex-light.svg", alt: "American Express", label: "Amex", wordmark: false },
 ] as const;
 
 export default function RazorpayDonationCard({
@@ -245,8 +247,8 @@ export default function RazorpayDonationCard({
             <div className="grid grid-cols-2 gap-1.5">
               {PAYMENT_METHODS.map((method) => (
                 <span key={method.file} className="flex min-h-12 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-13 sm:px-2.5">
-                  <PaymentLogo file={method.file} alt={method.alt} compact={method.compact} />
-                  <span className="min-w-0 text-[9px] font-medium leading-tight text-text-secondary sm:text-[10px]">{method.label}</span>
+                  <PaymentLogo file={method.file} alt={method.alt} wordmark={method.wordmark} />
+                  <span className="min-w-0 text-[10px] font-medium leading-tight text-text-secondary sm:text-[11px]">{method.label}</span>
                 </span>
               ))}
               <span className="col-span-2 flex min-h-10 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[10px] font-semibold text-lime">and more…</span>
