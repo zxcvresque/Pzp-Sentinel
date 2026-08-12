@@ -9,12 +9,12 @@ export async function GET(request: NextRequest) {
   }
 
   const approved = await prisma.transaction.findMany({
-    where: { status: "APPROVED", isTest: false },
+    where: { status: "APPROVED", isTest: false, voidedAt: null },
     select: { amount: true, currency: true, direction: true, type: true, date: true },
   });
 
   const pendingCount = await prisma.transaction.count({
-    where: { status: "PENDING", isTest: false },
+    where: { status: "PENDING", isTest: false, voidedAt: null },
   });
 
   // Currency conversion support

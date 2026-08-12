@@ -27,6 +27,9 @@ export async function POST(
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
+  if (transaction.voidedAt) {
+    return NextResponse.json({ error: "Voided transactions cannot be approved" }, { status: 400 });
+  }
 
   if (transaction.status !== "PENDING") {
     return NextResponse.json({ error: "Transaction is not pending" }, { status: 400 });
@@ -90,6 +93,7 @@ export async function POST(
         fromUserId: updated.fromUserId,
         status: "APPROVED",
         direction: "IN",
+        voidedAt: null,
         id: { not: id }, // exclude this one
       },
       select: { amount: true },

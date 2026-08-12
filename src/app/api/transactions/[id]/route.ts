@@ -18,7 +18,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { amount, direction, type, method, description, date } = body;
+  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, confirmReviewedEdit } = body;
 
   // Validate amount if provided
   if (amount !== undefined) {
@@ -32,38 +32,96 @@ export async function PATCH(
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
+  if (transaction.voidedAt) {
+    return NextResponse.json({ error: "Voided transactions cannot be edited" }, { status: 400 });
+  }
+  if (transaction.status !== "PENDING" && confirmReviewedEdit !== true) {
+    return NextResponse.json(
+      { error: "Editing a reviewed transaction requires explicit confirmation" },
+      { status: 409 },
+    );
+  }
+
+  if (currency !== undefined && !["INR", "USD"].includes(currency)) {
+    return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
+  }
+  if (direction !== undefined && !["IN", "OUT"].includes(direction)) {
+    return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
+  }
+  if (type !== undefined && !["DONATION", "EXPENSE", "SUBSCRIPTION", "OTHER"].includes(type)) {
+    return NextResponse.json({ error: "Invalid transaction type" }, { status: 400 });
+  }
+  if (method !== undefined && !["UPI", "RAZORPAY", "BMC", "BANK", "OTHER"].includes(method)) {
+    return NextResponse.json({ error: "Invalid payment method" }, { status: 400 });
+  }
+  if (description !== undefined && (typeof description !== "string" || !description.trim())) {
+    return NextResponse.json({ error: "Description is required" }, { status: 400 });
+  }
+  if (date !== undefined && Number.isNaN(new Date(date).getTime())) {
+    return NextResponse.json({ error: "Invalid transaction date" }, { status: 400 });
+  }
+  if (attachments !== undefined && (
+    !Array.isArray(attachments)
+    || attachments.length > 10
+    || attachments.some((item) => typeof item !== "string" || !item.trim())
+  )) {
+    return NextResponse.json({ error: "Attachments must contain at most 10 valid references" }, { status: 400 });
+  }
+  if (fromUserId !== undefined && fromUserId !== null && typeof fromUserId !== "string") {
+    return NextResponse.json({ error: "Invalid donor/source user" }, { status: 400 });
+  }
+  if (typeof fromUserId === "string" && fromUserId) {
+    const sourceUser = await prisma.user.findFirst({
+      where: { id: fromUserId, roles: { has: "DONOR" }, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!sourceUser) return NextResponse.json({ error: "Donor/source user not found" }, { status: 400 });
+  }
 
   const data: Prisma.TransactionUpdateInput = {};
   if (amount !== undefined) data.amount = new Prisma.Decimal(amount);
+  if (currency !== undefined) data.currency = currency;
   if (direction !== undefined) data.direction = direction;
   if (type !== undefined) data.type = type;
   if (method !== undefined) data.method = method;
-  if (description !== undefined) data.description = description;
+  if (description !== undefined) data.description = description.trim();
   if (date !== undefined) data.date = new Date(date);
+  if (attachments !== undefined) data.attachments = attachments.map((item: string) => item.trim());
+  const effectiveDirection = direction ?? transaction.direction;
+  if (fromUserId !== undefined || effectiveDirection === "OUT") {
+    const sourceId = effectiveDirection === "OUT" ? null : fromUserId;
+    data.fromUser = sourceId ? { connect: { id: sourceId } } : { disconnect: true };
+  }
 
   const before = {
     amount: transaction.amount.toString(),
+    currency: transaction.currency,
     direction: transaction.direction,
     type: transaction.type,
     method: transaction.method,
     description: transaction.description,
     date: transaction.date.toISOString(),
+    fromUserId: transaction.fromUserId,
+    attachments: transaction.attachments,
   };
 
   const updated = await prisma.transaction.update({
     where: { id },
     data,
-    include: { fromUser: true, createdBy: true, reviewedBy: true },
+    include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
   });
   const identityUser = updated.fromUser || updated.createdBy;
 
   const after = {
     amount: updated.amount.toString(),
+    currency: updated.currency,
     direction: updated.direction,
     type: updated.type,
     method: updated.method,
     description: updated.description,
     date: updated.date.toISOString(),
+    fromUserId: updated.fromUserId,
+    attachments: updated.attachments,
   };
 
   await logAudit({
@@ -122,6 +180,15 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+
+  if (!reason) {
+    return NextResponse.json({ error: "A void reason is required" }, { status: 400 });
+  }
+  if (reason.length > 500) {
+    return NextResponse.json({ error: "Void reason must be at most 500 characters" }, { status: 400 });
+  }
 
   const transaction = await prisma.transaction.findUnique({
     where: { id },
@@ -130,22 +197,20 @@ export async function DELETE(
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
-
-  if (transaction.status !== "PENDING") {
-    return NextResponse.json(
-      { error: "Only PENDING transactions can be deleted" },
-      { status: 400 }
-    );
+  if (transaction.voidedAt) {
+    return NextResponse.json({ error: "Transaction is already voided" }, { status: 400 });
   }
   const identityUser = transaction.fromUser || transaction.createdBy;
 
-  // Delete related audit logs first, then the transaction
-  await prisma.auditLog.deleteMany({ where: { transactionId: id } });
-  await prisma.transaction.delete({ where: { id } });
+  const voided = await prisma.transaction.update({
+    where: { id },
+    data: { voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+    include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
+  });
 
   await logAudit({
     userId: user.id,
-    action: "DELETE",
+    action: "VOID",
     entityType: "Transaction",
     entityId: id,
     before: {
@@ -156,13 +221,14 @@ export async function DELETE(
       description: transaction.description,
       status: transaction.status,
     },
+    after: { voidedAt: voided.voidedAt, voidedById: user.id, voidReason: reason },
     userName: user.name,
-    details: `Deleted transaction: ${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}`,
+    details: `Voided transaction: ${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}. Reason: ${reason}`,
   });
 
   // GitHub immutable log
   logTransaction({
-    action: "DELETED",
+    action: "VOIDED",
     userId: user.id,
     userName: user.name,
     amount: transaction.amount.toString(),
@@ -170,11 +236,11 @@ export async function DELETE(
     direction: transaction.direction,
     method: transaction.method,
     entityId: id,
-    details: `Deleted: ${transaction.description}`,
+    details: `Voided: ${transaction.description} — Reason: ${reason}`,
   });
 
   logTransactionMutation({
-    action: "DELETED",
+    action: "VOIDED",
     id,
     actorName: user.name,
     amount: transaction.amount,
@@ -184,8 +250,9 @@ export async function DELETE(
     identityName: identityUser.name,
     identityTelegramUser: identityUser.telegramUser,
     identityTelegramId: identityUser.telegramId,
+    changes: [`reason: ${reason}`],
   });
   scheduleFinanceAutomation({ action: "DELETED", actorName: user.name, transactionId: id });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ transaction: voided });
 }

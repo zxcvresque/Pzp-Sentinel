@@ -8,8 +8,7 @@
 #     bash upgrade.sh        # or, after `chmod +x upgrade.sh`:  ./upgrade.sh
 #
 # Notes:
-#   • No `prisma db push` here — schema changes are pushed from dev against the
-#     shared DB; this only regenerates the client.
+#   • Applies additive Prisma schema changes before building the new app.
 #   • Stops on the first error (set -e), so a failed step won't restart a broken
 #     build.
 # ═══════════════════════════════════════════════════════════════════════
@@ -28,6 +27,9 @@ git pull --ff-only origin main
 
 step "Installing dependencies…"
 npm ci
+
+step "Applying Prisma schema…"
+npx prisma db push
 
 step "Regenerating Prisma client…"
 npx prisma generate

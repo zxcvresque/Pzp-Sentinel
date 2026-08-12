@@ -253,7 +253,7 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
   ]);
 
   const userNames = new Map(users.map((user) => [user.id, user.name]));
-  const approved = transactions.filter((tx) => tx.status === "APPROVED" && !tx.isTest);
+  const approved = transactions.filter((tx) => tx.status === "APPROVED" && !tx.isTest && !tx.voidedAt);
   const incoming = approved.filter((tx) => tx.direction === "IN").reduce((sum, tx) => sum + toInr(Number(tx.amount), tx.currency, usdToInr), 0);
   const outgoing = approved.filter((tx) => tx.direction === "OUT").reduce((sum, tx) => sum + toInr(Number(tx.amount), tx.currency, usdToInr), 0);
 
@@ -273,7 +273,7 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
       tx.direction,
       tx.type,
       tx.method,
-      tx.status,
+      tx.voidedAt ? "VOIDED" : tx.status,
       safeText(tx.fromUser?.name),
       safeText(tx.createdBy?.name),
       safeText(tx.reviewedBy?.name),
@@ -336,7 +336,7 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
   }
 
   const methodCounts = new Map<string, number>();
-  for (const tx of transactions.filter((item) => !item.isTest)) methodCounts.set(tx.method, (methodCounts.get(tx.method) || 0) + 1);
+  for (const tx of transactions.filter((item) => !item.isTest && !item.voidedAt)) methodCounts.set(tx.method, (methodCounts.get(tx.method) || 0) + 1);
   const dashboardRows: unknown[][] = [
     ["SENTINEL · INCOME & EXPENSE"],
     [],
@@ -359,8 +359,9 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
   dashboardRows[3][9] = "Outgoing"; dashboardRows[3][10] = outgoing;
   dashboardRows[6][9] = "Status"; dashboardRows[6][10] = "Count";
   dashboardRows[7][9] = "Approved"; dashboardRows[7][10] = approved.length;
-  dashboardRows[8][9] = "Pending"; dashboardRows[8][10] = transactions.filter((tx) => tx.status === "PENDING" && !tx.isTest).length;
-  dashboardRows[9][9] = "Rejected"; dashboardRows[9][10] = transactions.filter((tx) => tx.status === "REJECTED" && !tx.isTest).length;
+  dashboardRows[8][9] = "Pending"; dashboardRows[8][10] = transactions.filter((tx) => tx.status === "PENDING" && !tx.isTest && !tx.voidedAt).length;
+  dashboardRows[9][9] = "Rejected"; dashboardRows[9][10] = transactions.filter((tx) => tx.status === "REJECTED" && !tx.isTest && !tx.voidedAt).length;
+  dashboardRows[10][9] = "Voided"; dashboardRows[10][10] = transactions.filter((tx) => !tx.isTest && tx.voidedAt).length;
   dashboardRows[12][9] = "Payment Method"; dashboardRows[12][10] = "Count";
   [...methodCounts.entries()].forEach(([method, count], index) => {
     dashboardRows[13 + index] ||= [];

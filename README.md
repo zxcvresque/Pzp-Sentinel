@@ -345,6 +345,7 @@ Production serves the **compiled `.next` build**, so a bare `git pull` keeps ser
 cd ~/Sentinel
 git pull
 npm ci
+npx prisma db push
 npx prisma generate
 rm -rf .next
 npm run build

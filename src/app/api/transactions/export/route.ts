@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
-import { Prisma } from "@/generated/prisma/client";
+import { transactionOrderFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -10,33 +10,12 @@ export async function GET(request: NextRequest) {
   }
 
   const searchParams = request.nextUrl.searchParams;
-  const from = searchParams.get("from");
-  const to = searchParams.get("to");
-  const direction = searchParams.get("direction");
-  const status = searchParams.get("status");
-
-  const where: Prisma.TransactionWhereInput = {
-    status: "APPROVED",
-  };
-
-  // Override status filter if explicitly provided
-  if (status && status !== "ALL") {
-    where.status = status as "PENDING" | "APPROVED" | "REJECTED";
-  }
-
-  if (direction && direction !== "ALL") {
-    where.direction = direction as "IN" | "OUT";
-  }
-
-  if (from || to) {
-    where.date = {};
-    if (from) (where.date as Prisma.DateTimeFilter).gte = new Date(from);
-    if (to) (where.date as Prisma.DateTimeFilter).lte = new Date(to);
-  }
+  const where = transactionWhereFromParams(searchParams);
+  const orderBy = transactionOrderFromParams(searchParams);
 
   const transactions = await prisma.transaction.findMany({
     where,
-    orderBy: { date: "desc" },
+    orderBy,
     include: {
       fromUser: { select: { name: true, photoUrl: true, telegramUser: true } },
     },
@@ -53,6 +32,8 @@ export async function GET(request: NextRequest) {
     "Type",
     "From",
     "Status",
+    "Lifecycle",
+    "Void Reason",
   ];
 
   function escapeCsv(val: string): string {
@@ -72,6 +53,8 @@ export async function GET(request: NextRequest) {
     tx.type,
     escapeCsv(tx.fromUser?.name || ""),
     tx.status,
+    tx.voidedAt ? "VOIDED" : "ACTIVE",
+    escapeCsv(tx.voidReason || ""),
   ]);
 
   const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");

@@ -153,6 +153,7 @@ export default function DashboardLayout({
     "/admin/transactions": "Admin / Transactions",
     "/admin/services": "Admin / Services",
     "/admin/donors": "Admin / Donors",
+    "/admin/broadcasts": "Admin / Broadcasts",
     "/admin/users": "Admin / Users",
     "/admin/reminders": "Admin / Reminders",
     "/admin/credentials": "Admin / Credentials",

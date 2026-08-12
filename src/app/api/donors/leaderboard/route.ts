@@ -27,12 +27,14 @@ export async function GET(request: NextRequest) {
     direction: "IN";
     fromUserId: { not: null };
     isTest: false;
+    voidedAt: null;
     date?: { gte: Date };
   } = {
     status: "APPROVED",
     direction: "IN",
     fromUserId: { not: null },
     isTest: false,
+    voidedAt: null,
   };
 
   if (dateFilter) {

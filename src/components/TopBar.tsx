@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface TopBarProps {
@@ -71,6 +72,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
   const unread = notifications.filter((n) => !n.read);
   const unreadCount = unread.length;
   const hasHighPriority = unread.some((n) => n.priority === "HIGH");
+  const broadcast = unread.find((notification) => notification.entityId?.startsWith("broadcast:"));
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -150,6 +152,46 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
   return (
     <div className="flex items-center gap-3">
+      {broadcast && createPortal(
+        <aside
+          role="alertdialog"
+          aria-labelledby={`broadcast-title-${broadcast.id}`}
+          aria-describedby={`broadcast-message-${broadcast.id}`}
+          className="fixed inset-x-3 top-3 z-[9997] mx-auto w-auto max-w-md overflow-hidden rounded-2xl border border-lime/25 bg-[var(--bg-card)] shadow-2xl animate-scale-in sm:inset-x-auto sm:right-5 sm:top-5 sm:w-[400px]"
+        >
+          <div className="h-1 bg-gradient-to-r from-lime via-mint to-violet" />
+          <div className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime/10 text-lime">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 11v2a2 2 0 0 0 2 2h2l4 4V5L7 9H5a2 2 0 0 0-2 2Z" />
+                  <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                  <path d="M18 6a8.5 8.5 0 0 1 0 12" />
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-[9px] uppercase tracking-[0.12em] text-lime">Sentinel announcement</div>
+                <h2 id={`broadcast-title-${broadcast.id}`} className="mt-1 text-base font-bold text-[var(--text-primary)]">
+                  {broadcast.title}
+                </h2>
+                <p id={`broadcast-message-${broadcast.id}`} className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {broadcast.message}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => markRead([broadcast.id])}
+                className="rounded-full bg-lime px-5 py-2 text-xs font-semibold text-bg-void transition-colors hover:bg-lime/90"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </aside>,
+        document.body,
+      )}
+
       {/* ── Notifications ── */}
       <style>{`
         @keyframes bell-pulse {

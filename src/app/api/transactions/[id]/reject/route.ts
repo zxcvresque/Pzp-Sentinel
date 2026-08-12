@@ -27,6 +27,9 @@ export async function POST(
   if (!transaction) {
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
+  if (transaction.voidedAt) {
+    return NextResponse.json({ error: "Voided transactions cannot be rejected" }, { status: 400 });
+  }
 
   if (transaction.status !== "PENDING") {
     return NextResponse.json({ error: "Transaction is not pending" }, { status: 400 });

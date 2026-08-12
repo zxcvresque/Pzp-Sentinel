@@ -19,7 +19,7 @@ export async function GET() {
   try {
     const [transactions, events] = await Promise.all([
       prisma.transaction.findMany({
-        where: { method: "BMC", status: "APPROVED", isTest: false },
+        where: { method: "BMC", status: "APPROVED", isTest: false, voidedAt: null },
         orderBy: { date: "desc" },
         select: { id: true, amount: true, currency: true, description: true, date: true, bmcEventId: true },
       }),

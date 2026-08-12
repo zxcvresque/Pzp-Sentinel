@@ -168,7 +168,7 @@ function escapeHtml(value: unknown) {
 }
 
 export function logTransactionMutation(tx: {
-  action: "UPDATED" | "DELETED";
+  action: "UPDATED" | "DELETED" | "VOIDED";
   id: string;
   actorName: string;
   amount: unknown;
@@ -182,7 +182,7 @@ export function logTransactionMutation(tx: {
 }) {
   const symbol = tx.currency === "INR" ? "₹" : "$";
   const lines = [
-    `${tx.action === "DELETED" ? "🗑️" : "✏️"} <b>Transaction ${tx.action}</b>`,
+    `${tx.action === "DELETED" || tx.action === "VOIDED" ? "🗑️" : "✏️"} <b>Transaction ${tx.action}</b>`,
     `<b>${symbol}${escapeHtml(tx.amount)}</b> · ${escapeHtml(tx.direction)}`,
     escapeHtml(tx.description),
     formatTelegramIdentity({ name: tx.identityName, username: tx.identityTelegramUser, telegramId: tx.identityTelegramId }),

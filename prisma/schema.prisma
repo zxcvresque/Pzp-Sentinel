@@ -141,6 +141,7 @@ model User {
   transactionsCreated  Transaction[] @relation("TxCreatedBy")
   transactionsFrom     Transaction[] @relation("TxFromUser")
   transactionsReviewed Transaction[] @relation("TxReviewedBy")
+  transactionsVoided   Transaction[] @relation("TxVoidedBy")
   tasksAssigned        Task[]        @relation("TaskAssignee")
   tasksCreated         Task[]        @relation("TaskCreatedBy")
   remindersCreated     Reminder[]
@@ -187,6 +188,10 @@ model Transaction {
   reviewedById String?
   reviewedBy   User?        @relation("TxReviewedBy", fields: [reviewedById], references: [id])
   reviewNote   String?
+  voidedAt     DateTime?
+  voidedById   String?
+  voidedBy     User?         @relation("TxVoidedBy", fields: [voidedById], references: [id])
+  voidReason   String?
   bmcEventId   String?      @unique
   createdById  String
   createdBy    User         @relation("TxCreatedBy", fields: [createdById], references: [id])

@@ -8,6 +8,7 @@ import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { Prisma } from "@/generated/prisma/client";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
+import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -22,37 +23,25 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = parseInt(searchParams.get("limit") || "20");
-  const status = searchParams.get("status");
-  const direction = searchParams.get("direction");
-  const search = searchParams.get("search");
-
-  const where: Prisma.TransactionWhereInput = {};
-
-  // ADMIN sees all, DONOR sees only their own transactions
-  if (!isAdmin) {
-    where.fromUserId = user.id;
-  }
-
-  if (status) where.status = status as Prisma.EnumTxStatusFilter["equals"];
-  if (direction) where.direction = direction as Prisma.EnumDirectionFilter["equals"];
-  if (search) {
-    where.description = { contains: search, mode: "insensitive" };
-  }
+  const { page, limit } = transactionPageFromParams(searchParams);
+  const where = transactionWhereFromParams(searchParams, {
+    donorUserId: isAdmin ? undefined : user.id,
+    forceActive: !isAdmin,
+  });
+  const orderBy = transactionOrderFromParams(searchParams);
 
   const [transactions, total] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      include: { fromUser: true, createdBy: true, reviewedBy: true },
-      orderBy: { createdAt: "desc" },
+      include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
     }),
     prisma.transaction.count({ where }),
   ]);
 
-  return NextResponse.json({ transactions, total, page, limit });
+  return NextResponse.json({ transactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });
 }
 
 export async function POST(req: NextRequest) {
