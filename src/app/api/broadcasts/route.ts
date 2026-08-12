@@ -52,8 +52,8 @@ export async function POST(req: NextRequest) {
   if (!title || !message) {
     return NextResponse.json({ error: "Title and message are required" }, { status: 400 });
   }
-  if (title.length > 80 || message.length > 1000) {
-    return NextResponse.json({ error: "Title must be at most 80 characters and message at most 1,000" }, { status: 400 });
+  if (title.length > 80 || message.length > 3500) {
+    return NextResponse.json({ error: "Title must be at most 80 characters and message at most 3,500" }, { status: 400 });
   }
   if (!sendSentinel && !sendTelegram) {
     return NextResponse.json({ error: "Select at least one destination" }, { status: 400 });

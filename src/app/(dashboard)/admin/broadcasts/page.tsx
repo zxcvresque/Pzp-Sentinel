@@ -164,7 +164,7 @@ export default function BroadcastsPage() {
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
               <label htmlFor="broadcast-message" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Message</label>
-              <span className="font-mono text-[10px] text-text-tertiary">{message.length}/1000</span>
+              <span className={`font-mono text-[10px] ${message.length > 3300 ? "text-amber" : "text-text-tertiary"}`}>{message.length}/3500</span>
             </div>
             <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-[var(--border)] bg-bg-deep p-1.5" aria-label="Message formatting">
               <FormatButton label="Bold" title="Bold" onClick={() => applyFormat("**")}><strong>B</strong></FormatButton>
@@ -180,7 +180,7 @@ export default function BroadcastsPage() {
               ref={messageRef}
               id="broadcast-message"
               value={message}
-              maxLength={1000}
+              maxLength={3500}
               onChange={(event) => setMessage(event.target.value)}
               placeholder="Write the message donors should receive..."
               rows={9}
