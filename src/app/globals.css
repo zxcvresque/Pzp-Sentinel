@@ -161,6 +161,72 @@ body {
   transform: translateY(-1px);
 }
 
+/* API usage dashboard — quiet glass panels with a continuously moving poll
+   flare. The flare is decorative; the native progressbar carries semantics. */
+.api-usage-card {
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(53,53,66,0.82), rgba(35,35,47,0.88));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 12px 36px rgba(0,0,0,0.18);
+}
+
+.api-usage-meter-track {
+  position: relative;
+  background: rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(255,255,255,0.035);
+}
+
+.api-usage-meter-track::after,
+.api-usage-meter-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 -35%;
+  width: 26%;
+  transform: skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.38), transparent);
+  animation: api-usage-flare 2.8s cubic-bezier(.45, 0, .55, 1) infinite;
+  pointer-events: none;
+}
+
+.api-usage-meter-fill {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 14px rgba(190,185,255,0.14);
+}
+
+.api-usage-meter-fill::after {
+  width: 46%;
+  animation-delay: .35s;
+}
+
+.api-usage-live-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.api-usage-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--mint);
+  box-shadow: 0 0 0 0 rgba(52,211,153,0.34);
+  animation: api-usage-live-pulse 2s ease-out infinite;
+}
+
+@keyframes api-usage-flare {
+  0% { left: -35%; opacity: 0; }
+  12% { opacity: .8; }
+  58%, 100% { left: 130%; opacity: 0; }
+}
+
+@keyframes api-usage-live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(52,211,153,0.34); }
+  65%, 100% { box-shadow: 0 0 0 7px rgba(52,211,153,0); }
+}
+
 /* Stat card — glass with subtle top accent */
 .stat-card {
   background: rgba(26,26,34,0.50);

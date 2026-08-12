@@ -53,3 +53,4 @@ next-env.d.ts
 /src/generated/prisma
 .gstack/
 plain-bmc-history-export.pdf
+Sentinel Rzp.txt

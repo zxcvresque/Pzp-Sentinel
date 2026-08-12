@@ -307,6 +307,28 @@ model Service {
   createdAt       DateTime   @default(now())
 }
 
+// Admin-managed provider accounts used by the Services > API Usage dashboard.
+// authCookie and apiKey are always encrypted with CREDENTIAL_ENC_KEY before
+// they are written. lastSnapshot deliberately contains usage metadata only.
+model ApiUsageAccount {
+  id            String    @id @default(cuid())
+  provider      String    @default("OPENCODE_GO")
+  name          String
+  workspaceId   String
+  authCookie    String
+  apiKey        String?
+  expiresAt     DateTime?
+  enabled       Boolean   @default(true)
+  lastSnapshot  Json?
+  lastFetchedAt DateTime?
+  lastError     String?
+  lastErrorAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([provider, enabled])
+}
+
 model Project {
   id          String     @id @default(cuid())
   name        String

@@ -1,43 +1,399 @@
 <p align="center">
-  <img src="public/banner.png" alt="Sentinel Banner" width="100%" />
+  <img src="public/banner.png" alt="Sentinel — Piratezparty donation and operations hub" width="100%" />
 </p>
 
-<h1 align="center">Ｓ ☰ ＮＴＩＮ ☰ Ｌ</h1>
+<h1 align="center">SENTINEL</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" />
-  <img src="https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma" />
-  <img src="https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white" />
-  <img src="https://img.shields.io/badge/Telegram-Bot%20API-26A5E4?style=flat-square&logo=telegram&logoColor=white" />
-  <img src="https://img.shields.io/badge/Tailwind%20CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" />
-  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-Private-gray?style=flat-square" />
+  <strong>Piratezparty's private donation, treasury, developer, and infrastructure hub.</strong>
+  <br />
+  One Telegram-native workspace for donors, administrators, and developers.
 </p>
 
 <p align="center">
-  Private financial ops, team management, and infrastructure monitoring platform for the PzP developer community.<br/>
-  Telegram-native auth, role-based access, real-time VPS monitoring, and immutable audit logging.
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_start-6FD1D7?style=for-the-badge&logo=rocket&logoColor=111116" alt="Quick start" /></a>
+  <a href="#system-architecture"><img src="https://img.shields.io/badge/Architecture-9690D8?style=for-the-badge&logo=diagramsdotnet&logoColor=white" alt="Architecture" /></a>
+  <a href="#production-deployment"><img src="https://img.shields.io/badge/Deployment-4ADE80?style=for-the-badge&logo=pm2&logoColor=111116" alt="Deployment" /></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111116" alt="React 19" />
+  <img src="https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma" alt="Prisma 7" />
+  <img src="https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Telegram-grammY-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram and grammY" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5" />
+  <img src="https://img.shields.io/badge/License-Private-555?style=flat-square" alt="Private license" />
 </p>
 
 ---
 
-## Tech Stack
+## What Sentinel does
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 16 (App Router, Turbopack) |
-| UI | React 19, Tailwind CSS 4 |
-| Language | TypeScript 5 |
-| ORM | Prisma 7 (driver adapters, `@prisma/adapter-pg` + `pg`) |
-| Database | PostgreSQL (Supabase) |
-| Bot | grammY (Telegram Bot framework, polling mode) |
-| Auth | jose (JWT, Edge-compatible), Telegram Login Widget |
-| Theme | Glassmorphism dark UI (`#111116` base, `#6FD1D7` default accent) |
+Sentinel is the operating hub for Piratezparty donations and the team behind them. It combines a responsive web dashboard with [@TheSentinelRobot](https://t.me/TheSentinelRobot), PostgreSQL-backed financial records, Telegram notifications, infrastructure monitoring, and retained audit history.
+
+The product is designed around three principles:
+
+- **One source of truth:** financial changes originate in Sentinel and can be mirrored to Google Sheets for reporting.
+- **Role-aware access:** admins, donors, and developers see different navigation, actions, and data.
+- **Traceable operations:** financial mutations, credential access, broadcasts, and infrastructure actions are recorded instead of silently disappearing.
+
+### Current highlights
+
+- Full transaction search, pagination, filtering, sorting, editing, approval, rejection, and safe voiding.
+- Checkbox selection for visible rows or the complete filtered result, with bulk approve, reject, and void actions.
+- Structured confirmation dialogs, required rejection/void reasons, loading states, and per-record failure reports.
+- Admin-only donor broadcasts delivered inside Sentinel, to the attached Telegram donors group, or to both.
+- Matching rich text in the broadcast editor, live preview, Sentinel pop-up, notification center, and Telegram post.
+- Buy Me a Coffee and server-verified Razorpay donation flows, including revocable one-time guest invitations.
+- Telegram-first onboarding, alerts, donation acknowledgements, and group-topic logging.
+- Encrypted credential vault, project board, GitHub activity, reminders, and live VPS telemetry.
+- Mobile-first cards and navigation alongside dense desktop tables and dashboards.
+
+## Contents
+
+- [Roles and capabilities](#roles-and-capabilities)
+- [Financial ledger](#financial-ledger)
+- [Donor broadcasts](#donor-broadcasts)
+- [System architecture](#system-architecture)
+- [Codebase map](#codebase-map)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Integrations](#integrations)
+- [VPS agent](#vps-agent)
+- [Security and audit model](#security-and-audit-model)
+- [Production deployment](#production-deployment)
+- [Commands and verification](#commands-and-verification)
 
 ---
 
-## 🚀 Quick Start
+## Roles and capabilities
+
+Users may hold more than one role and switch context from the responsive sidebar or mobile navigation.
+
+| Role | Primary workspace | Capabilities |
+| --- | --- | --- |
+| **ADMIN** | Treasury and operations | Dashboard, transactions, donor access and guest links, broadcasts, services, API usage, credentials, VPS fleet, users, reminders, repositories, and audit history |
+| **DONOR** | Piratezparty donation hub | Submit and track contributions, use enabled payment providers, view status and contribution history, receive acknowledgements and broadcasts, and configure donation reminders |
+| **DEV** | Delivery and infrastructure | Kanban board, assigned tasks, service credentials, read-only VPS telemetry, and controlled SSH access requests |
+
+### Telegram onboarding
+
+1. Open [@TheSentinelRobot](https://t.me/TheSentinelRobot) and send `/start`.
+2. An administrator approves the account and assigns the appropriate role, including `DONOR` where applicable.
+3. Sentinel notifies the user after approval and exposes the matching workspace.
+4. Users should keep the bot unblocked so approvals, rejections, reminders, broadcasts, and other important notices can reach them.
+
+---
+
+## Financial ledger
+
+### Transaction workspace
+
+The admin transaction screen works as a responsive card interface on mobile and a table on desktop. Editing opens in the context of the selected record instead of forcing the user back to the top of the list.
+
+| Area | Supported behavior |
+| --- | --- |
+| Discovery | Server-side search across ID, description, donor/source, and creator |
+| Pagination | 10, 25, 50, or 100 records per page; older records remain reachable |
+| Filters | Lifecycle, status, date range, amount range, currency, direction, type, and payment method |
+| Sorting | Newest, oldest, amount high-to-low, or amount low-to-high |
+| Selection | Select visible rows or every matching filtered record, up to 5,000 transactions |
+| Bulk actions | Approve pending records, reject with a shared reason, or void with a required reason |
+| Failure handling | Reports requested, succeeded, and failed counts plus the failure for each affected record |
+| Editing | Amount, currency, method, direction, type, date, description, donor/source, proof, and attachments |
+| Reviewed records | Material edits require an explicit warning and confirmation |
+| Exports and mirrors | CSV export, manual Sheets sync, and on-demand workbook backup |
+
+### Ledger lifecycle
+
+Sentinel separates the review status from the record lifecycle. “Delete” is implemented as a **soft void**: the transaction remains in PostgreSQL, linked audit records remain intact, and Telegram/GitHub logs are never removed by the action.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: contribution submitted
+    Pending --> Approved: admin approves
+    Pending --> Rejected: admin rejects with reason
+    Approved --> Approved: confirmed edit
+    Rejected --> Rejected: confirmed edit
+
+    Pending --> Voided: admin voids with reason
+    Approved --> Voided: admin voids with reason
+    Rejected --> Voided: admin voids with reason
+    Voided --> [*]: retained outside active totals
+```
+
+Voided records are excluded from active balances, donor totals, statistics, and leaderboard calculations. They remain queryable through the lifecycle filter and remain present in the Sheets transaction history for reconciliation.
+
+### Financial event flow
+
+```mermaid
+sequenceDiagram
+    actor Donor
+    actor Admin
+    participant UI as Sentinel UI
+    participant API as Transaction API
+    participant DB as PostgreSQL
+    participant Audit as Audit + Telegram logs
+    participant Sheets as Google Sheets mirror
+
+    Donor->>UI: Submit contribution and proof
+    UI->>API: POST /api/transactions
+    API->>DB: Create PENDING transaction
+    API-->>Admin: High-priority notification
+    Admin->>UI: Approve, reject, edit, or void
+    UI->>API: Confirmed mutation
+    API->>DB: Update status or void metadata
+    API->>Audit: Append actor, reason, before, and after
+    API-->>Donor: In-app and Telegram notification
+    API-->>Sheets: Schedule mirror refresh and backup
+```
+
+---
+
+## Donor broadcasts
+
+Only admins can open **Admin → Broadcasts** or call `/api/broadcasts`.
+
+Each broadcast can be sent to:
+
+- **Sentinel donors:** a high-priority notification for every active donor, displayed as an in-app pop-up and retained in the notification center.
+- **Telegram donors group:** a formatted post to `TG_DONATION_GROUP_ID`, optionally inside `TG_DONATION_TOPIC_ID`.
+- **Both:** one authoring action produces equivalent formatting in both destinations.
+
+The title supports inline formatting and is limited to 80 characters. The message supports block and inline formatting and is limited to 3,500 characters.
+
+| Authoring syntax | Result | Title | Message |
+| --- | --- | :---: | :---: |
+| `**important**` | Bold | ✓ | ✓ |
+| `*emphasis*` | Italic | ✓ | ✓ |
+| `__underlined__` | Underline | ✓ | ✓ |
+| `~~obsolete~~` | Strikethrough | ✓ | ✓ |
+| `` `literal` `` | Inline code | ✓ | ✓ |
+| `[Piratezparty](https://example.com)` | Safe HTTP(S) link | ✓ | ✓ |
+| `> quoted instruction` | Quote block | — | ✓ |
+
+```mermaid
+flowchart LR
+    A[Admin composer] --> P[Shared rich-text parser]
+    P --> V[Live preview]
+    A --> API[POST /api/broadcasts]
+    API --> AUTH{Admin role?}
+    AUTH -->|No| DENY[403 Forbidden]
+    AUTH -->|Yes| DEST{Selected destinations}
+    DEST -->|Sentinel| N[(High-priority donor notifications)]
+    DEST -->|Telegram| T[Donors group or topic]
+    N --> POP[Donor pop-up]
+    N --> BELL[Notification center]
+    T --> POST[Equivalent Telegram HTML]
+    API --> LOG[Audit record with delivery result]
+```
+
+Telegram delivery falls back to `TG_GROUP_ID` when a separate donation group is not configured. Sending to the group requires the bot to be a member with permission to post.
+
+---
+
+## System architecture
+
+```mermaid
+flowchart TB
+    subgraph Clients[Clients]
+        MINI[Telegram Mini App]
+        WEB[Desktop and mobile browser]
+        ADMIN[Admin operations]
+    end
+
+    subgraph Sentinel[Sentinel application]
+        MW[JWT and role middleware]
+        NEXT[Next.js App Router]
+        ROUTES[Route handlers]
+        DOMAIN[Domain modules in src/lib]
+        BOT[grammY polling bot]
+    end
+
+    subgraph Data[Persistent state]
+        PG[(PostgreSQL)]
+        FILES[(Telegram file storage)]
+    end
+
+    subgraph Integrations[External integrations]
+        TG[Telegram Bot API]
+        RZP[Razorpay API and webhooks]
+        BMC[Buy Me a Coffee webhooks]
+        GS[Google Sheets and Drive]
+        GH[GitHub repositories and audit log]
+        FX[USD/INR rate service]
+    end
+
+    subgraph Fleet[Monitored infrastructure]
+        AGENT[Sentinel bash agent]
+        PM2[PM2: web and bot]
+    end
+
+    MINI --> MW
+    WEB --> MW
+    ADMIN --> MW
+    MW --> NEXT
+    NEXT --> ROUTES
+    ROUTES --> DOMAIN
+    DOMAIN --> PG
+    DOMAIN --> FILES
+    ROUTES <--> RZP
+    BMC --> ROUTES
+    DOMAIN <--> TG
+    DOMAIN --> GS
+    DOMAIN --> GH
+    DOMAIN --> FX
+    BOT <--> TG
+    BOT --> PG
+    AGENT -->|heartbeat every 30 seconds| ROUTES
+    PM2 --> NEXT
+    PM2 --> BOT
+```
+
+### Runtime boundaries
+
+| Boundary | Responsibility |
+| --- | --- |
+| `src/app` | Pages, layouts, middleware-facing route groups, and server route handlers |
+| `src/components` | Shared responsive UI, dialogs, navigation, payment cards, tours, and rich broadcast rendering |
+| `src/lib` | Authentication, ledger queries, provider verification, notifications, encryption, logging, and integrations |
+| `prisma` | PostgreSQL data model, enums, generated-client configuration, and seed/backfill utilities |
+| `src/bot-dev.ts` | Long-running grammY polling process for bot commands, invitations, reminders, and alerts |
+| `scripts` | Google Sheets synchronization and installable VPS telemetry agent |
+
+### Trust boundaries
+
+- Telegram Mini App data and Telegram Login Widget payloads are verified server-side.
+- Browser sessions use signed JWT cookies and every protected API repeats role checks.
+- Razorpay checkout responses are accepted only after HMAC verification and a server-side payment lookup confirms capture.
+- BMC webhook deliveries are signature-verified and stored with idempotent event keys.
+- Credentials and VPS secrets are encrypted before persistence; plaintext is never returned through list endpoints.
+- The VPS agent authenticates heartbeats using its server token rather than a human session.
+
+---
+
+## Codebase map
+
+### Directory structure
+
+```text
+Pzp-Sentinel/
+├── prisma/
+│   ├── schema.prisma              # Users, ledger, providers, services, tasks, audit, and VPS models
+│   ├── seed.ts                    # Production-safe initial roles and task tags
+│   ├── seed-qa.ts                 # QA fixtures
+│   └── *backfill*.ts              # Targeted data maintenance utilities
+├── public/
+│   ├── banner.png                 # README/product banner
+│   ├── login-bg.webp              # Desktop landing artwork
+│   ├── mobile-landing-page.webp   # Mobile landing artwork
+│   └── Payment Apps Icons/        # BMC, Razorpay, card, wallet, and UPI branding
+├── scripts/
+│   ├── install-agent.sh           # VPS agent installer and systemd provisioning
+│   ├── vps-agent.sh               # CPU, memory, disk, network, load, and uptime collector
+│   └── sync-finance-sheets.ts     # Manual Google Sheets mirror command
+├── src/
+│   ├── app/
+│   │   ├── (auth)/login/          # Telegram-assisted sign-in
+│   │   ├── (dashboard)/admin/     # Treasury and operations screens
+│   │   ├── (dashboard)/donor/     # Donor contribution experience
+│   │   ├── (dashboard)/dev/       # Board, tasks, credentials, and VPS views
+│   │   ├── api/                   # Authenticated and webhook route handlers
+│   │   ├── donate/[token]/        # Claimed one-time donation invitation
+│   │   └── page.tsx               # Public landing page
+│   ├── components/                # Shared responsive UI primitives and feature components
+│   ├── generated/prisma/          # Generated Prisma client; do not hand-edit
+│   ├── lib/                       # Domain and integration modules
+│   ├── bot-dev.ts                 # Standalone Telegram polling process
+│   └── middleware.ts              # Public allow-list, JWT validation, and role routing
+├── .env.example                   # Configuration template without live secrets
+├── next.config.ts                 # Next.js config and /install.sh agent rewrites
+├── package.json                   # Scripts and runtime dependencies
+├── start.sh / start.cmd           # Local web + bot launchers
+└── upgrade.sh                     # Pull, migrate, build, restart, and verify production
+```
+
+### Module dependency map
+
+```mermaid
+flowchart LR
+    subgraph Presentation[src/app and src/components]
+        PAGES[Role pages]
+        UI[Shared UI]
+        API[API route handlers]
+    end
+
+    subgraph Domain[src/lib]
+        AUTH[auth.ts]
+        TX[transaction-query.ts]
+        NOTIFY[notifications.ts]
+        FORMAT[broadcast-format.ts]
+        PAY[razorpay.ts and bmc-webhook.ts]
+        VAULT[secret-crypto.ts and vps-credentials.ts]
+        AUDIT[audit.ts, telegram-log.ts, github-log.ts]
+        SHEETS[finance-sheets.ts]
+        BOTLIB[bot.ts]
+    end
+
+    subgraph Persistence[Prisma]
+        DB[db.ts]
+        CLIENT[generated/prisma]
+        SCHEMA[schema.prisma]
+        POSTGRES[(PostgreSQL)]
+    end
+
+    PAGES --> UI
+    PAGES --> API
+    API --> AUTH
+    API --> TX
+    API --> NOTIFY
+    API --> FORMAT
+    API --> PAY
+    API --> VAULT
+    API --> AUDIT
+    API --> SHEETS
+    NOTIFY --> BOTLIB
+    AUTH --> DB
+    TX --> CLIENT
+    PAY --> DB
+    VAULT --> DB
+    AUDIT --> DB
+    SHEETS --> DB
+    DB --> CLIENT
+    CLIENT -. generated from .-> SCHEMA
+    CLIENT --> POSTGRES
+```
+
+### Route ownership
+
+| Route family | Owner modules | Purpose |
+| --- | --- | --- |
+| `/api/auth/*` | `auth.ts`, `bot.ts`, middleware | Telegram verification, OTP/login-token flow, session, logout, and profile |
+| `/api/transactions/*` | `transaction-query.ts`, audit/notification/Sheets modules | Ledger CRUD, pagination, filters, selection, bulk actions, stats, and CSV export |
+| `/api/broadcasts` | `broadcast-format.ts`, notifications, audit | Admin-only rich donor broadcasts |
+| `/api/payments/razorpay/*` | `razorpay.ts`, `razorpay-signatures.ts`, `invite-token.ts` | Orders, capture verification, donor permissions, and guest invitations |
+| `/api/bmc/*` | `bmc-webhook.ts` | Hosted-checkout config, signed webhook ingestion, and optional legacy sync |
+| `/api/credentials/*` | `secret-crypto.ts` | Encrypted vault CRUD, reveal auditing, access, and review workflow |
+| `/api/vps/*` | `vps-credentials.ts`, `vps-subscription.ts` | Server registry, heartbeats, agent scripts, access requests, and key upload |
+| `/api/projects`, `/api/tasks`, `/api/tags` | Prisma-backed project modules | Board, assignments, subtasks, status, priority, and tags |
+| `/api/integrations/google-sheets` | `finance-sheets.ts` | Manual sync, backup, and integration status |
+| `/api/github/*`, `/api/tracked-repos` | GitHub activity/log modules | Repository discovery, activity, tracking, and retained log commits |
+| `/api/notifications`, `/api/reminders` | `notifications.ts`, bot process | In-app notices, read state, donor nudges, and scheduled reminders |
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- Node.js 20 or newer
+- npm
+- PostgreSQL database
+- Telegram bot token from BotFather
+
+### Install
 
 ```bash
 git clone https://github.com/zxcvresque/Pzp-Sentinel.git
@@ -46,247 +402,206 @@ npm install
 cp .env.example .env
 ```
 
-### Environment Variables
+On Windows PowerShell, use:
 
-```env
-# Database
-DATABASE_URL=postgresql://user:pass@host:5432/sentinel
-
-# Telegram Bot
-BOT_TOKEN=your-telegram-bot-token
-BOT_USERNAME=TheSentinelRobot
-BOT_WEBHOOK_SECRET=your-webhook-secret
-
-# Auth
-JWT_SECRET=your-jwt-secret
-
-# Secrets-at-rest encryption (32-byte key, base64). REQUIRED in production.
-# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-# IMPORTANT: use the SAME value across environments that share a database —
-# changing it makes already-encrypted credential/VPS secrets unreadable.
-CREDENTIAL_ENC_KEY=your-32-byte-base64-key
-
-# App
-WEBAPP_URL=https://sentinel.piratezparty.com
-
-# Telegram Group Topics
-TG_GROUP_ID=your-group-id
-TG_TOPIC_AUDIT=topic-id
-TG_TOPIC_TRANSACTIONS=topic-id
-TG_TOPIC_SCREENSHOTS=topic-id
-
-# Donations group for public donation thank-yous (optional). If unset, thank-yous
-# fall back to TG_GROUP_ID's General topic (testing). Omit the topic id for General.
-TG_DONATION_GROUP_ID=your-donation-group-id
-TG_DONATION_TOPIC_ID=
-
-# Google Sheets finance mirror + Telegram workbook backups
-GOOGLE_SHEETS_ID=your-spreadsheet-id
-GOOGLE_SERVICE_ACCOUNT_EMAIL=sentinel-sheets@your-project.iam.gserviceaccount.com
-GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-TG_TOPIC_BACKUPS=topic-id
-
-# GitHub Audit Logs
-GITHUB_LOGS_TOKEN=your-github-pat
-
-# Buy Me a Coffee
-BMC_PAGE_URL=https://buymeacoffee.com/your-creator-slug
-BMC_ACCOUNT_SLUG=your-creator-slug
-BMC_WEBHOOK_SECRET=your-webhook-signing-secret
-# Optional legacy API token; new accounts may not offer one.
-BMC_TOKEN=
+```powershell
+Copy-Item .env.example .env
 ```
 
-### Database Setup
+Fill in the core variables, then prepare the database:
 
 ```bash
-npx prisma db push
-npx prisma generate
-npx tsx prisma/seed.ts
+npm run db:push
+npm run db:generate
+npm run db:seed
 ```
 
-### Buy Me a Coffee Setup / Account Replacement
+Start the web application and Telegram bot together:
 
-Sentinel uses Buy Me a Coffee in two ways:
+```bash
+npm run dev:all
+```
 
-- Embedded checkout: the donor opens BMC's official checkout widget over the Sentinel dashboard, so payment stays in the Sentinel experience while BMC owns checkout and capture. If the widget cannot load, Sentinel safely falls back to the configured creator page.
-- Live updates: `POST /api/bmc/webhook` verifies `x-signature-sha256`, stores the delivery, creates or updates the matching Sentinel transaction, logs the event to Telegram/audit history, and refreshes the Sheets mirror.
-- Optional legacy sync: `POST /api/bmc/sync` remains available only when an older account still has a working `BMC_TOKEN`.
+Or run them in separate terminals:
 
-From the active Buy Me a Coffee account, collect:
+```bash
+npm run dev
+npm run bot:dev
+```
+
+The web app defaults to `http://localhost:3000`. The bot uses polling in development and production, so do not start two bot processes with the same token.
+
+---
+
+## Configuration
+
+Start from `.env.example`. Never commit `.env`, `.env.local`, service-account JSON, exported payment data, production tokens, or encryption keys.
+
+### Core application
 
 ```env
-BMC_PAGE_URL=https://buymeacoffee.com/your-creator-slug
-BMC_ACCOUNT_SLUG=your-creator-slug
-BMC_WEBHOOK_SECRET=your-bmc-webhook-secret
-BMC_TOKEN=
+DATABASE_URL="postgresql://user:password@host:5432/pzp_finance"
+JWT_SECRET="random-secret-at-least-32-characters"
+CREDENTIAL_ENC_KEY="base64-encoded-32-byte-key"
+WEBAPP_URL="https://sentinel.piratezparty.com"
 ```
 
-In the BMC developer/webhook settings, set the webhook URL to:
+Generate the encryption key once and keep the same value for every environment sharing the database:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Changing `CREDENTIAL_ENC_KEY` makes existing encrypted credentials and VPS secrets unreadable.
+
+### Telegram
+
+```env
+BOT_TOKEN="your-bot-token"
+BOT_USERNAME="TheSentinelRobot"
+BOT_WEBHOOK_SECRET="random-webhook-secret"
+
+TG_GROUP_ID="-100xxxxxxxxxx"
+TG_TOPIC_AUDIT="6"
+TG_TOPIC_TRANSACTIONS="12"
+TG_TOPIC_SCREENSHOTS="18"
+TG_TOPIC_BACKUPS="24"
+
+TG_DONATION_GROUP_ID="-100xxxxxxxxxx"
+TG_DONATION_TOPIC_ID=""
+```
+
+`TG_DONATION_GROUP_ID` is used for donation acknowledgements and admin broadcasts. Leave `TG_DONATION_TOPIC_ID` empty to post in General. If no donation group is set, Sentinel falls back to `TG_GROUP_ID` where supported.
+
+### Payment providers
+
+```env
+BMC_PAGE_URL="https://buymeacoffee.com/your-creator-slug"
+BMC_ACCOUNT_SLUG="your-creator-slug"
+BMC_WEBHOOK_SECRET="your-bmc-signing-secret"
+BMC_TOKEN=""
+
+RAZORPAY_KEY_ID="rzp_test_or_live_key_id"
+RAZORPAY_KEY_SECRET="your-key-secret"
+RAZORPAY_WEBHOOK_SECRET="a-separate-webhook-secret"
+```
+
+`BMC_TOKEN` is optional and exists only for legacy accounts that still provide API access. The configured Razorpay key ID is the source of truth for test versus live mode.
+
+### Google and GitHub
+
+```env
+GOOGLE_SHEETS_ID="spreadsheet-id"
+GOOGLE_SERVICE_ACCOUNT_EMAIL="sentinel-sheets@project.iam.gserviceaccount.com"
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+GITHUB_LOGS_TOKEN="token-for-retained-audit-log-repository"
+GITHUB_TOKEN="token-for-repository-and-activity-views"
+GITHUB_ORG="organization-or-username"
+```
+
+Keep the two GitHub tokens separate when they require different repository scopes.
+
+---
+
+## Integrations
+
+### Buy Me a Coffee
+
+Sentinel uses BMC in three ways:
+
+1. **Hosted checkout:** the configured creator page opens in the system browser. Telegram Mini Apps use Telegram's external-link API so BMC does not run inside and slow the webview.
+2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror.
+3. **Optional legacy sync:** `POST /api/bmc/sync` is available only when `BMC_TOKEN` is configured.
+
+Configure the BMC webhook as:
 
 ```text
 https://sentinel.piratezparty.com/api/bmc/webhook
 ```
 
-Enable all available events, or at minimum the events Sentinel handles:
+Enable the payment, refund, extra-purchase, recurring donation, membership, commission, and wishlist event types available to the account. Retries remain idempotent because Sentinel stores a unique event key. Test deliveries are retained for verification but excluded from live treasury totals.
+
+When replacing the BMC account, update `BMC_PAGE_URL`, `BMC_ACCOUNT_SLUG`, and `BMC_WEBHOOK_SECRET`, run `bash upgrade.sh`, then send a BMC test event. Previously imported transactions remain in the database, while the account slug namespaces new provider IDs to avoid collisions.
+
+### Razorpay
+
+Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. The signed webhook recovers payments when the payer closes the browser before client verification finishes.
+
+Configure the webhook as:
 
 ```text
-donation.created
-donation.refunded
-extra_purchase.created
-extra_purchase.refunded
-extra_purchase.updated
-recurring_donation.started
-recurring_donation.cancelled
-recurring_donation.updated
-membership.started
-membership.cancelled
-membership.paused
-membership.updated
-commission_order.created
-commission_order.refunded
-wishlist_payment.created
-wishlist_payment.refunded
+https://sentinel.piratezparty.com/api/webhooks/razorpay
 ```
 
-To replace an existing BMC account on the VPS:
+Subscribe to `payment.captured`, `order.paid`, and `payment.failed`. Use a dedicated webhook secret; never reuse or expose `RAZORPAY_KEY_SECRET`.
 
-```bash
-cd ~/Sentinel
-nano .env
-# replace BMC_PAGE_URL, BMC_ACCOUNT_SLUG, and BMC_WEBHOOK_SECRET
-npm run db:push
-pm2 restart sentinel-web
-pm2 save
-```
+Donor access is enforced server-side:
 
-Then verify from the admin dashboard:
-
-1. Open `Admin -> Dashboard`.
-2. Open the webhook in BMC and use **Send test event** for `donation.created`.
-3. Confirm BMC shows a `2xx` delivery and Sentinel shows the test receipt without adding it to live treasury totals.
-4. Complete one small real BMC payment and confirm it appears automatically in `Admin -> Transactions`, Telegram audit logs, and the Sheets mirror.
-
-Previously imported BMC transactions remain in the database. `BMC_ACCOUNT_SLUG` namespaces new provider IDs so replacing an account cannot collide with the previous account's records. The webhook signing secret must never be exposed to client code.
-
-One-time guest links use a Telegram bot deep link. The admin enters a payer label, optional note, expiry, and whether Razorpay should be available alongside the default BMC option, then sends the generated `https://t.me/<BOT_USERNAME>?start=donate_<token>` link privately. When the recipient taps **Start**, Telegram supplies the sender's immutable numeric ID and optional username. The bot atomically binds that identity to the invitation and only then returns the Sentinel payment options.
-
-### Run
-
-Two separate processes:
-
-```bash
-npm run dev        # Next.js dev server
-npm run bot:dev    # Telegram bot (separate terminal)
-```
+- BMC is enabled by default and can be disabled per donor.
+- Razorpay is disabled by default and must be enabled by an admin.
+- One-time guest links always offer BMC and may optionally offer Razorpay.
+- An invitation is expiring, revocable, stored as a SHA-256 token hash, atomically claimed from Telegram `/start`, and consumed after a verified Razorpay capture.
+- Test captures are clearly marked and excluded from production totals, burn rate, rankings, and Sheets dashboard calculations.
 
 ### Google Sheets finance mirror
 
-Sentinel can maintain a read-only finance workbook with pastel dashboard cards, native charts, transaction data, monthly and expense summaries, donor totals, service costs, change history, and reconciliation checks. Sentinel remains the only data-entry surface; the service account needs Editor access while human viewers can remain Viewer-only.
-
-Enable the Google Sheets and Drive APIs, share the target spreadsheet with `GOOGLE_SERVICE_ACCOUNT_EMAIL`, configure the variables above, then initialize or manually refresh it with:
+Share the target workbook with `GOOGLE_SERVICE_ACCOUNT_EMAIL` as an editor, while human viewers may remain read-only. Then initialize it with:
 
 ```bash
 npm run sheets:sync
 ```
 
-Transaction creation refreshes the workbook and sends a timestamped XLSX snapshot to `TG_TOPIC_BACKUPS`. Updates, approvals, rejections, and deletions refresh the workbook and are recorded in Telegram transaction/audit logs. Admins can also use **Sync Sheets** and **Backup Now** from the Transactions page.
+Sentinel generates dashboard cards, native charts, transaction rows, monthly and expense summaries, donor totals, service costs, change history, and reconciliation checks. Transaction mutations schedule a refresh; timestamped XLSX backups can be sent to `TG_TOPIC_BACKUPS`.
 
-### Razorpay donations
+Sentinel remains the data-entry authority. Voided transactions remain in history but are excluded from active financial calculations.
 
-Sentinel uses Razorpay Standard Checkout for dashboard donations. Orders are created on the server, the checkout HMAC is verified against the server-stored order ID, and the payment is fetched from Razorpay before Sentinel records an automatically approved transaction. Only a matching `captured` payment is accepted. A signed webhook provides a recovery path when the browser closes before verification finishes.
+### Telegram topics and notifications
 
-Configure:
+| Destination | Content |
+| --- | --- |
+| Audit topic | Actor/action summaries, broadcasts, and sensitive operational events |
+| Transactions topic | Created, edited, reviewed, and voided ledger records |
+| Screenshots topic | Contribution proofs and submitted SSH public keys |
+| Backups topic | Timestamped Google Sheets workbook snapshots |
+| Donors group/topic | Donation acknowledgements and admin broadcasts |
+| Direct messages | Login, approval/rejection, role, reminder, task, credential, and system notices |
 
-```env
-RAZORPAY_KEY_ID="rzp_test_..."
-RAZORPAY_KEY_SECRET="..."
-RAZORPAY_WEBHOOK_SECRET="a-separate-random-webhook-secret"
-```
-
-In Razorpay Dashboard, create a webhook pointing to:
-
-```text
-https://your-domain.com/api/webhooks/razorpay
-```
-
-Subscribe it to `payment.captured`, `order.paid`, and `payment.failed`, and use exactly the same dedicated webhook secret in both places. Test-mode payments are visibly recorded for QA but excluded from real treasury totals, burn-rate calculations, donor rankings, and Google Sheets dashboard calculations.
-
-Admins can also create expiring, revocable **one-time guest payment links** from **Admin > Donors**. The generated link opens the configured Telegram bot, which captures the payer's numeric Telegram ID directly from the `/start` sender and returns payment options only after a successful one-account claim. BMC is included by default; optional Razorpay access is enforced by the invitation and that invitation is consumed after a server-verified Razorpay capture. Sentinel stores only a SHA-256 hash of the secret token.
-
-### Donor payment access
-
-Payment controls live under **Admin → Donors**:
-
-- Buy Me a Coffee is enabled for every donor by default and can be hidden per donor inside Sentinel.
-- Razorpay is disabled by default. An admin can enable or disable it persistently for selected donors with **Allow Razorpay**.
-- One-time guest invitations include BMC by default. Admins can select **Also allow Razorpay** while creating an invitation when that guest should see both methods.
-- Donor Razorpay permission is checked server-side whenever an order is created. Guest Razorpay permission is checked independently against the claimed invitation. Test or live behavior is selected exclusively by `RAZORPAY_KEY_ID`; production UI does not use demo orders.
-- Payment method logos are display guidance only. Razorpay Checkout remains authoritative and shows the methods enabled on the Razorpay account and supported by the payer's device.
-
-Before production deployment, apply the new Prisma models and enum:
-
-```bash
-npm run db:generate
-npm run db:push
-```
-
-Replace test keys with live keys only after an end-to-end test. Payment methods (UPI Intent/QR, cards, netbanking, and wallets) are controlled by the Razorpay account's enabled methods. Never expose `RAZORPAY_KEY_SECRET` or `RAZORPAY_WEBHOOK_SECRET` to client code.
-
-### Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Next.js dev server (Turbopack) |
-| `npm run bot:dev` | Telegram bot in polling mode |
-| `npm run db:seed` | Seed database with default users + tags |
-| `npm run db:push` | Push Prisma schema to database |
-| `npm run db:generate` | Regenerate Prisma client |
-| `npm test` | Run unit tests (Vitest) |
+High-priority financial and broadcast notices are also stored inside Sentinel. The notification bell exposes unread state and recent history.
 
 ---
 
-## 🖥 VPS Agent Setup
+## VPS agent
 
-Lightweight bash agent that collects system metrics (CPU, RAM, disk, network, uptime, load average) and POSTs them to Sentinel every 30 seconds via systemd.
+The lightweight bash agent collects CPU, RAM, disk, network, load average, and uptime every 30 seconds and posts them to Sentinel over HTTPS.
 
-### 1. Register the server
+### Register in Sentinel, then install
 
-In the Sentinel admin panel, go to **VPS Stats** and add a server. Copy the token — it's shown once.
-
-### 2. Install on the target VPS
+1. Open **Admin → Services → VPS Stats**.
+2. Add a server and copy the one-time token.
+3. Run on the target Linux server:
 
 ```bash
 curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- --token YOUR_TOKEN
 ```
 
-This will:
-- Install the agent to `/usr/local/bin/sentinel-agent`
-- Create a hardened systemd service (`sentinel-agent.service`)
-- Enable and start the service
-- Verify the first heartbeat
+The installer writes `/usr/local/bin/sentinel-agent`, creates a hardened `sentinel-agent.service`, enables it, starts it, and checks the first heartbeat.
 
-### Self-registration mode
-
-Skip the dashboard step — register the server directly from the VPS using your admin JWT:
+### Self-register from a server
 
 ```bash
 curl -fsSL https://sentinel.piratezparty.com/install.sh | sudo bash -s -- \
-  --register --api-key YOUR_JWT \
+  --register --api-key YOUR_ADMIN_JWT \
   --name "web-01" --platform ubuntu --provider hetzner
 ```
 
-Auto-detects public IP and gets a token back from the API.
-
-### Agent management
+### Operate or remove the agent
 
 ```bash
-journalctl -u sentinel-agent -f        # Live logs
-systemctl status sentinel-agent         # Service status
-systemctl restart sentinel-agent        # Restart
+journalctl -u sentinel-agent -f
+systemctl status sentinel-agent
+systemctl restart sentinel-agent
 ```
-
-### Uninstall
 
 ```bash
 sudo systemctl disable --now sentinel-agent
@@ -296,54 +611,62 @@ sudo systemctl daemon-reload
 
 ---
 
-## 🛰 Deployment
+## Security and audit model
 
-Sentinel runs as two processes in production:
+- **Authorization:** middleware gates page families, while route handlers independently validate the current user and required role.
+- **Session integrity:** JWT verification uses `jose`; invalid or missing sessions are rejected before protected API execution.
+- **Secret storage:** credentials, API account secrets, VPS passwords, and keys use AES-256-GCM encryption at rest.
+- **Financial retention:** voiding records `voidedAt`, `voidedBy`, and `voidReason`; it does not delete the transaction or its audit relation.
+- **Mutation evidence:** transaction create/edit/review/void events are written to PostgreSQL and mirrored to configured Telegram/GitHub log destinations.
+- **Provider verification:** Razorpay HMAC/payment verification and BMC webhook signature verification happen on the server.
+- **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints.
+- **Operational visibility:** bulk actions return partial failures rather than implying that every selected record succeeded.
+
+The application log is append-oriented, but its strength still depends on production database permissions, GitHub repository protection, Telegram retention, and careful secret management.
+
+---
+
+## Production deployment
+
+Sentinel runs as two PM2 processes behind the production reverse proxy:
 
 ```mermaid
-graph LR
-  subgraph VPS[" Ubuntu VPS "]
-    PM2[PM2 / systemd]
-    PM2 --> NextProc[Next.js<br/>port 3000]
-    PM2 --> BotProc[grammY Bot<br/>polling]
-  end
-
-  Nginx[Nginx Reverse Proxy<br/>sentinel.piratezparty.com] --> NextProc
-  BotProc <--> TG[Telegram API]
-
-  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
-  classDef proxy fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
-  classDef process fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:1.5px
-  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
-
-  class PM2 core
-  class NextProc,BotProc process
-  class Nginx proxy
-  class TG telegram
-
-  style VPS fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
+flowchart LR
+    USER[Browser or Telegram Mini App] --> PROXY[Nginx or Cloudflare]
+    PROXY --> WEB[sentinel-web: Next.js]
+    WEB --> DB[(PostgreSQL)]
+    BOT[sentinel-bot: grammY polling] <--> TG[Telegram API]
+    BOT --> DB
+    PM2[PM2 supervisor] --> WEB
+    PM2 --> BOT
 ```
 
-1. **Next.js application** — web frontend and all API routes
-2. **Telegram bot** — standalone grammY bot in polling mode (`bot-dev.ts`)
+### One-command upgrade
 
-### Database
-
-```bash
-npx prisma db push       # Sync schema
-npx prisma generate      # Regenerate client
-rm -rf .next             # Clear build cache after prisma generate
-```
-
-Schema: 13 models, 19 enums. Seed data includes default users and 8 color-coded task tags.
-
-### Deploying updates
-
-Production serves the **compiled `.next` build**, so a bare `git pull` keeps serving the old bundle. You must rebuild **and** restart both PM2 processes:
+From the application directory on the VPS:
 
 ```bash
 cd ~/Sentinel
-git pull
+bash upgrade.sh
+```
+
+`upgrade.sh` performs the complete release sequence:
+
+1. Fetch and fast-forward `main`.
+2. Install locked dependencies with `npm ci`.
+3. Apply the Prisma schema with `prisma db push`.
+4. Regenerate the Prisma client.
+5. Remove the old `.next` bundle and build the new application.
+6. Restart `sentinel-web` and `sentinel-bot`, then save the PM2 process list.
+7. Verify that `/install.sh` serves the agent script instead of HTML.
+
+### Manual fallback
+
+```bash
+cd ~/Sentinel
+git fetch origin
+git checkout main
+git pull --ff-only origin main
 npm ci
 npx prisma db push
 npx prisma generate
@@ -353,304 +676,47 @@ pm2 restart sentinel-web sentinel-bot
 pm2 save
 ```
 
-- `sentinel-web` — the Next.js app (web + API routes)
-- `sentinel-bot` — the grammY bot (donation thank-yous, donor reminders, service-expiry alerts)
-
-> If a change still isn't visible, confirm Cloudflare isn't caching HTML: `curl -sI https://sentinel.piratezparty.com/ | grep -i cf-cache-status` should be `DYNAMIC` (not `HIT`). Only `/_next/static/*` should be edge-cached.
+A plain `git pull` is not enough because production serves the compiled `.next` build. If UI changes remain stale after a successful restart, verify that Cloudflare does not cache HTML; only `/_next/static/*` should be edge-cached.
 
 ---
 
-## 🔐 Roles
+## Commands and verification
 
-Three roles with distinct navigation, theming, and permissions.
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Next.js development server |
+| `npm run bot:dev` | Start the Telegram bot in polling mode |
+| `npm run dev:all` | Start web and bot together |
+| `npm run build` | Create the production Next.js bundle |
+| `npm run start` | Serve the compiled Next.js bundle |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run the Vitest unit suite |
+| `npm run db:push` | Apply the Prisma schema to the configured database |
+| `npm run db:generate` | Regenerate the Prisma client |
+| `npm run db:seed` | Seed initial data |
+| `npm run db:seed:qa` | Seed QA fixtures |
+| `npm run sheets:sync` | Manually refresh the finance workbook |
 
-| Role | Theme | Access |
-|------|-------|--------|
-| **ADMIN** | Violet | Dashboard, Transactions, Services (catalogue, credentials, VPS), Donors, Users, Reminders, Audit Log |
-| **DEV** | Cyan | Board, My Tasks, Services (VPS and credentials) |
-| **DONOR** | Amber | My Donations, Receipts |
+Before handing off a code change, run:
 
-Users can hold multiple roles. The sidebar switches context per role, with settings pages (General + Audit Log) accessible from any role.
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+Focused tests cover transaction query construction, broadcast parsing and Telegram conversion, payment signatures, provider webhook handling, invitation tokens, encryption, Telegram escaping, and API-usage parsing.
 
 ---
 
-## ⚙ Features
+## Archived feature
 
-### Admin — Treasury and Operations
-
-- Treasury dashboard with real-time balance, multi-currency support (INR/USD with live exchange rate)
-- Transaction approval/rejection workflow with receipt photo viewing
-- CSV export for all transactions
-- Service registry with dynamic columns
-- Credential vault — AES-256-GCM encrypted at rest, per-dev access levels (public-key vs full), audited reveals, and VPS secrets auto-linked from the server
-- User management with role assignment and status control
-- Reminders with role-based targeting
-- VPS server monitoring — live CPU, RAM, disk, network metrics from bash agents with 30s refresh
-- Server approval flow for dev-requested VPS nodes
-- Donor leaderboard
-- Automatic donation thank-yous — public post in the donations group (@mention, tiered by amount) + personal DM; admin-recorded donations are flagged as on-behalf
-- Full audit log with GitHub-backed immutable history
-- Buy Me a Coffee integration — webhook receiver + manual sync for all BMC event types
-
-### Dev — Project Board and Credentials
-
-- Kanban board with 5 status columns (Backlog, To Do, In Progress, Review, Done)
-- Task management with priority levels, subtasks, deadlines, and color-coded tags
-- 8 tags: `Backend` `Frontend` `Bug` `Feature` `DevOps` `UI/UX` `Security` `Docs`
-- VPS stats (read-only monitoring + request new servers pending admin approval); request SSH access by submitting your own public key — an admin installs it and the server password/private key is never shared
-- Credential access — public-key (your installed key shown for reference) or full (reveal the secret); propose/approve workflow for credentials you own
-
-### Donor — Contributions
-
-- Donation submission with amount, currency (INR/USD), method (UPI / BMC / Bank / Other), and reference
-- Photo receipt upload (max 20 MB)
-- Status tracking across pending, approved, and rejected states
-- 3 stat cards: total contributed, pending count, approved count
-- Appreciation messages on approval (5 normal + 5 generous thresholds based on average donation)
-- Tiered public thank-you in the donations group + a personal DM when a donation is approved
-- Donate reminders via DM — default monthly (around the 5th), adjustable to weekly / every 2 weeks / off from Profile (donor-only)
-
-### Telegram Integration
-
-- Mini App auth via `initData` HMAC-SHA256 validation
-- Bot-based login flow (@TheSentinelRobot) with OTP
-- Group topic logging (audit, transactions, screenshots)
-- DM notifications with inline keyboard buttons linking to relevant pages
-- 9 configurable notification categories (all ON by default for new users)
-- HIGH priority notifications (approvals, rejections) bypass user preferences
-- Profile photo sync from Telegram
-
-### Platform-Wide
-
-- Immutable audit log backed by GitHub commits (Sentinel-Logs repo) + a Telegram audit-topic mirror for credential events
-- Secrets encrypted at rest (AES-256-GCM): credential values and VPS passwords/keys
-- Buy Me a Coffee webhook integration — supports payments, extras, memberships, commissions, wishlists, refunds, cancellations
-- Multi-currency with live USD/INR exchange rate
-- Custom accent color with 3 saveable preset slots
-- Role-based theming (ADMIN violet, DONOR amber, DEV cyan)
-- Glassmorphism dark UI (`#111116` base, `#6FD1D7` default accent)
-- Collapsible sidebar with context-aware settings mode
-- Mobile bottom navigation bar
-- In-app notification system with bell + unread count
-- Form examples toggle for contextual input hints
-
----
-
-## 🏗 Architecture
-
-```mermaid
-graph TB
-  subgraph Client[" Client "]
-    TMA[Telegram Mini App]
-    Browser[Web Browser]
-  end
-
-  subgraph Sentinel[" sentinel.piratezparty.com "]
-    Next[Next.js 16<br/>App Router + API Routes]
-    Bot[grammY Bot<br/>Polling Mode]
-  end
-
-  subgraph External[" External Services "]
-    Supabase[(PostgreSQL<br/>Supabase)]
-    TG[Telegram API]
-    GH[GitHub<br/>Immutable Logs]
-    BMC[Buy Me a Coffee<br/>Webhooks + Sync]
-    FX[Exchange Rate API]
-  end
-
-  subgraph Infra[" VPS Fleet "]
-    Agent1[sentinel-agent<br/>systemd service]
-    Agent2[sentinel-agent<br/>systemd service]
-  end
-
-  TMA -->|initData HMAC auth| Next
-  Browser -->|JWT cookie| Next
-  Next <-->|Prisma| Supabase
-  Next -->|Topic logging| TG
-  Next -->|Audit commits| GH
-  Bot <-->|Polling| TG
-  Bot -->|DM notifications| TG
-  BMC -->|Webhooks| Next
-  Next -->|API sync| BMC
-  Next -->|USD/INR rate| FX
-  Agent1 -->|Heartbeat POST /30s| Next
-  Agent2 -->|Heartbeat POST /30s| Next
-
-  classDef core fill:#0d3b45,stroke:#6FD1D7,color:#e0f7fa,stroke-width:2px
-  classDef client fill:#1a1a40,stroke:#818cf8,color:#c7d2fe,stroke-width:1.5px
-  classDef db fill:#14332a,stroke:#4ade80,color:#d1fae5,stroke-width:2px
-  classDef telegram fill:#1c1636,stroke:#a78bfa,color:#ddd6fe,stroke-width:1.5px
-  classDef extservice fill:#332010,stroke:#f59e0b,color:#fef3c7,stroke-width:1.5px
-  classDef infra fill:#351515,stroke:#f87171,color:#fecaca,stroke-width:1.5px
-
-  class Next,Bot core
-  class TMA,Browser client
-  class Supabase db
-  class TG telegram
-  class GH extservice
-  class BMC extservice
-  class FX extservice
-  class Agent1,Agent2 infra
-
-  style Client fill:#111128,stroke:#818cf8,stroke-width:1.5px,color:#c7d2fe
-  style Sentinel fill:#0a2a30,stroke:#6FD1D7,stroke-width:2px,color:#6FD1D7
-  style External fill:#1a1510,stroke:#f59e0b,stroke-width:1.5px,color:#fef3c7
-  style Infra fill:#1f1010,stroke:#f87171,stroke-width:1.5px,color:#fecaca
-```
-
-### Request Flow
-
-```mermaid
-sequenceDiagram
-  box rgb(17, 17, 40) Client
-    participant U as User
-  end
-  box rgb(28, 22, 54) Telegram
-    participant TG as Telegram
-  end
-  box rgb(10, 42, 48) Sentinel
-    participant App as Next.js API
-    participant Bot as grammY Bot
-  end
-  box rgb(20, 51, 42) Storage
-    participant DB as PostgreSQL
-    participant GH as GitHub Logs
-  end
-
-  U->>TG: Open Mini App
-  TG->>App: initData (HMAC-SHA256)
-  App->>DB: Verify user + roles
-  App-->>U: JWT cookie + dashboard
-
-  U->>App: Submit donation
-  App->>DB: Create transaction (PENDING)
-  App->>Bot: Notify admins (DM + group)
-  Bot-->>TG: Inline keyboard → Open Sentinel
-
-  Note over App: Admin approves
-  App->>DB: Update status → APPROVED
-  App->>Bot: Notify donor (DM)
-  App->>GH: Immutable audit log commit
-  App->>DB: Write audit entry
-```
-
-### VPS Monitoring Flow
-
-```mermaid
-sequenceDiagram
-  box rgb(17, 17, 40) Client
-    participant Admin as Admin Dashboard
-  end
-  box rgb(10, 42, 48) Sentinel
-    participant API as Sentinel API
-  end
-  box rgb(20, 51, 42) Storage
-    participant DB as PostgreSQL
-  end
-  box rgb(53, 21, 21) Infrastructure
-    participant Agent as VPS Agent
-  end
-
-  Admin->>API: POST /api/vps (create server)
-  API->>DB: Insert VpsServer + generate token
-  API-->>Admin: Token (shown once)
-
-  Note over Agent: curl install.sh | sudo bash -s -- --token XXX
-
-  loop Every 30 seconds
-    Agent->>Agent: Collect CPU, RAM, disk, network, uptime
-    Agent->>API: POST /api/vps/heartbeat (Bearer token)
-    API->>DB: Update metrics + lastSeen
-  end
-
-  Admin->>API: GET /api/vps
-  API->>DB: Fetch servers
-  Note over API: status = (now - lastSeen) > 120s ? offline : online
-  API-->>Admin: Server list with live metrics
-```
-
----
-
-## 📂 Project Structure
-
-```
-prisma/
-  schema.prisma              # 12 models, 17 enums
-  seed.ts                    # Default users + 8 task tags
-scripts/
-  vps-agent.sh               # VPS monitoring agent (bash)
-  install-agent.sh           # One-liner auto-installer
-src/
-  app/
-    (auth)/login/            # Telegram bot-based login
-    (dashboard)/
-      admin/                 # 8 admin pages
-        audit/               #   Audit log viewer
-        credentials/         #   Credential vault
-        donors/              #   Donor leaderboard
-        reminders/           #   Reminder management
-        services/            #   Service registry
-        transactions/        #   Transaction management
-        users/               #   User management
-        vps/                 #   VPS monitoring
-      dev/                   # Developer pages
-        tasks/               #   My tasks
-        gantt/               #   Archived Gantt source (route disabled)
-        vps/                 #   VPS stats (read-only)
-        credentials/         #   Credential access
-      donor/                 # Donations + receipts
-      profile/               # Settings (theme, notifications, preferences)
-    api/                     # 42 API routes
-      auth/                  #   Telegram auth, OTP, session, profile
-      bmc/                   #   BMC webhook + sync
-      credentials/           #   Vault CRUD + revision review
-      donors/                #   Leaderboard
-      exchange-rate/         #   Live USD/INR rate
-      notifications/         #   In-app notifications
-      projects/              #   Project management
-      services/              #   Service registry
-      reminders/             #   Reminder CRUD
-      tags/                  #   Tag CRUD
-      tasks/                 #   Task CRUD + my-tasks
-      transactions/          #   Treasury CRUD + stats + export + approve/reject
-      upload/                #   Photo upload
-      users/                 #   User management
-      vps/                   #   VPS CRUD + heartbeat + install + agent
-  components/
-    Sidebar.tsx              # Role-switching sidebar, settings context
-    TopBar.tsx               # Notifications bell, settings menu
-    Dropdown.tsx             # Custom dropdown
-  lib/
-    appreciation.ts          # 10 donor appreciation messages
-    auth.ts                  # JWT (jose), session, role helpers
-    bot.ts                   # grammY bot singleton
-    db.ts                    # Prisma client with pg pool
-    audit.ts                 # Audit entry creation
-    github-log.ts            # GitHub immutable log commits
-    notifications.ts         # Unified notify (in-app + TG DM with inline buttons)
-    telegram-log.ts          # Group topic logging
-    role-colors.ts           # Role-based color system
-  bot-dev.ts                 # Standalone bot server (polling)
-```
-
----
-
-## Archived Features
-
-### Gantt timeline
-
-The developer Gantt feature is archived and unavailable in navigation, tours, and direct routing. Its implementation remains at `src/app/(dashboard)/dev/gantt/page.tsx` so it can be restored later.
-
-To rejuvenate it:
-
-1. Remove the `/dev/gantt` redirect in `src/middleware.ts`.
-2. Restore the Gantt navigation item and icon in `src/components/Sidebar.tsx`.
-3. Restore the `/dev/gantt` breadcrumb in `src/app/(dashboard)/layout.tsx`.
-4. Restore the developer overview and `dev-gantt` page-tour copy in `src/lib/tour-steps.ts`.
-5. Update the role and feature lists above, then run `npm run lint`, `npm test`, and `npm run build`.
+The developer Gantt implementation remains at `src/app/(dashboard)/dev/gantt/page.tsx`, but middleware redirects `/dev/gantt` to `/dev` and navigation/tour entries are disabled. Restore the route, navigation, breadcrumb, and tour copy together if the feature is intentionally revived.
 
 ---
 
 <p align="center">
-  <sub>Built for the PzP developer community</sub>
+  <strong>I stand watch.</strong>
+  <br />
+  <sub>Built for the Piratezparty community.</sub>
 </p>
