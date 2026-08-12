@@ -663,6 +663,30 @@ bash upgrade.sh
 6. Restart `sentinel-web` and `sentinel-bot`, then save the PM2 process list.
 7. Verify that `/install.sh` serves the agent script instead of HTML.
 
+The script gives the Next.js build a 3 GiB V8 heap by default because TypeScript checking can exceed Node's approximately 2 GiB default old-space limit. Override it for a larger server with:
+
+```bash
+SENTINEL_BUILD_HEAP_MB=4096 bash upgrade.sh
+```
+
+If the build still reports `JavaScript heap out of memory`, check the server's combined RAM and swap:
+
+```bash
+free -h
+```
+
+On a small VPS, provision persistent swap once before retrying. The following creates a new 4 GiB `/swapfile`; do not run it if that path already exists or the server has a different swap policy:
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Then retry `bash upgrade.sh`. The script stops before PM2 restart when a build fails, so the previous compiled release keeps running.
+
 ### Manual fallback
 
 ```bash
