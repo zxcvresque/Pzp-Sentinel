@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import BroadcastContent from "@/components/BroadcastContent";
 
 interface TopBarProps {
   name: string;
@@ -174,9 +175,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                 <h2 id={`broadcast-title-${broadcast.id}`} className="mt-1 text-base font-bold text-[var(--text-primary)]">
                   {broadcast.title}
                 </h2>
-                <p id={`broadcast-message-${broadcast.id}`} className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-secondary)]">
-                  {broadcast.message}
-                </p>
+                <div id={`broadcast-message-${broadcast.id}`} className="mt-2 text-[var(--text-secondary)]">
+                  <BroadcastContent message={broadcast.message} />
+                </div>
               </div>
             </div>
             <div className="mt-4 flex justify-end">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import BroadcastContent from "@/components/BroadcastContent";
 
 interface BroadcastConfig {
   donorCount: number;
@@ -22,6 +23,7 @@ export default function BroadcastsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch("/api/broadcasts", { cache: "no-store" })
@@ -41,6 +43,31 @@ export default function BroadcastsPage() {
     sendSentinel ? `${config?.donorCount ?? 0} active donors in Sentinel` : null,
     sendTelegram ? "the donors/funds Telegram group" : null,
   ].filter(Boolean).join(" and ");
+
+  function applyFormat(before: string, after = before, placeholder = "text") {
+    const input = messageRef.current;
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selectedText = message.slice(start, end) || placeholder;
+    const replacement = `${before}${selectedText}${after}`;
+    setMessage(`${message.slice(0, start)}${replacement}${message.slice(end)}`);
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+    });
+  }
+
+  function applyQuote() {
+    const input = messageRef.current;
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selectedText = message.slice(start, end) || "quoted message";
+    const replacement = selectedText.split("\n").map((line) => `> ${line}`).join("\n");
+    setMessage(`${message.slice(0, start)}${replacement}${message.slice(end)}`);
+    requestAnimationFrame(() => input.focus());
+  }
 
   async function sendBroadcast() {
     setSending(true);
@@ -139,13 +166,24 @@ export default function BroadcastsPage() {
               <label htmlFor="broadcast-message" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Message</label>
               <span className="font-mono text-[10px] text-text-tertiary">{message.length}/1000</span>
             </div>
+            <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-[var(--border)] bg-bg-deep p-1.5" aria-label="Message formatting">
+              <FormatButton label="Bold" title="Bold" onClick={() => applyFormat("**")}><strong>B</strong></FormatButton>
+              <FormatButton label="Italic" title="Italic" onClick={() => applyFormat("*")}><em>I</em></FormatButton>
+              <FormatButton label="Underline" title="Underline" onClick={() => applyFormat("__")}><u>U</u></FormatButton>
+              <FormatButton label="Strike-through" title="Strike-through" onClick={() => applyFormat("~~")}><s>S</s></FormatButton>
+              <FormatButton label="Inline code" title="Inline code" onClick={() => applyFormat("`", "`", "code")}><span className="font-mono">&lt;/&gt;</span></FormatButton>
+              <FormatButton label="Quote" title="Quote" onClick={applyQuote}>❝</FormatButton>
+              <FormatButton label="Link" title="Link" onClick={() => applyFormat("[", "](https://example.com)", "link text")}>↗</FormatButton>
+              <span className="ml-auto self-center px-2 text-[9px] text-text-tertiary">Telegram + Sentinel compatible</span>
+            </div>
             <textarea
+              ref={messageRef}
               id="broadcast-message"
               value={message}
               maxLength={1000}
               onChange={(event) => setMessage(event.target.value)}
               placeholder="Write the message donors should receive..."
-              rows={7}
+              rows={9}
               className="w-full resize-y rounded-lg border border-[var(--border)] bg-bg-deep px-4 py-3 text-text-primary outline-none transition-colors focus:border-lime/30"
               required
             />
@@ -194,7 +232,9 @@ export default function BroadcastsPage() {
           <div className="rounded-xl border border-[var(--border)] bg-bg-deep p-4">
             <div className="mb-2 font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Preview</div>
             <div className="text-sm font-semibold text-text-primary">{title || "Broadcast title"}</div>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">{message || "Your donor announcement will appear here."}</p>
+            <div className="mt-2 text-text-secondary">
+              <BroadcastContent message={message || "Your donor announcement will appear here."} />
+            </div>
           </div>
         </div>
 
@@ -211,4 +251,8 @@ export default function BroadcastsPage() {
       </form>
     </div>
   );
+}
+
+function FormatButton({ label, title, onClick, children }: { label: string; title: string; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" aria-label={label} title={title} onClick={onClick} className="flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-xs text-text-secondary transition-colors hover:bg-[var(--bg-hover)] hover:text-text-primary">{children}</button>;
 }
