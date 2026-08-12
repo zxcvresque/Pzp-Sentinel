@@ -154,13 +154,15 @@ sequenceDiagram
 
 ## Donor broadcasts
 
-Only admins can open **Admin → Broadcasts** or call `/api/broadcasts`.
+Only admins can open **Admin → Broadcasts** or call `/api/broadcasts`. The audience can be all donors, all developers, both groups, or individually selected active members from any of those audience views.
 
 Each broadcast can be sent to:
 
-- **Sentinel donors:** a high-priority notification for every active donor, displayed as an in-app pop-up and retained in the notification center.
+- **Sentinel recipients:** a notification for the selected donor/developer audience, retained in the notification center. High priority is enabled by default and also opens the in-app pop-up plus sends a formatted personal Telegram DM to recipients who have linked and not blocked the bot.
 - **Telegram donors group:** a formatted post to `TG_DONATION_GROUP_ID`, optionally inside `TG_DONATION_TOPIC_ID`.
 - **Both:** one authoring action produces equivalent formatting in both destinations.
+
+Normal-priority broadcasts remain in Sentinel's notification center without an interrupting pop-up or personal DM. Individual targeting and developer-only announcements cannot be posted to the configured donors group; this prevents a private selection or internal message from leaking into the public group. An “Everyone” broadcast may include the donors group, but developers receive it through Sentinel and, when high priority, their personal bot DM.
 
 The title supports inline formatting and is limited to 80 characters. The message supports block and inline formatting and is limited to 3,500 characters.
 
@@ -176,13 +178,14 @@ The title supports inline formatting and is limited to 80 characters. The messag
 
 ```mermaid
 flowchart LR
-    A[Admin composer] --> P[Shared rich-text parser]
+    A[Admin composer] --> AUD[Audience and recipient selection]
+    AUD --> P[Shared rich-text parser]
     P --> V[Live preview]
     A --> API[POST /api/broadcasts]
     API --> AUTH{Admin role?}
     AUTH -->|No| DENY[403 Forbidden]
     AUTH -->|Yes| DEST{Selected destinations}
-    DEST -->|Sentinel| N[(High-priority donor notifications)]
+    DEST -->|Sentinel| N[(Targeted member notifications)]
     DEST -->|Telegram| T[Donors group or topic]
     N --> POP[Donor pop-up]
     N --> BELL[Notification center]

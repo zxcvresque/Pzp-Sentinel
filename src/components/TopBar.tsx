@@ -73,7 +73,9 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
   const unread = notifications.filter((n) => !n.read);
   const unreadCount = unread.length;
   const hasHighPriority = unread.some((n) => n.priority === "HIGH");
-  const broadcast = unread.find((notification) => notification.entityId?.startsWith("broadcast:"));
+  const broadcast = unread.find(
+    (notification) => notification.priority === "HIGH" && notification.entityId?.startsWith("broadcast:"),
+  );
 
   const fetchNotifications = useCallback(async () => {
     try {

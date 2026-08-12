@@ -6,6 +6,13 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
 import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "@/lib/broadcast-format";
+import { notify } from "@/lib/notifications";
+import {
+  broadcastAudienceRoles,
+  canSendBroadcastToTelegramGroup,
+  parseBroadcastAudience,
+  parseBroadcastRecipientMode,
+} from "@/lib/broadcast-audience";
 
 function telegramDestination() {
   return {
@@ -27,13 +34,26 @@ export async function GET() {
   const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
 
-  const donorCount = await prisma.user.count({
-    where: { roles: { has: "DONOR" }, status: "ACTIVE" },
+  const recipients = await prisma.user.findMany({
+    where: { roles: { hasSome: ["DONOR", "DEV"] }, status: "ACTIVE" },
+    orderBy: [{ name: "asc" }, { telegramUser: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      telegramUser: true,
+      photoUrl: true,
+      roles: true,
+    },
   });
   const { groupId } = telegramDestination();
 
   return NextResponse.json({
-    donorCount,
+    recipients,
+    counts: {
+      donors: recipients.filter((recipient) => recipient.roles.includes("DONOR")).length,
+      devs: recipients.filter((recipient) => recipient.roles.includes("DEV")).length,
+      everyone: recipients.length,
+    },
     telegramConfigured: Boolean(process.env.BOT_TOKEN && groupId),
   });
 }
@@ -48,6 +68,13 @@ export async function POST(req: NextRequest) {
   const message = typeof body?.message === "string" ? body.message.trim() : "";
   const sendSentinel = body?.sendSentinel === true;
   const sendTelegram = body?.sendTelegram === true;
+  const highPriority = body?.highPriority !== false;
+  const audience = parseBroadcastAudience(body?.audience ?? "DONORS");
+  const recipientMode = parseBroadcastRecipientMode(body?.recipientMode ?? "ALL");
+  const rawRecipientIds: unknown[] = Array.isArray(body?.recipientIds) ? body.recipientIds : [];
+  const recipientIds = [...new Set(rawRecipientIds.filter(
+    (id): id is string => typeof id === "string" && id.length > 0,
+  ))];
 
   if (!title || !message) {
     return NextResponse.json({ error: "Title and message are required" }, { status: 400 });
@@ -58,32 +85,85 @@ export async function POST(req: NextRequest) {
   if (!sendSentinel && !sendTelegram) {
     return NextResponse.json({ error: "Select at least one destination" }, { status: 400 });
   }
+  if (!audience || !recipientMode) {
+    return NextResponse.json({ error: "Select a valid audience and recipient mode" }, { status: 400 });
+  }
+  if (recipientIds.length > 5000) {
+    return NextResponse.json({ error: "Select at most 5,000 recipients" }, { status: 400 });
+  }
+  if (sendSentinel && recipientMode === "SELECTED" && recipientIds.length === 0) {
+    return NextResponse.json({ error: "Select at least one recipient" }, { status: 400 });
+  }
+  if (sendTelegram && !canSendBroadcastToTelegramGroup(audience, recipientMode)) {
+    return NextResponse.json({
+      error: recipientMode === "SELECTED"
+        ? "Telegram group delivery is unavailable for individually targeted broadcasts"
+        : "The configured Telegram group is for donor-inclusive broadcasts only",
+    }, { status: 400 });
+  }
 
   const broadcastId = randomUUID();
   const results: {
-    sentinel?: { delivered: number };
+    sentinel?: { requested: number; delivered: number; failed: number };
     telegram?: { delivered: boolean; error?: string };
   } = {};
 
   if (sendSentinel) {
-    const donors = await prisma.user.findMany({
-      where: { roles: { has: "DONOR" }, status: "ACTIVE" },
+    const audienceRoles = broadcastAudienceRoles(audience);
+    const recipients = await prisma.user.findMany({
+      where: {
+        roles: { hasSome: audienceRoles },
+        status: "ACTIVE",
+        ...(recipientMode === "SELECTED" ? { id: { in: recipientIds } } : {}),
+      },
       select: { id: true },
     });
-    if (donors.length > 0) {
-      const created = await prisma.notification.createMany({
-        data: donors.map((donor) => ({
-          userId: donor.id,
+
+    if (recipientMode === "SELECTED" && recipients.length !== recipientIds.length) {
+      return NextResponse.json({
+        error: "One or more selected recipients are inactive or outside the selected audience",
+      }, { status: 400 });
+    }
+
+    if (highPriority) {
+      let delivered = 0;
+      const telegramMessage = `<blockquote>📣 ${broadcastInlineToTelegramHtml(title)}</blockquote>\n${broadcastToTelegramHtml(message)}\n\n<i>— ${escapeTelegramHtml(user.name)}, Sentinel</i>`;
+      for (let start = 0; start < recipients.length; start += 20) {
+        const batch = recipients.slice(start, start + 20);
+        const settled = await Promise.allSettled(batch.map((recipient) => notify({
+          userId: recipient.id,
           type: "SYSTEM",
           title,
           message,
           entityId: `broadcast:${broadcastId}`,
           priority: "HIGH",
+          telegramMessage,
+        })));
+        delivered += settled.filter((result) => result.status === "fulfilled").length;
+      }
+      results.sentinel = {
+        requested: recipients.length,
+        delivered,
+        failed: recipients.length - delivered,
+      };
+    } else if (recipients.length > 0) {
+      const created = await prisma.notification.createMany({
+        data: recipients.map((recipient) => ({
+          userId: recipient.id,
+          type: "SYSTEM",
+          title,
+          message,
+          entityId: `broadcast:${broadcastId}`,
+          priority: "NORMAL",
         })),
       });
-      results.sentinel = { delivered: created.count };
+      results.sentinel = {
+        requested: recipients.length,
+        delivered: created.count,
+        failed: recipients.length - created.count,
+      };
     } else {
-      results.sentinel = { delivered: 0 };
+      results.sentinel = { requested: 0, delivered: 0, failed: 0 };
     }
   }
 
@@ -118,10 +198,20 @@ export async function POST(req: NextRequest) {
     action: "BROADCAST",
     entityType: "Broadcast",
     entityId: broadcastId,
-    after: { title, message, sendSentinel, sendTelegram, results },
+    after: {
+      title,
+      message,
+      audience,
+      recipientMode,
+      recipientIds: recipientMode === "SELECTED" ? recipientIds : undefined,
+      highPriority,
+      sendSentinel,
+      sendTelegram,
+      results,
+    },
     userName: user.name,
-    details: `Broadcast “${title}” to ${[
-      sendSentinel ? "Sentinel donors" : null,
+    details: `Broadcast “${title}” (${highPriority ? "high" : "normal"} priority) to ${[
+      sendSentinel ? `Sentinel ${audience.toLowerCase()}` : null,
       sendTelegram ? "Telegram donors group" : null,
     ].filter(Boolean).join(" and ")}`,
   });

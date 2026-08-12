@@ -1,18 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
+import {
+  canSendBroadcastToTelegramGroup,
+  type BroadcastAudience,
+  type BroadcastRecipientMode,
+} from "@/lib/broadcast-audience";
+
+interface BroadcastRecipient {
+  id: string;
+  name: string;
+  telegramUser: string;
+  photoUrl: string | null;
+  roles: string[];
+}
 
 interface BroadcastConfig {
-  donorCount: number;
+  recipients: BroadcastRecipient[];
+  counts: { donors: number; devs: number; everyone: number };
   telegramConfigured: boolean;
 }
 
 interface DeliveryResults {
-  sentinel?: { delivered: number };
+  sentinel?: { requested: number; delivered: number; failed: number };
   telegram?: { delivered: boolean; error?: string };
 }
+
+const AUDIENCE_OPTIONS: Array<{
+  value: BroadcastAudience;
+  label: string;
+  description: string;
+  countKey: keyof BroadcastConfig["counts"];
+}> = [
+  { value: "DONORS", label: "Donors", description: "Active donor accounts", countKey: "donors" },
+  { value: "DEVS", label: "Developers", description: "Active developer accounts", countKey: "devs" },
+  { value: "EVERYONE", label: "Everyone", description: "Donors and developers", countKey: "everyone" },
+];
 
 export default function BroadcastsPage() {
   const [config, setConfig] = useState<BroadcastConfig | null>(null);
@@ -20,6 +45,11 @@ export default function BroadcastsPage() {
   const [message, setMessage] = useState("");
   const [sendSentinel, setSendSentinel] = useState(true);
   const [sendTelegram, setSendTelegram] = useState(false);
+  const [highPriority, setHighPriority] = useState(true);
+  const [audience, setAudience] = useState<BroadcastAudience>("DONORS");
+  const [recipientMode, setRecipientMode] = useState<BroadcastRecipientMode>("ALL");
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
+  const [recipientSearch, setRecipientSearch] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -39,11 +69,66 @@ export default function BroadcastsPage() {
       }));
   }, []);
 
-  const canSend = Boolean(title.trim() && message.trim() && (sendSentinel || sendTelegram));
+  const eligibleRecipients = useMemo(() => {
+    const recipients = config?.recipients ?? [];
+    if (audience === "DONORS") return recipients.filter((recipient) => recipient.roles.includes("DONOR"));
+    if (audience === "DEVS") return recipients.filter((recipient) => recipient.roles.includes("DEV"));
+    return recipients;
+  }, [audience, config?.recipients]);
+
+  const visibleRecipients = useMemo(() => {
+    const search = recipientSearch.trim().toLowerCase();
+    if (!search) return eligibleRecipients;
+    return eligibleRecipients.filter((recipient) => (
+      recipient.name.toLowerCase().includes(search)
+      || recipient.telegramUser.toLowerCase().includes(search)
+    ));
+  }, [eligibleRecipients, recipientSearch]);
+
+  const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
+  const sentinelRecipientCount = recipientMode === "ALL"
+    ? eligibleRecipients.length
+    : selectedRecipientIds.length;
+  const telegramAudienceAllowed = canSendBroadcastToTelegramGroup(audience, recipientMode);
+  const telegramAvailable = Boolean(config?.telegramConfigured && telegramAudienceAllowed);
+  const canSend = Boolean(
+    title.trim()
+    && message.trim()
+    && (sendSentinel || sendTelegram)
+    && (!sendSentinel || sentinelRecipientCount > 0),
+  );
   const destinations = [
-    sendSentinel ? `${config?.donorCount ?? 0} active donors in Sentinel` : null,
+    sendSentinel ? `${sentinelRecipientCount} selected member${sentinelRecipientCount === 1 ? "" : "s"} in Sentinel` : null,
     sendTelegram ? "the donors/funds Telegram group" : null,
   ].filter(Boolean).join(" and ");
+
+  function changeAudience(nextAudience: BroadcastAudience) {
+    setAudience(nextAudience);
+    setSelectedRecipientIds([]);
+    setRecipientSearch("");
+    if (nextAudience === "DEVS") setSendTelegram(false);
+  }
+
+  function changeRecipientMode(nextMode: BroadcastRecipientMode) {
+    setRecipientMode(nextMode);
+    setSelectedRecipientIds([]);
+    setRecipientSearch("");
+    if (nextMode === "SELECTED") setSendTelegram(false);
+  }
+
+  function toggleRecipient(id: string) {
+    setSelectedRecipientIds((current) => current.includes(id)
+      ? current.filter((recipientId) => recipientId !== id)
+      : [...current, id]);
+  }
+
+  function toggleVisibleRecipients() {
+    const visibleIds = visibleRecipients.map((recipient) => recipient.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedRecipientSet.has(id));
+    setSelectedRecipientIds((current) => allVisibleSelected
+      ? current.filter((id) => !visibleIds.includes(id))
+      : [...new Set([...current, ...visibleIds])]);
+  }
 
   function applyFormat(before: string, after = before, placeholder = "text") {
     const input = messageRef.current;
@@ -91,21 +176,37 @@ export default function BroadcastsPage() {
       const response = await fetch("/api/broadcasts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, message, sendSentinel, sendTelegram }),
+        body: JSON.stringify({
+          title,
+          message,
+          sendSentinel,
+          sendTelegram,
+          highPriority,
+          audience,
+          recipientMode,
+          recipientIds: recipientMode === "SELECTED" ? selectedRecipientIds : [],
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Broadcast failed");
 
       const results = data.results as DeliveryResults;
       const parts: string[] = [];
-      if (results.sentinel) parts.push(`Sentinel: ${results.sentinel.delivered} donor notification${results.sentinel.delivered === 1 ? "" : "s"}`);
+      if (results.sentinel) {
+        parts.push(`Sentinel: ${results.sentinel.delivered}/${results.sentinel.requested} delivered`);
+        if (results.sentinel.failed > 0) parts.push(`${results.sentinel.failed} Sentinel failure${results.sentinel.failed === 1 ? "" : "s"}`);
+      }
       if (results.telegram?.delivered) parts.push("Telegram group: sent");
       if (results.telegram && !results.telegram.delivered) parts.push(`Telegram group: ${results.telegram.error || "failed"}`);
-      const partialFailure = results.telegram && !results.telegram.delivered;
+      const partialFailure = Boolean(
+        (results.telegram && !results.telegram.delivered)
+        || (results.sentinel && results.sentinel.failed > 0),
+      );
       setFeedback({ tone: partialFailure ? "error" : "success", text: parts.join(" · ") });
       if (!partialFailure) {
         setTitle("");
         setMessage("");
+        setSelectedRecipientIds([]);
       }
     } catch (error) {
       setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Broadcast failed" });
@@ -130,10 +231,10 @@ export default function BroadcastsPage() {
 
       <div className="mb-6">
         <h1 className="text-3xl font-extrabold">
-          Donor <span className="font-display text-lime">Broadcasts</span>
+          Sentinel <span className="font-display text-lime">Broadcasts</span>
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-text-secondary">
-          Send an immediate announcement to donor accounts in Sentinel, the donors/funds Telegram group, or both.
+          Send a rich announcement to all donors, all developers, everyone, or a carefully selected group of people.
         </p>
       </div>
 
@@ -214,6 +315,155 @@ export default function BroadcastsPage() {
           </div>
 
           <fieldset>
+            <legend className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Audience</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {AUDIENCE_OPTIONS.map((option) => {
+                const active = audience === option.value;
+                const count = config?.counts[option.countKey] ?? 0;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => changeAudience(option.value)}
+                    className={`rounded-xl border p-4 text-left transition-colors ${active
+                      ? "border-lime/35 bg-lime/[0.06]"
+                      : "border-[var(--border)] bg-bg-deep hover:border-[var(--border-hover)]"}`}
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-text-primary">{option.label}</span>
+                      <span className={`rounded-full px-2 py-0.5 font-mono text-[9px] ${active ? "bg-lime/12 text-lime" : "bg-[var(--bg-hover)] text-text-tertiary"}`}>
+                        {count}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-text-tertiary">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <legend className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Recipients</legend>
+              <span className="font-mono text-[10px] text-text-tertiary">
+                {sentinelRecipientCount} recipient{sentinelRecipientCount === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 rounded-xl border border-[var(--border)] bg-bg-deep p-1">
+              <button
+                type="button"
+                aria-pressed={recipientMode === "ALL"}
+                onClick={() => changeRecipientMode("ALL")}
+                className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${recipientMode === "ALL"
+                  ? "bg-[var(--bg-hover)] text-text-primary shadow-sm"
+                  : "text-text-tertiary hover:text-text-primary"}`}
+              >
+                All in audience
+              </button>
+              <button
+                type="button"
+                aria-pressed={recipientMode === "SELECTED"}
+                onClick={() => changeRecipientMode("SELECTED")}
+                className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${recipientMode === "SELECTED"
+                  ? "bg-[var(--bg-hover)] text-text-primary shadow-sm"
+                  : "text-text-tertiary hover:text-text-primary"}`}
+              >
+                Specific people
+              </button>
+            </div>
+
+            {recipientMode === "SELECTED" && (
+              <div className="mt-3 overflow-hidden rounded-xl border border-[var(--border)] bg-bg-deep">
+                <div className="flex flex-col gap-2 border-b border-[var(--border)] p-3 sm:flex-row sm:items-center">
+                  <input
+                    type="search"
+                    value={recipientSearch}
+                    onChange={(event) => setRecipientSearch(event.target.value)}
+                    placeholder="Search name or Telegram username"
+                    aria-label="Search broadcast recipients"
+                    className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-lime/30"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleVisibleRecipients}
+                    disabled={visibleRecipients.length === 0}
+                    className="shrink-0 rounded-full border border-[var(--border)] px-3 py-2 text-[10px] font-semibold text-text-secondary transition-colors hover:border-lime/25 hover:text-lime disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {visibleRecipients.length > 0 && visibleRecipients.every((recipient) => selectedRecipientSet.has(recipient.id))
+                      ? "Clear visible"
+                      : "Select visible"}
+                  </button>
+                </div>
+
+                <div className="max-h-72 divide-y divide-[var(--border)] overflow-y-auto">
+                  {visibleRecipients.length === 0 ? (
+                    <p className="p-5 text-center text-xs text-text-tertiary">No matching active members.</p>
+                  ) : visibleRecipients.map((recipient) => {
+                    const selected = selectedRecipientSet.has(recipient.id);
+                    const initials = recipient.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+                    return (
+                      <label
+                        key={recipient.id}
+                        className={`flex cursor-pointer items-center gap-3 px-3 py-3 transition-colors ${selected ? "bg-lime/[0.04]" : "hover:bg-[var(--bg-hover)]"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleRecipient(recipient.id)}
+                          className="h-4 w-4 shrink-0 accent-[var(--lime)]"
+                        />
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-card)] text-[10px] font-bold text-text-secondary">
+                          {initials || "?"}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-text-primary">{recipient.name}</span>
+                          <span className="block truncate text-[11px] text-text-tertiary">
+                            {recipient.telegramUser ? `@${recipient.telegramUser}` : "No Telegram username"}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                          {recipient.roles.filter((role) => role === "DONOR" || role === "DEV").map((role) => (
+                            <span key={role} className="rounded-full border border-[var(--border)] px-2 py-0.5 font-mono text-[8px] text-text-tertiary">
+                              {role}
+                            </span>
+                          ))}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Priority</legend>
+            <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${highPriority
+              ? "border-coral/30 bg-coral/[0.05]"
+              : "border-[var(--border)] bg-bg-deep"}`}
+            >
+              <input
+                type="checkbox"
+                checked={highPriority}
+                onChange={(event) => setHighPriority(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--coral)]"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-text-primary">High priority</span>
+                <span className="mt-1 block text-xs leading-relaxed text-text-tertiary">
+                  Default on. Opens the Sentinel pop-up and sends the formatted announcement by Telegram DM to linked recipients, even when their SYSTEM DM preference is off.
+                </span>
+              </span>
+            </label>
+            {!highPriority && (
+              <p className="mt-2 text-xs leading-relaxed text-text-tertiary">
+                Normal broadcasts stay in the notification center without interrupting recipients or sending a personal DM.
+              </p>
+            )}
+          </fieldset>
+
+          <fieldset>
             <legend className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Destinations</legend>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${sendSentinel ? "border-lime/30 bg-lime/[0.05]" : "border-[var(--border)] bg-bg-deep"}`}>
@@ -224,25 +474,35 @@ export default function BroadcastsPage() {
                   className="mt-0.5 h-4 w-4 accent-[var(--lime)]"
                 />
                 <span>
-                  <span className="block text-sm font-semibold text-text-primary">Sentinel pop-up</span>
+                  <span className="block text-sm font-semibold text-text-primary">Sentinel notification</span>
                   <span className="mt-1 block text-xs leading-relaxed text-text-tertiary">
-                    {config ? `${config.donorCount} active donor account${config.donorCount === 1 ? "" : "s"}` : "Loading donor count..."}
+                    {config
+                      ? `${sentinelRecipientCount} active selected recipient${sentinelRecipientCount === 1 ? "" : "s"}`
+                      : "Loading recipients..."}
                   </span>
                 </span>
               </label>
 
-              <label className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${!config?.telegramConfigured ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${sendTelegram ? "border-violet/30 bg-violet/[0.05]" : "border-[var(--border)] bg-bg-deep"}`}>
+              <label className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${!telegramAvailable ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${sendTelegram ? "border-violet/30 bg-violet/[0.05]" : "border-[var(--border)] bg-bg-deep"}`}>
                 <input
                   type="checkbox"
                   checked={sendTelegram}
-                  disabled={!config?.telegramConfigured}
+                  disabled={!telegramAvailable}
                   onChange={(event) => setSendTelegram(event.target.checked)}
                   className="mt-0.5 h-4 w-4 accent-[var(--violet)]"
                 />
                 <span>
                   <span className="block text-sm font-semibold text-text-primary">Telegram group</span>
                   <span className="mt-1 block text-xs leading-relaxed text-text-tertiary">
-                    {config?.telegramConfigured ? "Donors/funds group configured" : "Group or bot configuration missing"}
+                    {!config?.telegramConfigured
+                      ? "Group or bot configuration missing"
+                      : recipientMode === "SELECTED"
+                        ? "Unavailable for individually selected recipients"
+                        : audience === "DEVS"
+                          ? "Configured group is donor-facing, not developer-only"
+                          : audience === "EVERYONE"
+                            ? "Posts to the donors group; developers receive Sentinel delivery"
+                            : "Donors/funds group configured"}
                   </span>
                 </span>
               </label>
@@ -252,12 +512,18 @@ export default function BroadcastsPage() {
           {!sendSentinel && !sendTelegram && (
             <p className="text-xs text-coral">Select at least one destination.</p>
           )}
+          {sendSentinel && sentinelRecipientCount === 0 && (
+            <p className="text-xs text-coral">Select at least one active recipient.</p>
+          )}
 
           <div className="rounded-xl border border-[var(--border)] bg-bg-deep p-4">
-            <div className="mb-2 font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Preview</div>
+            <div className="mb-2 flex items-center justify-between gap-3 font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">
+              <span>Preview</span>
+              <span className={highPriority ? "text-coral" : "text-text-tertiary"}>{highPriority ? "High priority" : "Normal"}</span>
+            </div>
             <div className="text-sm font-semibold text-text-primary"><BroadcastInlineContent message={title || "Broadcast title"} /></div>
             <div className="mt-2 text-text-secondary">
-              <BroadcastContent message={message || "Your donor announcement will appear here."} />
+              <BroadcastContent message={message || "Your Sentinel announcement will appear here."} />
             </div>
           </div>
         </div>
