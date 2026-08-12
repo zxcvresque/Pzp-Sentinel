@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { parseBroadcast, type BroadcastInline } from "@/lib/broadcast-format";
+import { parseBroadcast, parseBroadcastInline, type BroadcastInline } from "@/lib/broadcast-format";
 
 function renderInline(nodes: BroadcastInline[]): ReactNode[] {
   return nodes.map((node, index) => {
@@ -23,4 +23,8 @@ export default function BroadcastContent({ message, className = "" }: { message:
       return <p key={index}>{renderInline(block.children)}</p>;
     })}
   </div>;
+}
+
+export function BroadcastInlineContent({ message }: { message: string }) {
+  return <>{renderInline(parseBroadcastInline(message))}</>;
 }

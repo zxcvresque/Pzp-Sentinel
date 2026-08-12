@@ -83,6 +83,10 @@ function inlineToTelegram(nodes: BroadcastInline[]): string {
   }).join("");
 }
 
+export function broadcastInlineToTelegramHtml(message: string) {
+  return inlineToTelegram(parseBroadcastInline(message));
+}
+
 export function broadcastToTelegramHtml(message: string) {
   return parseBroadcast(message).map((block) => {
     if (block.type === "blank") return "";

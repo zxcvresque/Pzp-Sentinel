@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import BroadcastContent from "@/components/BroadcastContent";
+import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
 
 interface BroadcastConfig {
   donorCount: number;
@@ -24,6 +24,7 @@ export default function BroadcastsPage() {
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/broadcasts", { cache: "no-store" })
@@ -55,6 +56,20 @@ export default function BroadcastsPage() {
     requestAnimationFrame(() => {
       input.focus();
       input.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+    });
+  }
+
+  function applyTitleFormat(before: string, after = before, placeholder = "title") {
+    const input = titleRef.current;
+    if (!input) return;
+    const start = input.selectionStart || 0;
+    const end = input.selectionEnd || 0;
+    const selectedText = title.slice(start, end) || placeholder;
+    const replacement = `${before}${selectedText}${after}`;
+    setTitle(`${title.slice(0, start)}${replacement}${title.slice(end)}`.slice(0, 80));
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(start + before.length, Math.min(start + before.length + selectedText.length, 80));
     });
   }
 
@@ -150,7 +165,16 @@ export default function BroadcastsPage() {
               <label htmlFor="broadcast-title" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Title</label>
               <span className="font-mono text-[10px] text-text-tertiary">{title.length}/80</span>
             </div>
+            <div className="mb-2 flex flex-wrap gap-1 rounded-lg border border-[var(--border)] bg-bg-deep p-1.5" aria-label="Title formatting">
+              <FormatButton label="Bold title" title="Bold" onClick={() => applyTitleFormat("**")}><strong>B</strong></FormatButton>
+              <FormatButton label="Italic title" title="Italic" onClick={() => applyTitleFormat("*")}><em>I</em></FormatButton>
+              <FormatButton label="Underline title" title="Underline" onClick={() => applyTitleFormat("__")}><u>U</u></FormatButton>
+              <FormatButton label="Strike-through title" title="Strike-through" onClick={() => applyTitleFormat("~~")}><s>S</s></FormatButton>
+              <FormatButton label="Code in title" title="Inline code" onClick={() => applyTitleFormat("`", "`", "code")}><span className="font-mono">&lt;/&gt;</span></FormatButton>
+              <FormatButton label="Link in title" title="Link" onClick={() => applyTitleFormat("[", "](https://example.com)", "link")}>↗</FormatButton>
+            </div>
             <input
+              ref={titleRef}
               id="broadcast-title"
               value={title}
               maxLength={80}
@@ -231,7 +255,7 @@ export default function BroadcastsPage() {
 
           <div className="rounded-xl border border-[var(--border)] bg-bg-deep p-4">
             <div className="mb-2 font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Preview</div>
-            <div className="text-sm font-semibold text-text-primary">{title || "Broadcast title"}</div>
+            <div className="text-sm font-semibold text-text-primary"><BroadcastInlineContent message={title || "Broadcast title"} /></div>
             <div className="mt-2 text-text-secondary">
               <BroadcastContent message={message || "Your donor announcement will appear here."} />
             </div>

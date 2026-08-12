@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
-import { broadcastToTelegramHtml } from "@/lib/broadcast-format";
+import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "@/lib/broadcast-format";
 
 function telegramDestination() {
   return {
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
         const broadcastBot = new Bot(token);
         await broadcastBot.api.sendMessage(
           groupId,
-          `<blockquote><b>📣 ${escapeTelegramHtml(title)}</b></blockquote>\n${broadcastToTelegramHtml(message)}\n\n<i>— ${escapeTelegramHtml(user.name)}, Sentinel</i>`,
+          `<blockquote>📣 ${broadcastInlineToTelegramHtml(title)}</blockquote>\n${broadcastToTelegramHtml(message)}\n\n<i>— ${escapeTelegramHtml(user.name)}, Sentinel</i>`,
           {
             parse_mode: "HTML",
             ...(topicId ? { message_thread_id: Number(topicId) } : {}),
