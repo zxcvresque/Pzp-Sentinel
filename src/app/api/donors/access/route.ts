@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
+import { notify, formatTgMessage } from "@/lib/notifications";
+import { escapeTelegramHtml } from "@/lib/telegram-format";
 
 export const runtime = "nodejs";
 
@@ -24,8 +26,10 @@ export async function GET() {
       photoUrl: true,
       bmcAccess: true,
       razorpayAccess: true,
+      razorpayAccessRequestedAt: true,
     },
   });
+  donors.sort((a, b) => Number(Boolean(b.razorpayAccessRequestedAt)) - Number(Boolean(a.razorpayAccessRequestedAt)) || a.name.localeCompare(b.name));
   return NextResponse.json({ donors }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -50,11 +54,12 @@ export async function PATCH(request: NextRequest) {
     where: { id: donor.id },
     data: provider === "BMC"
       ? { bmcAccess: allowed }
-      : { razorpayAccess: allowed },
+      : { razorpayAccess: allowed, razorpayAccessRequestedAt: null },
     select: {
       id: true,
       bmcAccess: true,
       razorpayAccess: true,
+      razorpayAccessRequestedAt: true,
     },
   });
 
@@ -68,6 +73,24 @@ export async function PATCH(request: NextRequest) {
     userName: admin.name,
     details: `${provider} ${allowed ? "allowed for" : "disabled for"} ${donor.name}`,
   });
+
+  if (provider === "RAZORPAY" && allowed && !donor.razorpayAccess) {
+    await notify({
+      userId: donor.id,
+      type: "SYSTEM",
+      title: "Razorpay is now available",
+      message: "Your Razorpay checkout access was approved. You can now pay by UPI, cards, wallets, and netbanking in Sentinel.",
+      entityId: `razorpay-access:${donor.id}`,
+      priority: "HIGH",
+      actionUrl: "/donor",
+      actionLabel: "Open payment options",
+      telegramMessage: formatTgMessage(
+        "Razorpay Access Approved",
+        `Razorpay and UPI checkout is now enabled for ${escapeTelegramHtml(donor.name)}.`,
+        "Open Sentinel to use UPI, cards, wallets, or netbanking.",
+      ),
+    });
+  }
 
   return NextResponse.json({ donor: updated });
 }

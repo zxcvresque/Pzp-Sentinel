@@ -130,7 +130,7 @@ export function logTransaction(tx: {
       telegramId: tx.identityTelegramId,
     }),
     tx.createdByName && tx.createdByName !== tx.identityName ? `Recorded by: ${escapeTelegramHtml(tx.createdByName)}` : null,
-    `Transaction: <code>${escapeTelegramHtml(tx.id)}</code>`,
+    `\n<code>${escapeTelegramHtml(tx.id)}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
 }
@@ -155,7 +155,7 @@ export function logTransactionReview(tx: {
     formatTelegramIdentity({ name: tx.identityName, username: tx.identityTelegramUser, telegramId: tx.identityTelegramId }),
     `👁️ Reviewed by: ${tx.reviewerName}`,
     tx.reason ? `💬 Reason: ${tx.reason}` : null,
-    `<code>${tx.id}</code>`,
+    `\n<code>${tx.id}</code>`,
   ];
   return sendToTopic("transactions", lines.filter(Boolean).join("\n"));
 }
@@ -188,7 +188,7 @@ export function logTransactionMutation(tx: {
     formatTelegramIdentity({ name: tx.identityName, username: tx.identityTelegramUser, telegramId: tx.identityTelegramId }),
     `👤 By: ${escapeHtml(tx.actorName)}`,
     ...(tx.changes || []).map((change) => `• ${escapeHtml(change)}`),
-    `<code>${escapeHtml(tx.id)}</code>`,
+    `\n<code>${escapeHtml(tx.id)}</code>`,
   ];
   return sendToTopic("transactions", lines.join("\n"));
 }
@@ -214,7 +214,7 @@ export function logAuditEvent(entry: {
     `${emoji} <b>${entry.action}</b> · ${entry.entityType}`,
     `👤 By: ${entry.userName}`,
     entry.details ? formatAuditDetails(entry.details) : null,
-    `<code>${entry.entityId}</code>`,
+    `\n<code>${entry.entityId}</code>`,
   ];
   return sendToTopic("audit", lines.filter(Boolean).join("\n"));
 }
@@ -238,7 +238,7 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
   return sendPhotoToTopic(
     "screenshots",
     fileId,
-    `🧾 Proof for: ${description}\n<code>${txId}</code>`
+    `🧾 Proof for: ${description}\n\n<code>${txId}</code>`
   );
 }
 
@@ -258,7 +258,7 @@ export async function logProofScreenshots(tx: {
   const symbol = tx.currency === "INR" ? "₹" : "$";
   const caption =
     `🧾 <b>Proof: ${tx.description}</b>\n` +
-    `<b>${symbol}${tx.amount}</b> · ${tx.userName}\n` +
+    `<b>${symbol}${tx.amount}</b> · ${tx.userName}\n\n` +
     `<code>${tx.id}</code>`;
 
   for (const url of tx.attachments) {

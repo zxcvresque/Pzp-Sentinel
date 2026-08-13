@@ -21,7 +21,7 @@ export async function GET() {
       prisma.transaction.findMany({
         where: { method: "BMC", status: "APPROVED", isTest: false, voidedAt: null },
         orderBy: { date: "desc" },
-        select: { id: true, amount: true, currency: true, description: true, date: true, bmcEventId: true },
+        select: { id: true, amount: true, currency: true, description: true, date: true, bmcEventId: true, fromUserId: true },
       }),
       prisma.bmcWebhookEvent.findMany({
         where: { processedAt: { not: null } },
@@ -35,6 +35,7 @@ export async function GET() {
           amount: true,
           currency: true,
           status: true,
+          attributionStatus: true,
           transactionId: true,
           createdAt: true,
         },
@@ -66,6 +67,7 @@ export async function GET() {
       totalEarned: Math.round((totalsByCurrency.USD || 0) * 100) / 100,
       totalsByCurrency,
       totalTransactions: transactions.length,
+      unmatchedTransactions: transactions.filter((transaction) => !transaction.fromUserId).length,
       eventBreakdown,
       recent: transactions.slice(0, 10).map((transaction) => ({
         ...transaction,

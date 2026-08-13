@@ -22,6 +22,8 @@ interface TgUserProps {
   avatarOnly?: boolean;
   /** Extra CSS classes on the wrapper */
   className?: string;
+  /** Extra CSS classes on the displayed name */
+  nameClassName?: string;
 }
 
 const COLORS = [
@@ -47,6 +49,7 @@ export default function TgUser({
   color,
   avatarOnly = false,
   className = "",
+  nameClassName = "",
 }: TgUserProps) {
   const initial = name.charAt(0).toUpperCase();
   const bg = color || pickColor(name);
@@ -88,7 +91,7 @@ export default function TgUser({
     >
       {avatar}
       {!avatarOnly && (
-        <span className="text-sm text-[var(--text-primary)] truncate">{name}</span>
+        <span className={`truncate text-sm text-[var(--text-primary)] ${nameClassName}`}>{name}</span>
       )}
     </span>
   );
@@ -105,7 +108,7 @@ export default function TgUser({
       >
         {avatar}
         {!avatarOnly && (
-          <span className="text-sm text-[var(--text-primary)] truncate">{name}</span>
+          <span className={`truncate text-sm text-[var(--text-primary)] ${nameClassName}`}>{name}</span>
         )}
       </a>
     );

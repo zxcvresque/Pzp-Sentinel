@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
+import TgUser from "@/components/TgUser";
 import {
   canSendBroadcastToTelegramGroup,
   type BroadcastAudience,
@@ -19,7 +20,7 @@ interface BroadcastRecipient {
 
 interface BroadcastConfig {
   recipients: BroadcastRecipient[];
-  counts: { donors: number; devs: number; everyone: number };
+  counts: { admins: number; donors: number; devs: number; everyone: number };
   telegramConfigured: boolean;
 }
 
@@ -34,9 +35,10 @@ const AUDIENCE_OPTIONS: Array<{
   description: string;
   countKey: keyof BroadcastConfig["counts"];
 }> = [
+  { value: "ADMINS", label: "Admins", description: "Active administrator accounts", countKey: "admins" },
   { value: "DONORS", label: "Donors", description: "Active donor accounts", countKey: "donors" },
   { value: "DEVS", label: "Developers", description: "Active developer accounts", countKey: "devs" },
-  { value: "EVERYONE", label: "Everyone", description: "Donors and developers", countKey: "everyone" },
+  { value: "EVERYONE", label: "Everyone", description: "All approved accounts", countKey: "everyone" },
 ];
 
 export default function BroadcastsPage() {
@@ -50,6 +52,7 @@ export default function BroadcastsPage() {
   const [recipientMode, setRecipientMode] = useState<BroadcastRecipientMode>("ALL");
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
   const [recipientSearch, setRecipientSearch] = useState("");
+  const [recipientRoleFilter, setRecipientRoleFilter] = useState<"ALL" | "ADMIN" | "DONOR" | "DEV">("ALL");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
@@ -71,6 +74,7 @@ export default function BroadcastsPage() {
 
   const eligibleRecipients = useMemo(() => {
     const recipients = config?.recipients ?? [];
+    if (audience === "ADMINS") return recipients.filter((recipient) => recipient.roles.includes("ADMIN"));
     if (audience === "DONORS") return recipients.filter((recipient) => recipient.roles.includes("DONOR"));
     if (audience === "DEVS") return recipients.filter((recipient) => recipient.roles.includes("DEV"));
     return recipients;
@@ -78,12 +82,12 @@ export default function BroadcastsPage() {
 
   const visibleRecipients = useMemo(() => {
     const search = recipientSearch.trim().toLowerCase();
-    if (!search) return eligibleRecipients;
     return eligibleRecipients.filter((recipient) => (
-      recipient.name.toLowerCase().includes(search)
-      || recipient.telegramUser.toLowerCase().includes(search)
+      (recipientRoleFilter === "ALL" || recipient.roles.includes(recipientRoleFilter))
+      && (!search || recipient.name.toLowerCase().includes(search)
+        || recipient.telegramUser.toLowerCase().includes(search))
     ));
-  }, [eligibleRecipients, recipientSearch]);
+  }, [eligibleRecipients, recipientRoleFilter, recipientSearch]);
 
   const selectedRecipientSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
   const sentinelRecipientCount = recipientMode === "ALL"
@@ -106,13 +110,15 @@ export default function BroadcastsPage() {
     setAudience(nextAudience);
     setSelectedRecipientIds([]);
     setRecipientSearch("");
-    if (nextAudience === "DEVS") setSendTelegram(false);
+    setRecipientRoleFilter("ALL");
+    if (nextAudience === "DEVS" || nextAudience === "ADMINS") setSendTelegram(false);
   }
 
   function changeRecipientMode(nextMode: BroadcastRecipientMode) {
     setRecipientMode(nextMode);
     setSelectedRecipientIds([]);
     setRecipientSearch("");
+    setRecipientRoleFilter("ALL");
     if (nextMode === "SELECTED") setSendTelegram(false);
   }
 
@@ -316,7 +322,7 @@ export default function BroadcastsPage() {
 
           <fieldset>
             <legend className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Audience</legend>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {AUDIENCE_OPTIONS.map((option) => {
                 const active = audience === option.value;
                 const count = config?.counts[option.countKey] ?? 0;
@@ -384,6 +390,17 @@ export default function BroadcastsPage() {
                     aria-label="Search broadcast recipients"
                     className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-lime/30"
                   />
+                  <select
+                    value={recipientRoleFilter}
+                    onChange={(event) => setRecipientRoleFilter(event.target.value as typeof recipientRoleFilter)}
+                    aria-label="Filter broadcast recipients by role"
+                    className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-text-primary outline-none transition-colors focus:border-lime/30"
+                  >
+                    <option value="ALL">All roles</option>
+                    <option value="ADMIN">Admins</option>
+                    <option value="DONOR">Donors</option>
+                    <option value="DEV">Developers</option>
+                  </select>
                   <button
                     type="button"
                     onClick={toggleVisibleRecipients}
@@ -401,7 +418,6 @@ export default function BroadcastsPage() {
                     <p className="p-5 text-center text-xs text-text-tertiary">No matching active members.</p>
                   ) : visibleRecipients.map((recipient) => {
                     const selected = selectedRecipientSet.has(recipient.id);
-                    const initials = recipient.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
                     return (
                       <label
                         key={recipient.id}
@@ -413,9 +429,7 @@ export default function BroadcastsPage() {
                           onChange={() => toggleRecipient(recipient.id)}
                           className="h-4 w-4 shrink-0 accent-[var(--lime)]"
                         />
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-card)] text-[10px] font-bold text-text-secondary">
-                          {initials || "?"}
-                        </span>
+                        <TgUser name={recipient.name} telegramUser={null} photoUrl={recipient.photoUrl} size={36} avatarOnly />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-semibold text-text-primary">{recipient.name}</span>
                           <span className="block truncate text-[11px] text-text-tertiary">
@@ -423,7 +437,7 @@ export default function BroadcastsPage() {
                           </span>
                         </span>
                         <span className="flex shrink-0 flex-wrap justify-end gap-1">
-                          {recipient.roles.filter((role) => role === "DONOR" || role === "DEV").map((role) => (
+                          {recipient.roles.filter((role) => role === "ADMIN" || role === "DONOR" || role === "DEV").map((role) => (
                             <span key={role} className="rounded-full border border-[var(--border)] px-2 py-0.5 font-mono text-[8px] text-text-tertiary">
                               {role}
                             </span>

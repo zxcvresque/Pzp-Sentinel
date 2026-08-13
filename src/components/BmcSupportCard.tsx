@@ -18,6 +18,10 @@ type TelegramLinkOpener = {
 
 export default function BmcSupportCard({ adminPreview = false, guestToken }: { adminPreview?: boolean; guestToken?: string }) {
   const [config, setConfig] = useState<BmcConfig | null>(null);
+  const [intent, setIntent] = useState<{ code: string; expiresAt: string; checkoutUrl: string } | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const url = guestToken ? `/api/bmc/config?token=${encodeURIComponent(guestToken)}` : "/api/bmc/config";
@@ -33,6 +37,32 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
 
     event.preventDefault();
     webApp.openLink(config.checkoutUrl);
+  }
+
+  async function prepareCheckout() {
+    setPreparing(true);
+    setError("");
+    try {
+      const response = await fetch("/api/bmc/checkout-intents", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not prepare BMC checkout");
+      setIntent(data);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not prepare BMC checkout");
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  async function copyCode() {
+    if (!intent) return;
+    try {
+      await navigator.clipboard.writeText(intent.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setError("Copy failed. Select the reference code and copy it manually.");
+    }
   }
 
   if (!config) return null;
@@ -60,7 +90,7 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
             </div>
           </div>
         </div>
-        {config.checkoutUrl ? (
+        {config.checkoutUrl && (adminPreview || guestToken) ? (
           <a
             href={config.checkoutUrl}
             target="_blank"
@@ -73,10 +103,53 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
             <span className="lg:hidden">Buy me a coffee</span>
             <Image src={`${BMC_ASSET_ROOT}/bmc-button.png`} alt="" width={218} height={61} className="hidden h-12 w-auto object-contain lg:block" />
           </a>
+        ) : config.checkoutUrl ? (
+          <button
+            type="button"
+            disabled={preparing}
+            onClick={() => void prepareCheckout()}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
+          >
+            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={20} height={29} className="h-6 w-auto object-contain" />
+            {preparing ? "Preparing secure reference..." : intent ? "Generate a new reference" : "Continue with BMC"}
+          </button>
         ) : (
           <span className="shrink-0 rounded-full border border-amber/20 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-amber">Unavailable</span>
         )}
       </div>
+      {intent && !adminPreview && !guestToken && (
+        <div className="relative mt-5 rounded-2xl border border-amber/25 bg-black/20 p-4 sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div>
+              <div className="font-mono text-[9px] uppercase tracking-[.12em] text-amber">Required for automatic attribution</div>
+              <p className="mt-1 text-sm leading-6 text-text-secondary">
+                Copy this one-time reference and paste it into BMC&apos;s <strong className="text-text-primary">support note / “Say something nice”</strong> field before paying.
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyCode()}
+                className="mt-3 flex w-full max-w-xl items-center justify-between gap-3 rounded-xl border border-amber/25 bg-amber/[.07] px-4 py-3 text-left transition-colors hover:bg-amber/[.11]"
+              >
+                <code className="break-all font-mono text-sm font-bold tracking-[.08em] text-amber sm:text-base">{intent.code}</code>
+                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[.08em] text-amber">{copied ? "Copied" : "Copy"}</span>
+              </button>
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">
+                Expires {new Date(intent.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · single use
+              </p>
+            </div>
+            <a
+              href={intent.checkoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={openCheckout}
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0"
+            >
+              Open Buy Me a Coffee
+            </a>
+          </div>
+        </div>
+      )}
+      {error && <p className="relative mt-3 text-xs text-coral">{error}</p>}
     </section>
   );
 }

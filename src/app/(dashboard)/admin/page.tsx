@@ -45,6 +45,7 @@ interface BmcStats {
   totalEarned: number;
   totalsByCurrency: Record<string, number>;
   totalTransactions: number;
+  unmatchedTransactions: number;
   eventBreakdown: Record<string, number>;
   recentEvents: {
     id: string;
@@ -54,6 +55,7 @@ interface BmcStats {
     amount: string | null;
     currency: string | null;
     status: string;
+    attributionStatus: string;
     createdAt: string;
   }[];
   recent: {
@@ -620,7 +622,7 @@ export default function AdminDashboard() {
         )}
 
         <div className="card p-5">
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-2 gap-4 mb-4 sm:grid-cols-4">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
                 Supporters
@@ -646,6 +648,14 @@ export default function AdminDashboard() {
               </div>
               <div className="text-2xl font-extrabold text-text-primary">
                 {bmcStats?.totalTransactions ?? 0}
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
+                Unmatched
+              </div>
+              <div className={`text-2xl font-extrabold ${(bmcStats?.unmatchedTransactions ?? 0) > 0 ? "text-coral" : "text-mint"}`}>
+                {bmcStats?.unmatchedTransactions ?? 0}
               </div>
             </div>
           </div>
@@ -704,6 +714,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       {!event.liveMode && <span className="rounded-full bg-violet/10 px-2 py-1 font-mono text-[8px] uppercase text-violet">Test</span>}
+                      {event.attributionStatus === "UNMATCHED" && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] uppercase text-coral">Needs donor</span>}
                       <span className="rounded-full bg-mint/8 px-2 py-1 font-mono text-[8px] uppercase text-mint">{event.status.replaceAll("_", " ")}</span>
                     </div>
                   </div>

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
+import PaymentMethodBadge from "@/components/PaymentMethodBadge";
+import TgUser from "@/components/TgUser";
 
 interface Person {
   id?: string;
@@ -18,6 +20,7 @@ interface Transaction {
   amount: string;
   currency: string;
   method: string;
+  paymentMethodDetail?: string | null;
   direction: string;
   type: string;
   description: string;
@@ -31,6 +34,11 @@ interface Transaction {
   voidedAt?: string | null;
   voidReason?: string | null;
   voidedBy?: Person | null;
+  bmcWebhookEvents?: Array<{
+    supporterEmail: string | null;
+    supporterId: string | null;
+    attributionStatus: string;
+  }>;
 }
 
 interface UserOption { id: string; name: string; telegramUser: string | null }
@@ -87,6 +95,7 @@ export default function TransactionsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(defaultFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [total, setTotal] = useState(0);
@@ -113,6 +122,8 @@ export default function TransactionsPage() {
   }, [filters, limit, page, search]);
 
   const filterQuery = useMemo(() => { const params = new URLSearchParams(queryString); params.delete("page"); params.delete("limit"); return params.toString(); }, [queryString]);
+  const activeFilterCount = useMemo(() => (Object.keys(defaultFilters) as Array<keyof typeof defaultFilters>)
+    .filter((key) => filters[key] !== defaultFilters[key]).length, [filters]);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -217,21 +228,39 @@ export default function TransactionsPage() {
     {showCreate && editor()}
 
     <section className="card mb-4 p-4 sm:p-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <Field label="Search" extra="sm:col-span-2 xl:col-span-2"><input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="ID, description, donor or recorder" className="input" /></Field>
-        <SelectField label="Status" value={filters.status} options={[["ALL", "All statuses"], ["PENDING", "Pending"], ["APPROVED", "Approved"], ["REJECTED", "Rejected"]]} onChange={(v) => updateFilter("status", v)} />
-        <SelectField label="Direction" value={filters.direction} options={[["ALL", "All directions"], ["IN", "Incoming"], ["OUT", "Outgoing"]]} onChange={(v) => updateFilter("direction", v)} />
-        <SelectField label="Currency" value={filters.currency} options={[["ALL", "All currencies"], ["INR", "INR"], ["USD", "USD"]]} onChange={(v) => updateFilter("currency", v)} />
-        <SelectField label="Lifecycle" value={filters.lifecycle} options={[["ACTIVE", "Active only"], ["VOIDED", "Voided only"], ["ALL", "Active + voided"]]} onChange={(v) => updateFilter("lifecycle", v)} />
-        <SelectField label="Type" value={filters.type} options={[["ALL", "All types"], ["DONATION", "Donation"], ["EXPENSE", "Expense"], ["SUBSCRIPTION", "Subscription"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("type", v)} />
-        <SelectField label="Method" value={filters.method} options={[["ALL", "All methods"], ["UPI", "UPI"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("method", v)} />
-        <Field label="Date from"><input type="date" value={filters.dateFrom} onChange={(e) => updateFilter("dateFrom", e.target.value)} className="input" /></Field>
-        <Field label="Date to"><input type="date" value={filters.dateTo} onChange={(e) => updateFilter("dateTo", e.target.value)} className="input" /></Field>
-        <Field label="Minimum amount"><input inputMode="decimal" value={filters.amountMin} onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateFilter("amountMin", e.target.value)} className="input" /></Field>
-        <Field label="Maximum amount"><input inputMode="decimal" value={filters.amountMax} onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateFilter("amountMax", e.target.value)} className="input" /></Field>
-        <SelectField label="Sort" value={filters.sort} options={[["newest", "Newest first"], ["oldest", "Oldest first"], ["amount_high", "Amount: high to low"], ["amount_low", "Amount: low to high"]]} onChange={(v) => updateFilter("sort", v)} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="relative min-w-0 flex-1">
+          <span className="sr-only">Search transactions</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary">
+            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+          </svg>
+          <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search ID, description, donor or recorder" className="input !pl-11" />
+        </label>
+        <button type="button" aria-expanded={filtersOpen} aria-controls="transaction-filters" onClick={() => setFiltersOpen((open) => !open)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-3 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--bg-hover)]">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+          Filters
+          {activeFilterCount > 0 && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-lime px-1.5 text-[9px] font-bold text-bg-void">{activeFilterCount}</span>}
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" /></svg>
+        </button>
       </div>
-      <div className="mt-4 flex flex-wrap justify-between gap-2"><button onClick={() => { setFilters(defaultFilters); setSearchInput(""); setSearch(""); setPage(1); }} className="text-xs text-text-tertiary underline">Reset filters</button><span className="text-xs text-text-tertiary">Filters and search apply to selection, export, and pagination.</span></div>
+      {filtersOpen && (
+        <div id="transaction-filters" className="mt-4 border-t border-[var(--border)] pt-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <SelectField label="Status" value={filters.status} options={[["ALL", "All statuses"], ["PENDING", "Pending"], ["APPROVED", "Approved"], ["REJECTED", "Rejected"]]} onChange={(v) => updateFilter("status", v)} />
+            <SelectField label="Direction" value={filters.direction} options={[["ALL", "All directions"], ["IN", "Incoming"], ["OUT", "Outgoing"]]} onChange={(v) => updateFilter("direction", v)} />
+            <SelectField label="Currency" value={filters.currency} options={[["ALL", "All currencies"], ["INR", "INR"], ["USD", "USD"]]} onChange={(v) => updateFilter("currency", v)} />
+            <SelectField label="Lifecycle" value={filters.lifecycle} options={[["ACTIVE", "Active only"], ["VOIDED", "Voided only"], ["ALL", "Active + voided"]]} onChange={(v) => updateFilter("lifecycle", v)} />
+            <SelectField label="Type" value={filters.type} options={[["ALL", "All types"], ["DONATION", "Donation"], ["EXPENSE", "Expense"], ["SUBSCRIPTION", "Subscription"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("type", v)} />
+            <SelectField label="Method" value={filters.method} options={[["ALL", "All methods"], ["UPI", "UPI"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("method", v)} />
+            <Field label="Date from"><input type="date" value={filters.dateFrom} onChange={(e) => updateFilter("dateFrom", e.target.value)} className="input" /></Field>
+            <Field label="Date to"><input type="date" value={filters.dateTo} onChange={(e) => updateFilter("dateTo", e.target.value)} className="input" /></Field>
+            <Field label="Minimum amount"><input inputMode="decimal" value={filters.amountMin} onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateFilter("amountMin", e.target.value)} className="input" /></Field>
+            <Field label="Maximum amount"><input inputMode="decimal" value={filters.amountMax} onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && updateFilter("amountMax", e.target.value)} className="input" /></Field>
+            <SelectField label="Sort" value={filters.sort} options={[["newest", "Newest first"], ["oldest", "Oldest first"], ["amount_high", "Amount: high to low"], ["amount_low", "Amount: low to high"]]} onChange={(v) => updateFilter("sort", v)} />
+          </div>
+          <div className="mt-4 flex flex-wrap justify-between gap-2"><button onClick={() => { setFilters(defaultFilters); setPage(1); }} className="text-xs text-text-tertiary underline">Reset filters</button><span className="text-xs text-text-tertiary">Filters and search apply to selection, export, and pagination.</span></div>
+        </div>
+      )}
     </section>
 
     <div className="sticky top-2 z-30 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/95 p-3 shadow-lg backdrop-blur">
@@ -244,11 +273,27 @@ export default function TransactionsPage() {
       {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div className="overflow-visible lg:overflow-x-auto"><table className="block w-full lg:table"><thead className="hidden lg:table-header-group"><tr className="border-b border-[var(--border)]"><th className="w-10 p-4" /><Th>Description</Th><Th right>Amount</Th><Th>Status</Th><Th>Date</Th><Th>Actions</Th></tr></thead><tbody className="block lg:table-row-group">
         {transactions.map((tx) => <Fragment key={tx.id}><tr className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-4 border-b border-[var(--border)] p-4 lg:table-row lg:p-0 ${tx.voidedAt ? "opacity-60" : ""}`}>
           <td className="row-span-4 p-0 lg:table-cell lg:p-4"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></td>
-          <td className="p-0 lg:table-cell lg:p-4"><div className="text-sm font-medium text-text-primary">{tx.description}</div><div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-text-tertiary"><span>{tx.type}</span><span>·</span><span>{tx.method}</span>{tx.fromUser && <><span>·</span><span>from {tx.fromUser.name}</span></>}{tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}</div>{tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}</td>
+          <td className="p-0 lg:table-cell lg:p-4">
+            <div className="text-sm font-medium text-text-primary">{tx.description}</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
+              <span>{tx.type}</span><span>·</span>
+              <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
+              {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
+              {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
+              {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}
+            </div>
+            {tx.fromUser && (
+              <div className="mt-2.5 flex items-center gap-2">
+                <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary">Donor</span>
+                <TgUser name={tx.fromUser.name} telegramUser={tx.fromUser.telegramUser} photoUrl={tx.fromUser.photoUrl} size={28} nameClassName="!text-[15px] font-semibold" />
+              </div>
+            )}
+            {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
+          </td>
           <td className={`p-0 text-sm font-semibold lg:table-cell lg:p-4 lg:text-right ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="mr-2 font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></td>
           <td className="p-0 lg:table-cell lg:p-4 lg:text-center"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</td>
           <td className="p-0 text-xs text-text-secondary lg:table-cell lg:p-4 lg:text-right">{formatDate(tx.date)}</td>
-          <td className="col-span-2 p-0 lg:table-cell lg:p-4"><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
+          <td className="col-span-2 p-0 lg:table-cell lg:p-4"><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
         </tr>{editingId === tx.id && <tr className="block border-b border-[var(--border)] lg:table-row"><td colSpan={6} className="block p-0 lg:table-cell">{editor()}</td></tr>}</Fragment>)}
       </tbody></table></div>}
     </div>

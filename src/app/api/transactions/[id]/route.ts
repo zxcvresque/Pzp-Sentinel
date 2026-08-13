@@ -6,6 +6,8 @@ import { logTransaction } from "@/lib/github-log";
 import { Prisma } from "@/generated/prisma/client";
 import { logTransactionMutation } from "@/lib/telegram-log";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { bmcAccountSlug } from "@/lib/bmc-attribution";
+import { notify, formatTgMessage } from "@/lib/notifications";
 
 export async function PATCH(
   req: NextRequest,
@@ -78,6 +80,32 @@ export async function PATCH(
     if (!sourceUser) return NextResponse.json({ error: "Donor/source user not found" }, { status: 400 });
   }
 
+  const isBmcReconciliation = transaction.method === "BMC"
+    && !transaction.fromUserId
+    && typeof fromUserId === "string"
+    && Boolean(fromUserId);
+  const bmcReceipt = isBmcReconciliation
+    ? await prisma.bmcWebhookEvent.findFirst({
+        where: { transactionId: transaction.id },
+        select: { id: true, supporterId: true, supporterEmail: true },
+      })
+    : null;
+  if (bmcReceipt?.supporterId) {
+    const existingLink = await prisma.bmcSupporterLink.findUnique({
+      where: {
+        accountSlug_supporterId: {
+          accountSlug: bmcAccountSlug(),
+          supporterId: bmcReceipt.supporterId,
+        },
+      },
+    });
+    if (existingLink && existingLink.userId !== fromUserId) {
+      return NextResponse.json({
+        error: "This BMC supporter is already linked to another donor. Review the existing link before reassigning it.",
+      }, { status: 409 });
+    }
+  }
+
   const data: Prisma.TransactionUpdateInput = {};
   if (amount !== undefined) data.amount = new Prisma.Decimal(amount);
   if (currency !== undefined) data.currency = currency;
@@ -110,6 +138,50 @@ export async function PATCH(
     data,
     include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
   });
+
+  if (isBmcReconciliation && updated.fromUserId) {
+    if (bmcReceipt?.supporterId) {
+      await prisma.bmcSupporterLink.upsert({
+        where: {
+          accountSlug_supporterId: {
+            accountSlug: bmcAccountSlug(),
+            supporterId: bmcReceipt.supporterId,
+          },
+        },
+        update: {
+          supporterEmail: bmcReceipt.supporterEmail,
+          lastSeenAt: new Date(),
+        },
+        create: {
+          accountSlug: bmcAccountSlug(),
+          supporterId: bmcReceipt.supporterId,
+          supporterEmail: bmcReceipt.supporterEmail,
+          userId: updated.fromUserId,
+        },
+      });
+    }
+    if (bmcReceipt) {
+      await prisma.bmcWebhookEvent.update({
+        where: { id: bmcReceipt.id },
+        data: { attributionStatus: "ADMIN_RECONCILED" },
+      });
+    }
+    if (updated.fromUser) {
+      const symbol = updated.currency === "INR" ? "₹" : "$";
+      await notify({
+        userId: updated.fromUser.id,
+        type: "TX_APPROVED",
+        title: "BMC donation linked to your account",
+        message: `${symbol}${updated.amount} from Buy Me a Coffee was added to your donation history.`,
+        entityId: updated.id,
+        actionUrl: "/donor",
+        telegramMessage: formatTgMessage(
+          "BMC Donation Linked",
+          `${symbol}${updated.amount} added to your Sentinel history`,
+        ),
+      });
+    }
+  }
   const identityUser = updated.fromUser || updated.createdBy;
 
   const after = {
@@ -223,7 +295,10 @@ export async function DELETE(
     },
     after: { voidedAt: voided.voidedAt, voidedById: user.id, voidReason: reason },
     userName: user.name,
-    details: `Voided transaction: ${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}. Reason: ${reason}`,
+    details: `"Voided Txn:"
+${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}
+"Reason:"
+${reason}`,
   });
 
   // GitHub immutable log

@@ -545,12 +545,15 @@ bot.command("start", async (ctx) => {
   const yourRoles = user.roles
     .map((r) => roleLabels[r] || r)
     .join("\n");
+  const donorWebsite = user.roles.includes("DONOR")
+    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piraztezparty.com">sentinel.piraztezparty.com</a>.`
+    : "";
 
   try {
     await ctx.reply(
       `<b><i>👋 Welcome back, ${user.name}!</i></b>\n\n` +
       `<blockquote><b>Your Access</b></blockquote>\n` +
-      `${yourRoles}`,
+      `${yourRoles}${donorWebsite}`,
       {
         parse_mode: "HTML",
         reply_markup: {

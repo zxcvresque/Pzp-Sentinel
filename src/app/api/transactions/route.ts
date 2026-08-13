@@ -33,7 +33,21 @@ export async function GET(req: NextRequest) {
   const [transactions, total] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
+      include: {
+        fromUser: true,
+        createdBy: true,
+        reviewedBy: true,
+        voidedBy: true,
+        ...(isAdmin ? {
+          bmcWebhookEvents: {
+            select: {
+              supporterEmail: true,
+              supporterId: true,
+              attributionStatus: true,
+            },
+          },
+        } : {}),
+      },
       orderBy,
       skip: (page - 1) * limit,
       take: limit,

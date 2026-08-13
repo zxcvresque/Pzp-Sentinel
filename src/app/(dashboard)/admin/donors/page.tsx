@@ -25,6 +25,7 @@ interface DonorAccess {
   telegramUser?: string | null;
   bmcAccess: boolean;
   razorpayAccess: boolean;
+  razorpayAccessRequestedAt?: string | null;
 }
 
 type Period = "all" | "year" | "month";
@@ -149,9 +150,25 @@ export default function DonorsLeaderboard() {
                 <div key={donor.id} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5">
                   <div className="min-w-0">
                     <TgUser name={donor.name} telegramUser={donor.telegramUser} photoUrl={donor.photoUrl} size={24} />
-                    <p className="mt-1 font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">Payment access managed per donor</p>
+                    {donor.razorpayAccessRequestedAt && !donor.razorpayAccess ? (
+                      <p className="mt-1 inline-flex rounded-full border border-sky-400/25 bg-sky-400/[.08] px-2 py-1 font-mono text-[9px] uppercase tracking-[.08em] text-sky-300">
+                        Razorpay requested {new Date(donor.razorpayAccessRequestedAt).toLocaleDateString()}
+                      </p>
+                    ) : (
+                      <p className="mt-1 font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">Payment access managed per donor</p>
+                    )}
                   </div>
-                  <div className="flex gap-2 sm:justify-end">
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    {donor.razorpayAccessRequestedAt && !donor.razorpayAccess && (
+                      <button
+                        type="button"
+                        disabled={savingAccess === razorpayKey}
+                        onClick={() => void toggleAccess(donor, "RAZORPAY", true)}
+                        className="min-h-11 rounded-xl bg-sky-400 px-4 text-xs font-bold text-slate-950 transition-colors hover:bg-sky-300 disabled:opacity-50"
+                      >
+                        Approve request
+                      </button>
+                    )}
                     <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.bmcAccess ? "border-amber/40 bg-amber/12 text-text-primary shadow-[0_0_18px_rgba(251,191,36,.08)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.bmcAccess} disabled={savingAccess === bmcKey}
                         onChange={(event) => void toggleAccess(donor, "BMC", event.target.checked)} className="sr-only" aria-label={`Allow Buy Me a Coffee for ${donor.name}`} />

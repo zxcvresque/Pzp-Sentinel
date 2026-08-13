@@ -35,7 +35,7 @@ export async function GET() {
   if ("response" in auth) return auth.response;
 
   const recipients = await prisma.user.findMany({
-    where: { roles: { hasSome: ["DONOR", "DEV"] }, status: "ACTIVE" },
+    where: { roles: { hasSome: ["ADMIN", "DONOR", "DEV"] }, status: "ACTIVE" },
     orderBy: [{ name: "asc" }, { telegramUser: "asc" }],
     select: {
       id: true,
@@ -50,6 +50,7 @@ export async function GET() {
   return NextResponse.json({
     recipients,
     counts: {
+      admins: recipients.filter((recipient) => recipient.roles.includes("ADMIN")).length,
       donors: recipients.filter((recipient) => recipient.roles.includes("DONOR")).length,
       devs: recipients.filter((recipient) => recipient.roles.includes("DEV")).length,
       everyone: recipients.length,

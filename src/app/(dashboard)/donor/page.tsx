@@ -6,6 +6,8 @@ import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 import BmcSupportCard from "@/components/BmcSupportCard";
+import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
+import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
@@ -13,6 +15,7 @@ interface Transaction {
   amount: string;
   currency: string;
   method: string;
+  paymentMethodDetail?: string | null;
   description: string;
   status: string;
   date: string;
@@ -27,7 +30,12 @@ export default function DonorDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [formError, setFormError] = useState("");
-  const [paymentAccess, setPaymentAccess] = useState<{ bmc: boolean; razorpay: boolean } | null>(null);
+  const [paymentAccess, setPaymentAccess] = useState<{
+    bmc: boolean;
+    razorpay: boolean;
+    razorpayRequested: boolean;
+    razorpayRequestedAt: string | null;
+  } | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
@@ -59,19 +67,23 @@ export default function DonorDashboard() {
     setPaymentAccess(data.access);
   }, []);
 
+  const refreshDashboard = useCallback(async () => {
+    await Promise.all([load(), loadPaymentAccess()]);
+  }, [load, loadPaymentAccess]);
+
   useEffect(() => {
     // Initial mount load: show the skeleton until the first fetch resolves.
     // Preserve the original initial-load error handling (empty the list), then
     // drop the skeleton once settled.
     // Both callbacks intentionally populate client state from external APIs.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    Promise.all([load(), loadPaymentAccess()])
+    refreshDashboard()
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false));
-  }, [load, loadPaymentAccess]);
+  }, [refreshDashboard]);
 
   // Background refresh on focus / visibility regain + every 30s while visible.
-  useAutoRefresh(load, 30000);
+  useAutoRefresh(refreshDashboard, 30000);
 
   const approved = transactions.filter((t) => t.status === "APPROVED" && !t.isTest);
   const totalContributed = approved.reduce(
@@ -211,6 +223,14 @@ export default function DonorDashboard() {
         <RazorpayDonationCard onSuccess={async () => {
           await Promise.all([load(), loadPaymentAccess()]);
         }} />
+      )}
+      {paymentAccess && !paymentAccess.razorpay && (
+        <RazorpayAccessBanner
+          requested={paymentAccess.razorpayRequested}
+          onRequested={(requestedAt) => setPaymentAccess((current) => current
+            ? { ...current, razorpayRequested: true, razorpayRequestedAt: requestedAt }
+            : current)}
+        />
       )}
       {paymentAccess?.bmc && <BmcSupportCard />}
       {paymentAccess && !paymentAccess.bmc && !paymentAccess.razorpay && (
@@ -430,7 +450,8 @@ export default function DonorDashboard() {
                   {tx.isTest && <span className="ml-2 rounded bg-violet/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-violet">Test</span>}
                 </div>
                 <div className="text-text-tertiary text-xs mt-1">
-                  {new Date(tx.date).toLocaleDateString()} &middot; {tx.method}
+                  <span className="mr-2">{new Date(tx.date).toLocaleDateString()}</span>
+                  <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
                   {tx.currency !== "INR" && (
                     <span className="ml-1">&middot; {tx.currency}</span>
                   )}

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 
 interface Transaction {
   id: string;
   amount: string;
   currency: string;
   method: string;
+  paymentMethodDetail?: string | null;
   description: string;
   status: string;
   date: string;
@@ -262,8 +264,8 @@ export default function ReceiptsPage() {
                 </div>
                 <div className="flex items-center justify-between text-text-tertiary text-xs">
                   <span>
-                    {new Date(tx.date).toLocaleDateString()} &middot;{" "}
-                    {tx.method}
+                    <span className="mr-2">{new Date(tx.date).toLocaleDateString()}</span>
+                    <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
                   </span>
                   <div className="flex items-center gap-2">
                     <button

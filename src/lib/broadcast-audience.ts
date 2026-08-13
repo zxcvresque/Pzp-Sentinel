@@ -1,9 +1,9 @@
-export const BROADCAST_AUDIENCES = ["DONORS", "DEVS", "EVERYONE"] as const;
+export const BROADCAST_AUDIENCES = ["ADMINS", "DONORS", "DEVS", "EVERYONE"] as const;
 export const BROADCAST_RECIPIENT_MODES = ["ALL", "SELECTED"] as const;
 
 export type BroadcastAudience = typeof BROADCAST_AUDIENCES[number];
 export type BroadcastRecipientMode = typeof BROADCAST_RECIPIENT_MODES[number];
-export type BroadcastMemberRole = "DONOR" | "DEV";
+export type BroadcastMemberRole = "ADMIN" | "DONOR" | "DEV";
 
 export function parseBroadcastAudience(value: unknown): BroadcastAudience | null {
   return typeof value === "string" && BROADCAST_AUDIENCES.includes(value as BroadcastAudience)
@@ -18,9 +18,10 @@ export function parseBroadcastRecipientMode(value: unknown): BroadcastRecipientM
 }
 
 export function broadcastAudienceRoles(audience: BroadcastAudience): BroadcastMemberRole[] {
+  if (audience === "ADMINS") return ["ADMIN"];
   if (audience === "DONORS") return ["DONOR"];
   if (audience === "DEVS") return ["DEV"];
-  return ["DONOR", "DEV"];
+  return ["ADMIN", "DONOR", "DEV"];
 }
 
 export function recipientMatchesAudience(roles: readonly string[], audience: BroadcastAudience): boolean {
@@ -35,5 +36,5 @@ export function canSendBroadcastToTelegramGroup(
   audience: BroadcastAudience,
   recipientMode: BroadcastRecipientMode,
 ): boolean {
-  return recipientMode === "ALL" && audience !== "DEVS";
+  return recipientMode === "ALL" && audience !== "DEVS" && audience !== "ADMINS";
 }

@@ -3,6 +3,7 @@ import { bot, fetchTelegramPhotoUrl } from "@/lib/bot";
 import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/telegram-log";
 import { webhookCallback } from "grammy";
+import { escapeTelegramHtml } from "@/lib/telegram-format";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -85,12 +86,16 @@ bot.command("start", async (ctx) => {
   const yourRoles = user.roles
     .map((r) => roleLabels[r] || r)
     .join("\n");
+  const donorWebsite = user.roles.includes("DONOR")
+    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piraztezparty.com">sentinel.piraztezparty.com</a>.`
+    : "";
 
   await ctx.reply(
-    `Welcome back, ${user.name}! 🏦\n\n` +
+    `Welcome back, ${escapeTelegramHtml(user.name)}! 🏦\n\n` +
     `Your access:\n${yourRoles}\n\n` +
-    `Open Sentinel to get started.`,
+    `Open Sentinel to get started.${donorWebsite}`,
     {
+      parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
           [{ text: "Open Sentinel", web_app: { url: webappUrl } }],

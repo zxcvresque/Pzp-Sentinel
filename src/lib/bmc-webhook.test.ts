@@ -28,6 +28,8 @@ describe("Buy Me a Coffee webhook", () => {
         coffee_price: 5,
         currency: "USD",
         supporter_name: "Alex",
+        supporter_id: 42,
+        supporter_email: "Alex@Example.com",
         support_note: "Keep building",
         created_at: 1719825600,
       },
@@ -36,6 +38,8 @@ describe("Buy Me a Coffee webhook", () => {
     expect(event.type).toBe("donation.created");
     expect(event.resourceId).toBe("98765");
     expect(event.supporterName).toBe("Alex");
+    expect(event.supporterId).toBe("42");
+    expect(event.supporterEmail).toBe("alex@example.com");
     expect(event.amount).toBe(15);
     expect(event.currency).toBe("USD");
     expect(event.note).toBe("Keep building");

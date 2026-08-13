@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
 import { logAudit } from "@/lib/audit";
-import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { bmcTransactionKeys, parseBmcWebhook, verifyBmcSignature, type NormalizedBmcEvent } from "@/lib/bmc-webhook";
+import { bmcAccountSlug, extractBmcAttributionCode, hashBmcAttributionCode } from "@/lib/bmc-attribution";
+import { escapeTelegramHtml } from "@/lib/telegram-format";
 
 const CREATED_EVENTS = new Set([
   "donation.created",
@@ -45,7 +47,9 @@ function eventLabel(type: string) {
 }
 
 function transactionDescription(event: NormalizedBmcEvent) {
-  const note = event.note ? ` — “${event.note}”` : "";
+  const attributionCode = extractBmcAttributionCode(event.note);
+  const publicNote = attributionCode ? event.note?.replace(attributionCode, "").trim() : event.note;
+  const note = publicNote ? ` — “${publicNote}”` : "";
   const item = event.itemLabel ? ` · ${event.itemLabel}` : "";
   return `BMC ${eventLabel(event.type)}: ${event.supporterName}${item}${note}`;
 }
@@ -56,42 +60,144 @@ async function findTransaction(event: NormalizedBmcEvent) {
 }
 
 async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
-  const existing = await findTransaction(event);
-  if (existing) return { transaction: existing, duplicate: true };
   if (!Number.isFinite(event.amount) || event.amount <= 0) {
     throw new Error(`${event.type} has no positive payment amount`);
   }
 
-  const [eventId] = bmcTransactionKeys(event.type, event.resourceId);
-  const transaction = await prisma.transaction.create({
-    data: {
-      amount: new Prisma.Decimal(event.amount),
-      currency: event.currency,
-      method: "BMC",
-      direction: "IN",
-      type: "DONATION",
-      description: transactionDescription(event),
-      status: "APPROVED",
-      isTest: !event.liveMode,
-      bmcEventId: eventId,
-      date: event.occurredAt,
-      createdById: adminId,
-    },
+  const keys = bmcTransactionKeys(event.type, event.resourceId);
+  const [eventId] = keys;
+  const accountSlug = bmcAccountSlug();
+  const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
+
+  const result = await prisma.$transaction(async (db) => {
+    const existing = await db.transaction.findFirst({
+      where: { bmcEventId: { in: keys } },
+      include: { fromUser: true },
+    });
+    if (existing) {
+      return {
+        transaction: existing,
+        duplicate: true,
+        attribution: existing.fromUserId ? "ATTRIBUTED" : "UNMATCHED",
+      } as const;
+    }
+
+    const knownLink = event.liveMode && event.supporterId
+      ? await db.bmcSupporterLink.findUnique({
+          where: { accountSlug_supporterId: { accountSlug, supporterId: event.supporterId } },
+        })
+      : null;
+
+    let intent = null;
+    if (!knownLink && code) {
+      const now = new Date();
+      intent = await db.bmcCheckoutIntent.findFirst({
+        where: {
+          codeHash: hashBmcAttributionCode(code),
+          consumedAt: null,
+          expiresAt: { gt: now },
+        },
+      });
+      if (intent) {
+        const claimed = await db.bmcCheckoutIntent.updateMany({
+          where: { id: intent.id, consumedAt: null, expiresAt: { gt: now } },
+          data: { consumedAt: now },
+        });
+        if (claimed.count !== 1) intent = null;
+      }
+    }
+
+    const fromUserId = knownLink?.userId || intent?.userId || null;
+    const transaction = await db.transaction.create({
+      data: {
+        amount: new Prisma.Decimal(event.amount),
+        currency: event.currency,
+        method: "BMC",
+        direction: "IN",
+        type: "DONATION",
+        fromUserId,
+        description: transactionDescription(event),
+        status: "APPROVED",
+        isTest: !event.liveMode,
+        bmcEventId: eventId,
+        date: event.occurredAt,
+        createdById: adminId,
+      },
+      include: { fromUser: true },
+    });
+
+    if (knownLink) {
+      await db.bmcSupporterLink.update({
+        where: { id: knownLink.id },
+        data: {
+          supporterEmail: event.supporterEmail || knownLink.supporterEmail,
+          lastSeenAt: new Date(),
+        },
+      });
+    } else if (intent && event.supporterId) {
+      await db.bmcSupporterLink.create({
+        data: {
+          accountSlug,
+          supporterId: event.supporterId,
+          supporterEmail: event.supporterEmail,
+          userId: intent.userId,
+        },
+      });
+    }
+    if (intent) {
+      await db.bmcCheckoutIntent.update({
+        where: { id: intent.id },
+        data: { transactionId: transaction.id },
+      });
+    }
+
+    return {
+      transaction,
+      duplicate: false,
+      attribution: knownLink ? "SUPPORTER_LINK" : intent ? "CHECKOUT_CODE" : "UNMATCHED",
+    } as const;
   });
 
+  if (result.duplicate) return result;
+  const transaction = result.transaction;
+
   const amount = `${symbol(event)}${event.amount.toFixed(2)}`;
+  const matchedDonor = transaction.fromUser;
   await notifyAdmins({
     type: "SYSTEM",
-    title: `${event.liveMode ? "New" : "Test"} BMC ${eventLabel(event.type)}`,
-    message: `${amount} from ${event.supporterName}${event.itemLabel ? ` · ${event.itemLabel}` : ""}`,
+    title: result.attribution === "UNMATCHED"
+      ? `${event.liveMode ? "Unmatched" : "Test"} BMC ${eventLabel(event.type)}`
+      : `${event.liveMode ? "New" : "Test"} BMC ${eventLabel(event.type)}`,
+    message: result.attribution === "UNMATCHED"
+      ? `${amount} from ${event.supporterName} needs donor attribution.`
+      : `${amount} from ${event.supporterName} was attributed to ${matchedDonor?.name}.`,
     entityId: transaction.id,
     actionUrl: "/admin/transactions",
+    actionLabel: result.attribution === "UNMATCHED" ? "Reconcile payment" : "View transaction",
     telegramMessage: formatTgMessage(
-      `☕ ${event.liveMode ? "BMC payment captured" : "BMC test captured"}`,
-      `${amount} from ${event.supporterName}`,
-      `${eventLabel(event.type)}${event.itemLabel ? ` · ${event.itemLabel}` : ""}`,
+      result.attribution === "UNMATCHED" ? "BMC payment needs attribution" : "BMC payment captured",
+      `${amount} from ${escapeTelegramHtml(event.supporterName)}`,
+      result.attribution === "UNMATCHED"
+        ? "Open Transactions and assign the correct donor."
+        : `Matched to ${escapeTelegramHtml(matchedDonor?.name || "donor")}`,
     ),
   });
+
+  if (matchedDonor && event.liveMode) {
+    await notify({
+      userId: matchedDonor.id,
+      type: "TX_APPROVED",
+      title: "BMC donation received — thank you!",
+      message: `${amount} was received through Buy Me a Coffee and added to your donation history.`,
+      entityId: transaction.id,
+      actionUrl: "/donor",
+      telegramMessage: formatTgMessage(
+        "BMC Donation Received",
+        `${amount} received`,
+        "It is now linked to your Sentinel account.",
+      ),
+    });
+  }
 
   scheduleFinanceAutomation({
     action: "CREATED",
@@ -99,7 +205,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     transactionId: transaction.id,
     sendBackup: event.liveMode,
   });
-  return { transaction, duplicate: false };
+  return result;
 }
 
 async function refundTransaction(event: NormalizedBmcEvent) {
@@ -177,7 +283,13 @@ export async function POST(request: NextRequest) {
   const receipt = existingDelivery
     ? await prisma.bmcWebhookEvent.update({
         where: { id: existingDelivery.id },
-        data: { attempt: event.attempt, status: "PROCESSING", payload: event.data as Prisma.InputJsonValue },
+        data: {
+          attempt: event.attempt,
+          status: "PROCESSING",
+          supporterId: event.supporterId,
+          supporterEmail: event.supporterEmail,
+          payload: event.data as Prisma.InputJsonValue,
+        },
       })
     : await prisma.bmcWebhookEvent.create({
         data: {
@@ -188,6 +300,8 @@ export async function POST(request: NextRequest) {
           attempt: event.attempt,
           resourceId: event.resourceId,
           supporterName: event.supporterName,
+          supporterId: event.supporterId,
+          supporterEmail: event.supporterEmail,
           amount: event.amount > 0 ? new Prisma.Decimal(event.amount) : undefined,
           currency: event.currency,
           payload: event.data as Prisma.InputJsonValue,
@@ -197,27 +311,31 @@ export async function POST(request: NextRequest) {
   try {
     let transactionId: string | null = null;
     let status = "NOTED";
+    let attributionStatus = "NOT_APPLICABLE";
 
     if (CREATED_EVENTS.has(event.type)) {
       const result = await createTransaction(event, admin.id);
       transactionId = result.transaction.id;
       status = result.duplicate ? "DUPLICATE_RESOURCE" : "CREATED";
+      attributionStatus = result.attribution;
     } else if (REFUND_EVENTS.has(event.type)) {
       const transaction = await refundTransaction(event);
       transactionId = transaction?.id || null;
       status = transaction ? "REFUNDED" : "REFUND_UNMATCHED";
+      attributionStatus = transaction?.fromUserId ? "ATTRIBUTED" : transaction ? "UNMATCHED" : "NOT_APPLICABLE";
     } else if (LIFECYCLE_EVENTS.has(event.type)) {
       await notifyLifecycle(event);
       const transaction = await findTransaction(event);
       transactionId = transaction?.id || null;
       status = event.type.split(".").at(-1)?.toUpperCase() || "NOTED";
+      attributionStatus = transaction?.fromUserId ? "ATTRIBUTED" : transaction ? "UNMATCHED" : "NOT_APPLICABLE";
     } else {
       status = "UNHANDLED";
     }
 
     await prisma.bmcWebhookEvent.update({
       where: { id: receipt.id },
-      data: { status, transactionId, processedAt: new Date() },
+      data: { status, attributionStatus, transactionId, processedAt: new Date() },
     });
     await logAudit({
       userId: admin.id,

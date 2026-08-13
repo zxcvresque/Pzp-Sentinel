@@ -30,8 +30,31 @@ type RazorpayPaymentResponse = {
   captured: boolean;
   order_id: string;
   method?: string;
+  vpa?: string;
+  wallet?: string;
+  bank?: string;
+  card?: { network?: string; type?: string; issuer?: string };
   created_at?: number;
 };
+
+function razorpayPaymentDetail(payment: RazorpayPaymentResponse): string | null {
+  const method = payment.method?.trim().toLowerCase();
+  if (!method) return null;
+  if (method === "upi") {
+    const handle = payment.vpa?.split("@").at(-1)?.toLowerCase() || "";
+    const app = /^(okaxis|okhdfcbank|oksbi|okicici)$/.test(handle) ? "google_pay"
+      : /^(ybl|ibl|axl)$/.test(handle) ? "phonepe"
+        : handle === "paytm" ? "paytm"
+          : handle === "apl" ? "amazon_pay"
+            : /mobikwik|ikwik/.test(handle) ? "mobikwik"
+              : "upi";
+    return `upi:${app}`;
+  }
+  if (method === "wallet") return `wallet:${payment.wallet?.trim().toLowerCase() || "wallet"}`;
+  if (method === "card") return `card:${payment.card?.network?.trim().toLowerCase() || "card"}`;
+  if (method === "netbanking") return `netbanking:${payment.bank?.trim().toLowerCase() || "bank"}`;
+  return method;
+}
 
 export class RazorpayError extends Error {
   constructor(message: string, public status = 500) {
@@ -339,6 +362,7 @@ export async function finalizeCapturedDonation(params: {
           amount,
           currency: stored.currency,
           method: "RAZORPAY",
+          paymentMethodDetail: razorpayPaymentDetail(payment),
           direction: "IN",
           type: "DONATION",
           fromUserId: stored.userId,

@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
+import { bmcAccountSlug } from "./bmc-attribution";
 
 export type BmcCurrency = "INR" | "USD";
 
@@ -14,6 +15,8 @@ export interface BmcEnvelope {
 export interface NormalizedBmcEvent extends BmcEnvelope {
   resourceId: string;
   supporterName: string;
+  supporterId: string | null;
+  supporterEmail: string | null;
   amount: number;
   currency: BmcCurrency;
   note: string | null;
@@ -125,6 +128,8 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
   const createdAt = dateValue(parsed.created, new Date());
   const resourceId = eventResource(type, data);
   const supporterName = text(data.supporter_name) || text(data.payer_name) || "Anonymous";
+  const supporterId = text(data.supporter_id);
+  const supporterEmail = text(data.supporter_email)?.toLowerCase() || null;
   const coffeeCount = Math.max(1, numberValue(data.coffee_count, data.support_coffees, 1));
   const amount = numberValue(
     data.amount,
@@ -157,6 +162,8 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     data,
     resourceId,
     supporterName,
+    supporterId,
+    supporterEmail,
     amount,
     currency,
     note,
@@ -167,7 +174,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
 }
 
 export function bmcTransactionKeys(type: string, resourceId: string): string[] {
-  const slug = process.env.BMC_ACCOUNT_SLUG?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-") || "current";
+  const slug = bmcAccountSlug();
   const kind = type.startsWith("extra_purchase.") ? "extra"
     : type.startsWith("commission_order.") ? "commission"
       : type.startsWith("wishlist_payment.") ? "wishlist"
