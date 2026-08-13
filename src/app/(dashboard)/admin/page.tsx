@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
+import TransactionAttribution from "@/components/TransactionAttribution";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface Transaction {
@@ -9,11 +10,13 @@ interface Transaction {
   amount: string;
   currency: string;
   method: string;
+  paymentMethodDetail?: string | null;
   direction: string;
   description: string;
   status: string;
   date: string;
-  fromUser?: { name: string } | null;
+  fromUser?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
+  createdBy?: { name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
 }
 
 interface MonthlyData {
@@ -755,9 +758,6 @@ export default function AdminDashboard() {
                       Amount
                     </th>
                     <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
-                      Method
-                    </th>
-                    <th className="text-center p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
                       Status
                     </th>
                     <th className="text-right p-4 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
@@ -771,7 +771,12 @@ export default function AdminDashboard() {
                       key={tx.id}
                       className="border-b border-[var(--border)] last:border-0 hover:bg-[rgba(255,255,255,0.02)] transition-colors"
                     >
-                      <td className="p-4 text-sm">{tx.description}</td>
+                      <td className="p-4 text-sm">
+                        <div>{tx.description}</div>
+                        <div className="mt-2">
+                          <TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={24} />
+                        </div>
+                      </td>
                       <td
                         className={`p-4 text-sm text-right font-medium ${
                           tx.direction === "IN" ? "text-mint" : "text-coral"
@@ -780,11 +785,6 @@ export default function AdminDashboard() {
                         {tx.direction === "IN" ? "+" : "-"}
                         {tx.currency === "INR" ? "₹" : "$"}
                         {parseFloat(tx.amount).toLocaleString()}
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--violet-dim)] text-violet">
-                          {tx.method}
-                        </span>
                       </td>
                       <td className="p-4 text-center">
                         <span

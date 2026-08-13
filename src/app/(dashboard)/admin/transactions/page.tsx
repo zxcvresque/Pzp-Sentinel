@@ -5,8 +5,7 @@ import { createPortal } from "react-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
-import PaymentMethodBadge from "@/components/PaymentMethodBadge";
-import TgUser from "@/components/TgUser";
+import TransactionAttribution from "@/components/TransactionAttribution";
 
 interface Person {
   id?: string;
@@ -101,6 +100,7 @@ export default function TransactionsPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -183,7 +183,7 @@ export default function TransactionsPage() {
         const summary = `${data.succeeded}/${data.requested} succeeded${failures.length ? ` · ${failures.length} failed: ${failures.slice(0, 3).map((f: { id: string; error: string }) => `${f.id.slice(-6)} (${f.error})`).join(", ")}${failures.length > 3 ? ` +${failures.length - 3} more` : ""}` : ""}`;
         setFeedback({ tone: failures.length ? "error" : "success", text: summary });
       }
-      setSelected(new Set()); setAction(null); await load();
+      setSelected(new Set()); setSelectionMode(false); setAction(null); await load();
     } catch (e) { setFeedback({ tone: "error", text: e instanceof Error ? e.message : "Action failed" }); }
     finally { setActionLoading(false); }
   }
@@ -263,40 +263,42 @@ export default function TransactionsPage() {
       )}
     </section>
 
-    <div className="sticky top-2 z-30 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/95 p-3 shadow-lg backdrop-blur">
-      <label className="flex items-center gap-2 text-xs text-text-secondary"><input type="checkbox" checked={allVisibleSelected} onChange={selectVisible} className="h-4 w-4 accent-[var(--lime)]" /> Select visible</label>
-      <button disabled={selectingAll || total === 0} onClick={() => void selectAllFiltered()} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-text-secondary disabled:opacity-40">{selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()} filtered`}</button>
-      {selected.size > 0 && <><span className="text-xs font-semibold text-lime">{selected.size.toLocaleString()} selected</span><button onClick={() => setSelected(new Set())} className="text-xs text-text-tertiary underline">Clear</button><span className="grow" /><button onClick={() => setAction({ kind: "APPROVE", ids: [...selected] })} className="rounded-full bg-mint/10 px-3 py-1.5 text-xs font-semibold text-mint">Approve selected</button><button onClick={() => setAction({ kind: "REJECT", ids: [...selected] })} className="rounded-full bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral">Reject selected</button><button onClick={() => setAction({ kind: "VOID", ids: [...selected] })} className="rounded-full bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral">Void selected</button></>}
+    <div className={`mb-3 flex flex-wrap items-center gap-2 ${selectionMode ? "sticky top-2 z-30 rounded-xl border border-[var(--border)] bg-[var(--bg-card)]/95 p-3 shadow-lg backdrop-blur" : "justify-end"}`}>
+      {!selectionMode ? (
+        <button type="button" onClick={() => setSelectionMode(true)} className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--bg-hover)]">
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4"><rect x="3" y="3" width="5" height="5" rx="1" /><rect x="12" y="3" width="5" height="5" rx="1" /><rect x="3" y="12" width="5" height="5" rx="1" /><path d="m12.5 14.5 1.5 1.5 3-3" /></svg>
+          Select multiple
+        </button>
+      ) : <>
+        <label className="flex items-center gap-2 text-xs text-text-secondary"><input type="checkbox" checked={allVisibleSelected} onChange={selectVisible} className="h-4 w-4 accent-[var(--lime)]" /> Select visible</label>
+        <button disabled={selectingAll || total === 0} onClick={() => void selectAllFiltered()} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-text-secondary disabled:opacity-40">{selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()} filtered`}</button>
+        <button onClick={() => { setSelected(new Set()); setSelectionMode(false); }} className="text-xs text-text-tertiary underline">Cancel selection</button>
+        {selected.size > 0 && <><span className="text-xs font-semibold text-lime">{selected.size.toLocaleString()} selected</span><button onClick={() => setSelected(new Set())} className="text-xs text-text-tertiary underline">Clear</button><span className="grow" /><button onClick={() => setAction({ kind: "APPROVE", ids: [...selected] })} className="rounded-full bg-mint/10 px-3 py-1.5 text-xs font-semibold text-mint">Approve selected</button><button onClick={() => setAction({ kind: "REJECT", ids: [...selected] })} className="rounded-full bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral">Reject selected</button><button onClick={() => setAction({ kind: "VOID", ids: [...selected] })} className="rounded-full bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral">Void selected</button></>}
+      </>}
     </div>
 
     <div className="card overflow-hidden">
-      {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div className="overflow-visible lg:overflow-x-auto"><table className="block w-full lg:table"><thead className="hidden lg:table-header-group"><tr className="border-b border-[var(--border)]"><th className="w-10 p-4" /><Th>Description</Th><Th right>Amount</Th><Th>Status</Th><Th>Date</Th><Th>Actions</Th></tr></thead><tbody className="block lg:table-row-group">
-        {transactions.map((tx) => <Fragment key={tx.id}><tr className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-4 border-b border-[var(--border)] p-4 lg:table-row lg:p-0 ${tx.voidedAt ? "opacity-60" : ""}`}>
-          <td className="row-span-4 p-0 lg:table-cell lg:p-4"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></td>
+      {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div className="overflow-visible lg:overflow-x-auto"><table className="block w-full lg:table"><thead className="hidden lg:table-header-group"><tr className="border-b border-[var(--border)]">{selectionMode && <th className="w-10 p-4" />}<Th>Description</Th><Th right>Amount</Th><Th>Status</Th><Th>Date</Th><Th>Actions</Th></tr></thead><tbody className="block lg:table-row-group">
+        {transactions.map((tx) => <Fragment key={tx.id}><tr className={`grid ${selectionMode ? "grid-cols-[auto_1fr]" : "grid-cols-1"} gap-x-3 gap-y-4 border-b border-[var(--border)] p-4 lg:table-row lg:p-0 ${tx.voidedAt ? "opacity-60" : ""}`}>
+          {selectionMode && <td className="row-span-4 p-0 lg:table-cell lg:p-4"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></td>}
           <td className="p-0 lg:table-cell lg:p-4">
             <div className="text-sm font-medium text-text-primary">{tx.description}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
-              <span>{tx.type}</span><span>·</span>
-              {tx.method === "UPI" && !tx.paymentMethodDetail
-                ? <span className="text-[10px] text-text-tertiary">Admin noted</span>
-                : <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />}
+              <span>{tx.type}</span>
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
               {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
               {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}
             </div>
-            {tx.fromUser && (
-              <div className="mt-2.5 flex items-center gap-2">
-                <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-text-tertiary">Donor</span>
-                <TgUser name={tx.fromUser.name} telegramUser={tx.fromUser.telegramUser} photoUrl={tx.fromUser.photoUrl} size={28} nameClassName="!text-[15px] font-semibold" />
-              </div>
-            )}
+            <div className="mt-2.5">
+              <TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={28} />
+            </div>
             {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
           </td>
           <td className={`p-0 text-sm font-semibold lg:table-cell lg:p-4 lg:text-right ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="mr-2 font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></td>
           <td className="p-0 lg:table-cell lg:p-4 lg:text-center"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</td>
           <td className="p-0 text-xs text-text-secondary lg:table-cell lg:p-4 lg:text-right">{formatDate(tx.date)}</td>
-          <td className="col-span-2 p-0 lg:table-cell lg:p-4"><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
-        </tr>{editingId === tx.id && <tr className="block border-b border-[var(--border)] lg:table-row"><td colSpan={6} className="block p-0 lg:table-cell">{editor()}</td></tr>}</Fragment>)}
+          <td className={`${selectionMode ? "col-span-2" : ""} p-0 lg:table-cell lg:p-4`}><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
+        </tr>{editingId === tx.id && <tr className="block border-b border-[var(--border)] lg:table-row"><td colSpan={selectionMode ? 6 : 5} className="block p-0 lg:table-cell">{editor()}</td></tr>}</Fragment>)}
       </tbody></table></div>}
     </div>
 
