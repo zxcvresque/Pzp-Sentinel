@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
     data: {
       amount: new Prisma.Decimal(amount),
       currency: currency || "INR",
-      method: method || "UPI",
+      method: method || "OTHER",
       direction: direction || "IN",
       type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
       description,

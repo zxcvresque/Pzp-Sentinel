@@ -109,7 +109,7 @@ export default function TransactionsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewedEditConfirm, setReviewedEditConfirm] = useState(false);
   const [pendingReviewedSubmit, setPendingReviewedSubmit] = useState(false);
-  const [form, setForm] = useState({ amount: "", currency: "INR", method: "UPI", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" });
+  const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" });
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
 
@@ -145,7 +145,7 @@ export default function TransactionsPage() {
   useEffect(() => { fetch("/api/users").then((r) => r.json()).then((d) => setUsers((d.users || []).filter((u: { roles?: string[] }) => u.roles?.includes("DONOR")))).catch(() => {}); }, []);
 
   function updateFilter(key: keyof typeof defaultFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); setSelected(new Set()); }
-  function resetForm() { setForm({ amount: "", currency: "INR", method: "UPI", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" }); setEditingId(null); setShowCreate(false); }
+  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" }); setEditingId(null); setShowCreate(false); }
   function startEdit(tx: Transaction) {
     if (tx.voidedAt) return;
     setShowCreate(false); setEditingId(tx.id);
@@ -206,7 +206,7 @@ export default function TransactionsPage() {
         <SelectField label="Currency" value={form.currency} options={[["INR", "INR (₹)"], ["USD", "USD ($)"]]} onChange={(v) => setForm({ ...form, currency: v })} />
         <SelectField label="Direction" value={form.direction} options={[["IN", "Income (IN)"], ["OUT", "Expense (OUT)"]]} onChange={(v) => setForm({ ...form, direction: v, fromUserId: v === "OUT" ? "" : form.fromUserId })} />
         <SelectField label="Type" value={form.type} options={[["DONATION", "Donation"], ["EXPENSE", "Expense"], ["SUBSCRIPTION", "Subscription"], ["OTHER", "Other"]]} onChange={(v) => setForm({ ...form, type: v })} />
-        <SelectField label="Method" value={form.method} options={[["UPI", "UPI"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["OTHER", "Other"]]} onChange={(v) => setForm({ ...form, method: v })} />
+        <SelectField label="Payment source" value={form.method} options={[["OTHER", "Admin noted / unknown"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["UPI", "Confirmed direct UPI"]]} onChange={(v) => setForm({ ...form, method: v })} />
         <Field label="Description"><input required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" /></Field>
         <Field label="Date"><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" /></Field>
         {form.direction === "IN" && <SelectField label="Donor / source user" value={form.fromUserId} options={[["", "External / unlinked"], ...users.map((u) => [u.id, `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`])]} onChange={(v) => setForm({ ...form, fromUserId: v })} />}
@@ -277,7 +277,9 @@ export default function TransactionsPage() {
             <div className="text-sm font-medium text-text-primary">{tx.description}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
               <span>{tx.type}</span><span>·</span>
-              <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
+              {tx.method === "UPI" && !tx.paymentMethodDetail
+                ? <span className="text-[10px] text-text-tertiary">Admin noted</span>
+                : <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />}
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
               {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
               {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}

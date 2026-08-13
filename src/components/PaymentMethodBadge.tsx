@@ -4,16 +4,16 @@ const ASSET_ROOT = "/Payment%20Apps%20Icons";
 const UPI_ICON = { src: `${ASSET_ROOT}/500px-UPI-Logo.webp`, alt: "UPI" };
 
 const DETAIL_ICONS: Record<string, { src: string; alt: string }> = {
-  google_pay: { src: `${ASSET_ROOT}/google-pay-dark.svg`, alt: "Google Pay" },
+  google_pay: { src: `${ASSET_ROOT}/google-pay-light.svg`, alt: "Google Pay" },
   phonepe: { src: `${ASSET_ROOT}/PhonePe-Logo.wine.svg`, alt: "PhonePe" },
   paytm: { src: `${ASSET_ROOT}/Paytm-Logo.wine.svg`, alt: "Paytm" },
-  amazon_pay: { src: `${ASSET_ROOT}/amazon-pay-dark.svg`, alt: "Amazon Pay" },
+  amazon_pay: { src: `${ASSET_ROOT}/amazon-pay-light.svg`, alt: "Amazon Pay" },
   mobikwik: { src: `${ASSET_ROOT}/MobiKwik-Logo.wine.svg`, alt: "MobiKwik" },
-  apple_pay: { src: `${ASSET_ROOT}/apple-pay-dark.svg`, alt: "Apple Pay" },
-  samsung_pay: { src: `${ASSET_ROOT}/samsung-pay-dark.svg`, alt: "Samsung Pay" },
-  visa: { src: `${ASSET_ROOT}/visa-dark.svg`, alt: "Visa" },
-  mastercard: { src: `${ASSET_ROOT}/mastercard-dark.svg`, alt: "Mastercard" },
-  amex: { src: `${ASSET_ROOT}/amex-dark.svg`, alt: "American Express" },
+  apple_pay: { src: `${ASSET_ROOT}/apple-pay-light.svg`, alt: "Apple Pay" },
+  samsung_pay: { src: `${ASSET_ROOT}/samsung-pay-light.svg`, alt: "Samsung Pay" },
+  visa: { src: `${ASSET_ROOT}/visa-light.svg`, alt: "Visa" },
+  mastercard: { src: `${ASSET_ROOT}/mastercard-light.svg`, alt: "Mastercard" },
+  amex: { src: `${ASSET_ROOT}/amex-light.svg`, alt: "American Express" },
   card: { src: `${ASSET_ROOT}/cards.webp`, alt: "Card" },
   upi: UPI_ICON,
 };
@@ -75,12 +75,11 @@ export default function PaymentMethodBadge({
   }
 
   if (normalizedMethod === "UPI") {
-    return (
-      <span title="UPI" className="inline-flex items-center gap-1.5 rounded-full border border-violet/20 bg-violet/[.06] px-2 py-1 text-[10px] font-semibold text-violet">
-        <Image src={UPI_ICON.src} alt={UPI_ICON.alt} width={40} height={16} className="h-4 w-10 object-contain" />
-        {!compact && <span>UPI</span>}
-      </span>
-    );
+    return <span className="text-[10px] text-text-tertiary">UPI</span>;
+  }
+
+  if (normalizedMethod === "OTHER") {
+    return <span className="text-[10px] text-text-tertiary">Admin noted</span>;
   }
 
   return <span className="text-[10px] text-text-tertiary">{titleCase(method.toLowerCase())}</span>;

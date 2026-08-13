@@ -5,12 +5,12 @@ import { useState } from "react";
 
 const ASSET_ROOT = "/Payment%20Apps%20Icons";
 const METHODS = [
-  ["google-pay-dark.svg", "Google Pay"],
+  ["google-pay-light.svg", "Google Pay"],
   ["PhonePe-Logo.wine.svg", "PhonePe"],
   ["Paytm-Logo.wine.svg", "Paytm"],
-  ["amazon-pay-dark.svg", "Amazon Pay"],
-  ["visa-dark.svg", "Visa"],
-  ["mastercard-dark.svg", "Mastercard"],
+  ["amazon-pay-light.svg", "Amazon Pay"],
+  ["visa-light.svg", "Visa"],
+  ["mastercard-light.svg", "Mastercard"],
 ] as const;
 
 export default function RazorpayAccessBanner({
@@ -45,14 +45,14 @@ export default function RazorpayAccessBanner({
         <div>
           <div className="mb-2 flex items-center gap-2">
             <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={34} height={24} className="h-6 w-8 object-contain" />
-            <h2 className="text-base font-bold text-text-primary">UPI is not enabled for your account yet</h2>
+            <h2 className="text-base font-bold text-text-primary">UPI &amp; Bank Methods are not enabled for your account yet</h2>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-text-secondary">
             Request approval to pay inside Sentinel through Razorpay using UPI, cards, wallets, or netbanking. An administrator will be notified immediately.
           </p>
           <div className="mt-4 flex flex-wrap gap-2" aria-label="Payment methods available after approval">
             {METHODS.map(([src, alt]) => (
-              <span key={src} className="grid h-9 w-14 place-items-center rounded-lg border border-white/10 bg-white/[.04] p-1">
+              <span key={src} className="grid h-9 w-14 place-items-center overflow-hidden rounded-lg border border-white/15 bg-white p-1 shadow-sm">
                 <Image src={`${ASSET_ROOT}/${src}`} alt={alt} width={44} height={28} className="max-h-7 w-11 object-contain" />
               </span>
             ))}
