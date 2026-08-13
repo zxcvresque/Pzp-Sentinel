@@ -8,7 +8,6 @@ const linksByRole = {
     { label: "Catalogue", href: "/admin/services" },
     { label: "Credentials", href: "/admin/credentials" },
     { label: "VPS Stats", href: "/admin/vps" },
-    { label: "API Usage", href: "/admin/api-usage" },
   ],
   DEV: [
     { label: "VPS Stats", href: "/dev/vps" },

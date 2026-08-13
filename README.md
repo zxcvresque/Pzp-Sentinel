@@ -102,7 +102,7 @@ The admin transaction screen works as a responsive card interface on mobile and 
 | Selection | Select visible rows or every matching filtered record, up to 5,000 transactions |
 | Bulk actions | Approve pending records, reject with a shared reason, or void with a required reason |
 | Failure handling | Reports requested, succeeded, and failed counts plus the failure for each affected record |
-| Editing | Amount, currency, method, direction, type, date, description, donor/source, proof, and attachments |
+| Editing | Amount, currency, method, direction, type, date, description, donor/source, and up to 10 attachments (any file type, 20 MB each) |
 | Reviewed records | Material edits require an explicit warning and confirmation |
 | Exports and mirrors | CSV export, manual Sheets sync, and on-demand workbook backup |
 
@@ -622,7 +622,7 @@ sudo systemctl daemon-reload
 - **Financial retention:** voiding records `voidedAt`, `voidedBy`, and `voidReason`; it does not delete the transaction or its audit relation.
 - **Mutation evidence:** transaction create/edit/review/void events are written to PostgreSQL and mirrored to configured Telegram/GitHub log destinations.
 - **Provider verification:** Razorpay HMAC/payment verification and BMC webhook signature verification happen on the server.
-- **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints.
+- **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints. Transaction attachments accept any file type up to 20 MB each, are stored beneath the persistent git-ignored `./data/transaction-attachments` directory, and require an authorized session to download.
 - **Operational visibility:** bulk actions return partial failures rather than implying that every selected record succeeded.
 
 The application log is append-oriented, but its strength still depends on production database permissions, GitHub repository protection, Telegram retention, and careful secret management.
@@ -732,7 +732,7 @@ npm test
 npm run build
 ```
 
-Focused tests cover transaction query construction, broadcast parsing and Telegram conversion, payment signatures, provider webhook handling, invitation tokens, encryption, Telegram escaping, and API-usage parsing.
+Focused tests cover transaction query construction, broadcast parsing and Telegram conversion, payment signatures, provider webhook handling, invitation tokens, encryption, and Telegram escaping.
 
 ---
 

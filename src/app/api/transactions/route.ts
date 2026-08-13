@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
   }
 
+  if (
+    attachments.length > 10
+    || attachments.some((item: unknown) => typeof item !== "string" || !item.trim())
+  ) {
+    return NextResponse.json({ error: "Attachments must contain at most 10 valid references" }, { status: 400 });
+  }
+
   const parsedAmount = parseFloat(amount);
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
     return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 });

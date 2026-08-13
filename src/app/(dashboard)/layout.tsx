@@ -158,7 +158,6 @@ export default function DashboardLayout({
     "/admin/reminders": "Admin / Reminders",
     "/admin/credentials": "Admin / Credentials",
     "/admin/vps": "Admin / VPS Stats",
-    "/admin/api-usage": "Admin / API Usage",
     "/admin/repos": "Admin / Repos",
     "/admin/audit": "Settings / Audit Log",
     "/dev": "Dev / Board",

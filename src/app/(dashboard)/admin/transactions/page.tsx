@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
+import TransactionAttachmentField from "@/components/TransactionAttachmentField";
 import TransactionAttribution from "@/components/TransactionAttribution";
 
 interface Person {
@@ -105,11 +106,12 @@ export default function TransactionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [action, setAction] = useState<{ kind: ActionKind; ids: string[] } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewedEditConfirm, setReviewedEditConfirm] = useState(false);
   const [pendingReviewedSubmit, setPendingReviewedSubmit] = useState(false);
-  const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" });
+  const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: [] as string[] });
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
 
@@ -145,11 +147,11 @@ export default function TransactionsPage() {
   useEffect(() => { fetch("/api/users").then((r) => r.json()).then((d) => setUsers((d.users || []).filter((u: { roles?: string[] }) => u.roles?.includes("DONOR")))).catch(() => {}); }, []);
 
   function updateFilter(key: keyof typeof defaultFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); setSelected(new Set()); }
-  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: "" }); setEditingId(null); setShowCreate(false); }
+  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: [] }); setUploadingAttachments(false); setEditingId(null); setShowCreate(false); }
   function startEdit(tx: Transaction) {
     if (tx.voidedAt) return;
     setShowCreate(false); setEditingId(tx.id);
-    setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", attachments: tx.attachments.join("\n") });
+    setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", attachments: [...tx.attachments] });
     setTimeout(() => document.getElementById(`editor-${tx.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
   }
 
@@ -157,7 +159,7 @@ export default function TransactionsPage() {
     setSaving(true); setFeedback(null);
     try {
       const editing = transactions.find((tx) => tx.id === editingId);
-      const payload = { ...form, fromUserId: form.direction === "IN" ? form.fromUserId || null : null, attachments: form.attachments.split("\n").map((v) => v.trim()).filter(Boolean), confirmReviewedEdit };
+      const payload = { ...form, fromUserId: form.direction === "IN" ? form.fromUserId || null : null, confirmReviewedEdit };
       const response = await fetch(editingId ? `/api/transactions/${editingId}` : "/api/transactions", { method: editingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (response.status === 409 && editing && editing.status !== "PENDING" && !confirmReviewedEdit) { setPendingReviewedSubmit(true); setReviewedEditConfirm(true); return; }
@@ -211,8 +213,8 @@ export default function TransactionsPage() {
         <Field label="Date"><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" /></Field>
         {form.direction === "IN" && <SelectField label="Donor / source user" value={form.fromUserId} options={[["", "External / unlinked"], ...users.map((u) => [u.id, `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`])]} onChange={(v) => setForm({ ...form, fromUserId: v })} />}
       </div>
-      <Field label="Attachments (one stored URL or file reference per line)" extra="mt-4"><textarea rows={3} value={form.attachments} onChange={(e) => setForm({ ...form, attachments: e.target.value })} className="input resize-y" placeholder="https://..." /></Field>
-      <button disabled={saving || !form.amount || !form.description.trim()} className="mt-4 rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void disabled:opacity-40">{saving ? "Saving..." : editingId ? "Save changes" : "Log transaction"}</button>
+      <TransactionAttachmentField value={form.attachments} onChange={(attachments) => setForm({ ...form, attachments })} onUploadingChange={setUploadingAttachments} />
+      <button disabled={saving || uploadingAttachments || !form.amount || !form.description.trim()} className="mt-4 rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void disabled:opacity-40">{uploadingAttachments ? "Uploading attachments..." : saving ? "Saving..." : editingId ? "Save changes" : "Log transaction"}</button>
     </form>;
   }
 

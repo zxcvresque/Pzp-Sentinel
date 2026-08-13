@@ -77,8 +77,12 @@ export default function ServicesPage() {
   const [planUrl, setPlanUrl] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [subStatus, setSubStatus] = useState("ACTIVE");
+  const [recordPayment, setRecordPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState("OTHER");
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -109,6 +113,10 @@ export default function ServicesPage() {
     setPlanUrl("");
     setExpiryDate("");
     setSubStatus("ACTIVE");
+    setRecordPayment(false);
+    setPaymentMethod("OTHER");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setFormError("");
   };
 
   const openCreateForm = () => {
@@ -130,12 +138,14 @@ export default function ServicesPage() {
     setPlanUrl(svc.planUrl || "");
     setExpiryDate(svc.expiryDate ? svc.expiryDate.slice(0, 10) : "");
     setSubStatus(svc.status || "ACTIVE");
+    setRecordPayment(false);
     setShowForm(true);
   };
 
   const handleSubmit = async () => {
     if (!category.trim() || !name.trim()) return;
     setSaving(true);
+    setFormError("");
 
     const validColumns = columns.filter((c) => c.key.trim() && c.label.trim());
     const payload: Record<string, unknown> = {
@@ -152,6 +162,11 @@ export default function ServicesPage() {
       payload.planUrl = planUrl || null;
       payload.expiryDate = expiryDate || null;
       payload.status = subStatus;
+      if (!editingId && recordPayment) {
+        payload.recordPayment = true;
+        payload.paymentMethod = paymentMethod;
+        payload.paymentDate = paymentDate || null;
+      }
     } else {
       // Clear subscription fields if cost tracking is off
       payload.price = null;
@@ -169,19 +184,25 @@ export default function ServicesPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to update");
+        }
       } else {
         const res = await fetch("/api/services", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error("Failed to create");
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to create");
+        }
       }
       resetForm();
       fetchServices();
-    } catch {
-      // silently handle
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not save service");
     } finally {
       setSaving(false);
     }
@@ -438,7 +459,7 @@ export default function ServicesPage() {
               <input
                 type="checkbox"
                 checked={trackCost}
-                onChange={(e) => setTrackCost(e.target.checked)}
+                onChange={(e) => { setTrackCost(e.target.checked); if (!e.target.checked) setRecordPayment(false); }}
                 className="w-4 h-4 rounded accent-[var(--lime)]"
               />
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
@@ -527,12 +548,50 @@ export default function ServicesPage() {
                 </div>
               </div>
             )}
+
+            {trackCost && !editingId && (
+              <div className="mt-4 rounded-xl border border-mint/15 bg-mint/[.035] p-4">
+                <label className="flex cursor-pointer items-start gap-2.5 select-none">
+                  <input
+                    type="checkbox"
+                    checked={recordPayment}
+                    onChange={(event) => setRecordPayment(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded accent-[var(--lime)]"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-text-primary">Record payment now</span>
+                    <span className="mt-0.5 block text-xs leading-5 text-text-tertiary">Create and link an approved expense transaction for this service price.</span>
+                  </span>
+                </label>
+                {recordPayment && (
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Payment source</label>
+                      <Dropdown
+                        value={paymentMethod}
+                        options={[
+                          { value: "OTHER", label: "Admin noted / card / other" },
+                          { value: "BANK", label: "Bank transfer" },
+                          { value: "UPI", label: "Direct UPI" },
+                        ]}
+                        onChange={setPaymentMethod}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Payment date</label>
+                      <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-4 py-3 text-text-primary outline-none focus:border-lime/30" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
+          {formError && <p role="alert" className="mb-3 text-sm text-coral">{formError}</p>}
           <div className="flex items-center gap-3 pt-2">
             <button
               onClick={handleSubmit}
-              disabled={saving || !category.trim() || !name.trim()}
+              disabled={saving || !category.trim() || !name.trim() || (recordPayment && !price)}
               className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-50"
             >
               {saving ? "Saving..." : editingId ? "Update Service" : "Create Service"}

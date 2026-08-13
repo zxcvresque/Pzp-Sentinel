@@ -32,6 +32,7 @@ sentinel-secrets.html
 CLAUDE.md
 
 # uploads (user-generated content)
+/data/transaction-attachments/
 
 # debug
 npm-debug.log*
