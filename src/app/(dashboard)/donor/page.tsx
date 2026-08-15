@@ -137,7 +137,7 @@ export default function DonorDashboard() {
         setUploading(true);
         const fd = new FormData();
         files.forEach(f => fd.append("files", f));
-        const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
+        const uploadRes = await fetch("/api/attachments", { method: "POST", body: fd });
         if (!uploadRes.ok) {
           const err = await uploadRes.json().catch(() => null);
           throw new Error(err?.error || "Upload failed");

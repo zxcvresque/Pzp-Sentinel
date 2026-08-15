@@ -8,6 +8,8 @@ import { logTransactionMutation } from "@/lib/telegram-log";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { bmcAccountSlug } from "@/lib/bmc-attribution";
 import { notify, formatTgMessage } from "@/lib/notifications";
+import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archive";
+import { serviceReminderRepeat } from "@/lib/service-templates";
 
 export async function PATCH(
   req: NextRequest,
@@ -20,7 +22,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, confirmReviewedEdit } = body;
+  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, serviceId, createService, confirmReviewedEdit } = body;
 
   // Validate amount if provided
   if (amount !== undefined) {
@@ -72,6 +74,11 @@ export async function PATCH(
   if (fromUserId !== undefined && fromUserId !== null && typeof fromUserId !== "string") {
     return NextResponse.json({ error: "Invalid donor/source user" }, { status: 400 });
   }
+  if (serviceId !== undefined && serviceId !== null) {
+    if (typeof serviceId !== "string" || !await prisma.service.findUnique({ where: { id: serviceId }, select: { id: true } })) {
+      return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+    }
+  }
   if (typeof fromUserId === "string" && fromUserId) {
     const sourceUser = await prisma.user.findFirst({
       where: { id: fromUserId, roles: { has: "DONOR" }, status: "ACTIVE" },
@@ -114,8 +121,58 @@ export async function PATCH(
   if (method !== undefined) data.method = method;
   if (description !== undefined) data.description = description.trim();
   if (date !== undefined) data.date = new Date(date);
-  if (attachments !== undefined) data.attachments = attachments.map((item: string) => item.trim());
+  if (attachments !== undefined) {
+    data.attachments = attachments.map((item: string) => item.trim());
+  }
   const effectiveDirection = direction ?? transaction.direction;
+  const effectiveType = type ?? transaction.type;
+  let createdServiceId: string | null = null;
+  if (createService) {
+    const serviceName = typeof createService.name === "string" ? createService.name.trim() : "";
+    const serviceCategory = typeof createService.category === "string" ? createService.category.trim() : "";
+    const serviceFrequency = ["WEEKLY", "MONTHLY", "YEARLY"].includes(createService.frequency) ? createService.frequency : null;
+    const renewalAt = createService.nextRenewal ? new Date(createService.nextRenewal) : null;
+    if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !serviceName || !serviceCategory || !serviceFrequency || !renewalAt || Number.isNaN(renewalAt.getTime())) {
+      return NextResponse.json({ error: "Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal" }, { status: 400 });
+    }
+    const service = await prisma.service.create({
+      data: {
+        name: serviceName,
+        category: serviceCategory,
+        price: amount !== undefined ? new Prisma.Decimal(amount) : transaction.amount,
+        currency: currency ?? transaction.currency,
+        frequency: serviceFrequency,
+        expiryDate: renewalAt,
+        lastRenewalDate: date ? new Date(date) : transaction.date,
+        status: "ACTIVE",
+        paidTxId: id,
+        attachments: attachments ?? transaction.attachments,
+      },
+    });
+    createdServiceId = service.id;
+    const repeat = serviceReminderRepeat(serviceFrequency);
+    if (repeat) {
+      await prisma.reminder.create({
+        data: {
+          createdById: user.id,
+          message: `Renew ${serviceName} (${service.currency} ${service.price})`,
+          frequency: "CUSTOM",
+          repeatEvery: repeat.repeatEvery,
+          repeatUnit: repeat.repeatUnit,
+          nextFire: renewalAt,
+          channel: "BOTH",
+          recipientRoles: ["ADMIN"],
+          serviceId: service.id,
+        },
+      });
+    }
+  }
+  if (serviceId !== undefined || effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION") {
+    const linkId = createdServiceId || serviceId;
+    data.linkedService = effectiveDirection === "OUT" && effectiveType === "SUBSCRIPTION" && linkId
+      ? { connect: { id: linkId } }
+      : { disconnect: true };
+  }
   if (fromUserId !== undefined || effectiveDirection === "OUT") {
     const sourceId = effectiveDirection === "OUT" ? null : fromUserId;
     data.fromUser = sourceId ? { connect: { id: sourceId } } : { disconnect: true };
@@ -131,12 +188,13 @@ export async function PATCH(
     date: transaction.date.toISOString(),
     fromUserId: transaction.fromUserId,
     attachments: transaction.attachments,
+    serviceId: transaction.serviceId,
   };
 
   const updated = await prisma.transaction.update({
     where: { id },
     data,
-    include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
+    include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true, linkedService: { select: { id: true, name: true } } },
   });
 
   if (isBmcReconciliation && updated.fromUserId) {
@@ -196,6 +254,7 @@ export async function PATCH(
     date: updated.date.toISOString(),
     fromUserId: updated.fromUserId,
     attachments: updated.attachments,
+    serviceId: updated.serviceId,
   };
 
   await logAudit({
@@ -241,7 +300,19 @@ export async function PATCH(
   });
   scheduleFinanceAutomation({ action: "UPDATED", actorName: user.name, transactionId: id });
 
-  return NextResponse.json({ transaction: updated });
+  // Archive new files and retry any prior Telegram archive failures. Existing
+  // successful copies are skipped using their persisted Telegram file ID.
+  const attachmentArchive = updated.attachments.length > 0
+    ? await archiveTransactionAttachmentsToTelegram({
+        id: updated.id,
+        amount: updated.amount,
+        currency: updated.currency,
+        description: updated.description,
+        attachments: updated.attachments,
+      })
+    : [];
+
+  return NextResponse.json({ transaction: updated, attachmentArchive });
 }
 
 export async function DELETE(

@@ -3,6 +3,39 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { Prisma } from "@/generated/prisma/client";
+import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { serviceReminderRepeat } from "@/lib/service-templates";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user || !hasRole(user.roles, "ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: user ? 403 : 401 });
+  }
+  const { id } = await params;
+  const service = await prisma.service.findUnique({
+    where: { id },
+    include: {
+      transactions: { orderBy: { date: "desc" }, include: { createdBy: { select: { name: true } } } },
+      paidTransaction: { include: { createdBy: { select: { name: true } } } },
+      credentials: {
+        where: { parentId: null },
+        select: { id: true, platform: true, label: true, status: true, expiresAt: true, updatedAt: true },
+        orderBy: { label: "asc" },
+      },
+      reminders: { where: { active: true }, orderBy: { nextFire: "asc" } },
+      alerts: { where: { status: "OPEN" }, orderBy: [{ severity: "desc" }, { dueAt: "asc" }] },
+      vpsServer: { select: { id: true, name: true } },
+    },
+  });
+  if (!service) return NextResponse.json({ error: "Service not found" }, { status: 404 });
+  const transactions = service.transactions.length > 0
+    ? service.transactions
+    : service.paidTransaction ? [service.paidTransaction] : [];
+  return NextResponse.json({ service: { ...service, transactions } });
+}
 
 export async function PATCH(
   req: NextRequest,
@@ -40,6 +73,74 @@ export async function PATCH(
   if (status !== undefined) data.status = status || null;
 
   const service = await prisma.service.update({ where: { id }, data });
+  if (expiryDate !== undefined || status !== undefined) {
+    await prisma.operationalAlert.updateMany({
+      where: { serviceId: id, status: "OPEN", kind: { in: ["UPCOMING_RENEWAL", "OVERDUE_PAYMENT"] } },
+      data: { status: "RESOLVED", resolvedAt: new Date() },
+    });
+  }
+
+  // Keep the linked renewal reminder synchronized with service billing data.
+  if (service.expiryDate && service.frequency) {
+    const repeat = serviceReminderRepeat(service.frequency);
+    if (repeat) {
+      await prisma.reminder.upsert({
+        where: { id: (await prisma.reminder.findFirst({ where: { serviceId: id } }))?.id ?? "missing" },
+        update: {
+          message: `Renew ${service.name}${service.price ? ` (${service.currency} ${service.price})` : ""}`,
+          nextFire: service.expiryDate,
+          frequency: "CUSTOM",
+          repeatEvery: repeat.repeatEvery,
+          repeatUnit: repeat.repeatUnit,
+          active: service.status === "ACTIVE",
+          recipientRoles: ["ADMIN"],
+        },
+        create: {
+          createdById: user.id,
+          message: `Renew ${service.name}${service.price ? ` (${service.currency} ${service.price})` : ""}`,
+          nextFire: service.expiryDate,
+          frequency: "CUSTOM",
+          repeatEvery: repeat.repeatEvery,
+          repeatUnit: repeat.repeatUnit,
+          channel: "BOTH",
+          active: service.status === "ACTIVE",
+          recipientRoles: ["ADMIN"],
+          serviceId: id,
+        },
+      });
+    } else {
+      await prisma.reminder.updateMany({ where: { serviceId: id, active: true }, data: { active: false } });
+    }
+  } else if (expiryDate !== undefined || frequency !== undefined || status !== undefined) {
+    await prisma.reminder.updateMany({
+      where: { serviceId: id, active: true },
+      data: { active: false },
+    });
+  }
+
+  if (existing.price != null && service.price != null && Number(service.price) > Number(existing.price)) {
+    const increase = Number(service.price) - Number(existing.price);
+    const fingerprint = `cost-increase:${id}:${Date.now()}`;
+    await prisma.operationalAlert.create({
+      data: {
+        fingerprint,
+        kind: "COST_INCREASE",
+        severity: "HIGH",
+        title: `Cost increased: ${service.name}`,
+        message: `${service.currency} ${existing.price} → ${service.currency} ${service.price} (+${increase.toFixed(2)})`,
+        serviceId: id,
+      },
+    });
+    notifyAdmins({
+      type: "SYSTEM",
+      title: `Cost increased: ${service.name}`,
+      message: `${service.currency} ${existing.price} → ${service.currency} ${service.price}`,
+      entityId: id,
+      priority: "HIGH",
+      actionUrl: `/admin/services/${id}`,
+      telegramMessage: formatTgMessage("Service cost increased", service.name, `${service.currency} ${existing.price} → ${service.currency} ${service.price}`),
+    }).catch(() => {});
+  }
 
   await logAudit({
     userId: user.id,

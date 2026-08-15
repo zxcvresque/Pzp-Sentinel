@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logReminderAction } from "@/lib/github-log";
+import {
+  parseReminderChannel,
+  parseReminderFrequency,
+  parseReminderRepeatUnit,
+} from "@/lib/admin-reminders";
 
 export async function PATCH(
   req: NextRequest,
@@ -20,12 +25,28 @@ export async function PATCH(
     return NextResponse.json({ error: "Reminder not found" }, { status: 404 });
   }
 
-  const body = await req.json();
-  const { message, frequency, nextFire, channel, recipientRoles } = body;
+  const body = await req.json().catch(() => null);
+  const message = typeof body?.message === "string" ? body.message.trim() : "";
+  const nextFire = new Date(body?.nextFire);
+  const frequency = parseReminderFrequency(body?.frequency ?? "ONCE");
+  const channel = parseReminderChannel(body?.channel ?? "BOTH");
+  const repeatEvery = Number(body?.repeatEvery);
+  const repeatUnit = parseReminderRepeatUnit(body?.repeatUnit);
 
-  if (!message || !nextFire) {
+  if (!message || Number.isNaN(nextFire.getTime())) {
     return NextResponse.json(
-      { error: "Message and nextFire are required" },
+      { error: "Message and a valid first send time are required" },
+      { status: 400 },
+    );
+  }
+  if (!frequency || !channel) {
+    return NextResponse.json({ error: "Invalid frequency or delivery channel" }, { status: 400 });
+  }
+  if (frequency === "CUSTOM" && (
+    !Number.isInteger(repeatEvery) || repeatEvery < 1 || repeatEvery > 10_000 || !repeatUnit
+  )) {
+    return NextResponse.json(
+      { error: "Custom repeats require a whole number from 1 to 10,000 and a valid unit" },
       { status: 400 },
     );
   }
@@ -34,10 +55,13 @@ export async function PATCH(
     where: { id },
     data: {
       message,
-      frequency: frequency || "ONCE",
-      nextFire: new Date(nextFire),
-      channel: channel || "BOTH",
-      recipientRoles: recipientRoles || [],
+      frequency,
+      repeatEvery: frequency === "CUSTOM" ? repeatEvery : null,
+      repeatUnit: frequency === "CUSTOM" ? repeatUnit : null,
+      nextFire,
+      active: true,
+      channel,
+      recipientRoles: ["ADMIN"],
     },
     include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });

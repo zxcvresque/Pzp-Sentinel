@@ -5,14 +5,16 @@ import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { reminderRepeatLabel, type ReminderFrequency, type ReminderRepeatUnit } from "@/lib/admin-reminders";
 
 interface Reminder {
   id: string;
   message: string;
   frequency: string;
+  repeatEvery?: number | null;
+  repeatUnit?: string | null;
   nextFire: string;
   channel: string;
-  recipientRoles: string[];
   createdBy: { name: string; photoUrl?: string | null; telegramUser?: string | null };
   createdAt: string;
 }
@@ -22,6 +24,7 @@ const FREQ_COLORS: Record<string, string> = {
   DAILY: "text-cyan",
   WEEKLY: "text-violet",
   MONTHLY: "text-amber",
+  CUSTOM: "text-lime",
 };
 
 const CHANNEL_COLORS: Record<string, string> = {
@@ -30,7 +33,11 @@ const CHANNEL_COLORS: Record<string, string> = {
   BOTH: "text-mint",
 };
 
-const ROLES = ["ADMIN", "DONOR", "DEV"] as const;
+function localDateTimeValue(value: string) {
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
 
 export default function RemindersPage() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -46,9 +53,11 @@ export default function RemindersPage() {
 
   const [message, setMessage] = useState("");
   const [frequency, setFrequency] = useState("ONCE");
+  const [repeatEvery, setRepeatEvery] = useState("1");
+  const [repeatUnit, setRepeatUnit] = useState("DAY");
   const [nextFire, setNextFire] = useState("");
   const [channel, setChannel] = useState("BOTH");
-  const [recipientRoles, setRecipientRoles] = useState<string[]>([]);
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
     fetch("/api/reminders")
@@ -60,25 +69,26 @@ export default function RemindersPage() {
   function resetForm() {
     setMessage("");
     setFrequency("ONCE");
+    setRepeatEvery("1");
+    setRepeatUnit("DAY");
     setNextFire("");
     setChannel("BOTH");
-    setRecipientRoles([]);
+    setErrorMsg("");
     setEditingId(null);
-  }
-
-  function toggleRole(role: string) {
-    setRecipientRoles((prev) =>
-      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role],
-    );
   }
 
   function handleEdit(rem: Reminder) {
     setEditingId(rem.id);
     setMessage(rem.message);
-    setFrequency(rem.frequency);
-    setNextFire(rem.nextFire.slice(0, 16));
+    const isLegacyRepeat = rem.frequency !== "ONCE" && rem.frequency !== "CUSTOM";
+    setFrequency(isLegacyRepeat ? "CUSTOM" : rem.frequency);
+    setRepeatEvery(String(rem.repeatEvery ?? 1));
+    setRepeatUnit(rem.repeatUnit ?? (
+      rem.frequency === "WEEKLY" ? "WEEK" : rem.frequency === "MONTHLY" ? "MONTH" : "DAY"
+    ));
+    setNextFire(localDateTimeValue(rem.nextFire));
     setChannel(rem.channel);
-    setRecipientRoles(rem.recipientRoles);
+    setErrorMsg("");
     setShowForm(true);
   }
 
@@ -90,8 +100,16 @@ export default function RemindersPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setErrorMsg("");
 
-    const payload = { message, frequency, nextFire, channel, recipientRoles };
+    const payload = {
+      message,
+      frequency,
+      nextFire: new Date(nextFire).toISOString(),
+      channel,
+      repeatEvery: frequency === "CUSTOM" ? Number(repeatEvery) : undefined,
+      repeatUnit: frequency === "CUSTOM" ? repeatUnit : undefined,
+    };
 
     const res = editingId
       ? await fetch(`/api/reminders/${editingId}`, {
@@ -125,6 +143,9 @@ export default function RemindersPage() {
       resetForm();
       setSuccessMsg(msg);
       setTimeout(() => setSuccessMsg(""), 3000);
+    } else {
+      const data = await res.json().catch(() => null);
+      setErrorMsg(data?.error || "Could not save the reminder.");
     }
     setSubmitting(false);
   }
@@ -207,7 +228,15 @@ export default function RemindersPage() {
               </button>
             )}
           </div>
-          <FormExample lines={["Message: Renew Supabase Pro plan", "Frequency: Monthly · Channel: Telegram DM"]} />
+          <FormExample lines={["Message: Renew Supabase Pro plan", "Repeat: Every 2 weeks · Delivery: Telegram DM"]} />
+          <div className="mb-4 rounded-lg border border-lime/15 bg-lime/5 px-4 py-3 text-sm text-text-secondary">
+            This reminder is sent to every active admin.
+          </div>
+          {errorMsg && (
+            <div className="mb-4 rounded-lg border border-coral/20 bg-coral/8 px-4 py-3 text-sm text-coral">
+              {errorMsg}
+            </div>
+          )}
           <div className="mb-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Message
@@ -230,16 +259,14 @@ export default function RemindersPage() {
                 value={frequency}
                 options={[
                   { value: "ONCE", label: "Once" },
-                  { value: "DAILY", label: "Daily" },
-                  { value: "WEEKLY", label: "Weekly" },
-                  { value: "MONTHLY", label: "Monthly" },
+                  { value: "CUSTOM", label: "Repeat every…" },
                 ]}
                 onChange={setFrequency}
               />
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Next Fire
+                First Send
               </label>
               <input
                 type="datetime-local"
@@ -251,40 +278,52 @@ export default function RemindersPage() {
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Channel
+                Delivery
               </label>
               <Dropdown
                 value={channel}
                 options={[
                   { value: "BOTH", label: "Both" },
-                  { value: "BOT", label: "Bot" },
-                  { value: "WEB", label: "Web" },
+                  { value: "BOT", label: "Telegram DM" },
+                  { value: "WEB", label: "In-app" },
                 ]}
                 onChange={setChannel}
               />
             </div>
           </div>
-          <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-              Recipient Roles
-            </label>
-            <div className="flex gap-3">
-              {ROLES.map((role) => (
-                <label key={role} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={recipientRoles.includes(role)}
-                    onChange={() => toggleRole(role)}
-                    className="accent-lime"
-                  />
-                  <span className="font-mono text-xs text-text-secondary">{role}</span>
-                </label>
-              ))}
+          {frequency === "CUSTOM" && (
+            <div className="mb-4">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Repeat Every
+              </label>
+              <div className="grid max-w-xl grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3">
+                <input
+                  type="number"
+                  min="1"
+                  max="10000"
+                  step="1"
+                  value={repeatEvery}
+                  onChange={(e) => setRepeatEvery(e.target.value)}
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+                <Dropdown
+                  value={repeatUnit}
+                  options={[
+                    { value: "MINUTE", label: "Minutes" },
+                    { value: "HOUR", label: "Hours" },
+                    { value: "DAY", label: "Days" },
+                    { value: "WEEK", label: "Weeks" },
+                    { value: "MONTH", label: "Months" },
+                  ]}
+                  onChange={setRepeatUnit}
+                />
+              </div>
             </div>
-          </div>
+          )}
           <button
             type="submit"
-            disabled={submitting || !message || !nextFire}
+            disabled={submitting || !message || !nextFire || (frequency === "CUSTOM" && !repeatEvery)}
             className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
           >
             {submitting
@@ -298,7 +337,7 @@ export default function RemindersPage() {
         <div className="card p-8 text-center">
           <p className="text-text-secondary mb-2">No reminders yet.</p>
           <p className="text-text-tertiary text-sm">
-            Schedule recurring bot messages for subscription renewals and community announcements.
+            Schedule one-time or repeating messages for all active admins.
           </p>
         </div>
       ) : (
@@ -311,24 +350,20 @@ export default function RemindersPage() {
                   <span
                     className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--bg-deep)] ${FREQ_COLORS[rem.frequency] || "text-text-secondary"}`}
                   >
-                    {rem.frequency}
+                    {reminderRepeatLabel(
+                      rem.frequency as ReminderFrequency,
+                      rem.repeatEvery,
+                      rem.repeatUnit as ReminderRepeatUnit | null,
+                    )}
                   </span>
                   <span
                     className={`font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--bg-deep)] ${CHANNEL_COLORS[rem.channel] || "text-text-secondary"}`}
                   >
-                    {rem.channel}
+                    {rem.channel === "BOT" ? "Telegram DM" : rem.channel === "WEB" ? "In-app" : "Both"}
                   </span>
-                  {rem.recipientRoles.map((role) => (
-                    <span
-                      key={role}
-                      className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-1 rounded bg-[var(--bg-deep)] text-text-secondary"
-                    >
-                      {role}
-                    </span>
-                  ))}
                 </div>
                 <div className="text-text-tertiary text-xs mt-2">
-                  Next: {new Date(rem.nextFire).toLocaleString()} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
+                  Next: {new Date(rem.nextFire).toLocaleString()} · all admins · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">

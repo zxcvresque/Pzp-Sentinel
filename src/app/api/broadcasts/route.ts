@@ -13,6 +13,7 @@ import {
   parseBroadcastAudience,
   parseBroadcastRecipientMode,
 } from "@/lib/broadcast-audience";
+import { parseReminderRepeatUnit } from "@/lib/admin-reminders";
 
 function telegramDestination() {
   return {
@@ -46,6 +47,11 @@ export async function GET() {
     },
   });
   const { groupId } = telegramDestination();
+  const schedules = await prisma.scheduledBroadcast.findMany({
+    where: { active: true },
+    orderBy: { nextFire: "asc" },
+    include: { createdBy: { select: { name: true } } },
+  });
 
   return NextResponse.json({
     recipients,
@@ -56,6 +62,7 @@ export async function GET() {
       everyone: recipients.length,
     },
     telegramConfigured: Boolean(process.env.BOT_TOKEN && groupId),
+    schedules,
   });
 }
 
@@ -76,6 +83,10 @@ export async function POST(req: NextRequest) {
   const recipientIds = [...new Set(rawRecipientIds.filter(
     (id): id is string => typeof id === "string" && id.length > 0,
   ))];
+  const repeat = body?.repeat === true;
+  const repeatEvery = Number(body?.repeatEvery);
+  const repeatUnit = parseReminderRepeatUnit(body?.repeatUnit);
+  const firstSend = new Date(body?.firstSend);
 
   if (!title || !message) {
     return NextResponse.json({ error: "Title and message are required" }, { status: 400 });
@@ -101,6 +112,61 @@ export async function POST(req: NextRequest) {
         ? "Telegram group delivery is unavailable for individually targeted broadcasts"
         : "The configured Telegram group is for donor-inclusive broadcasts only",
     }, { status: 400 });
+  }
+  if (repeat && (
+    Number.isNaN(firstSend.getTime())
+    || firstSend <= new Date()
+    || !Number.isInteger(repeatEvery)
+    || repeatEvery < 1
+    || repeatEvery > 10_000
+    || !repeatUnit
+  )) {
+    return NextResponse.json({
+      error: "Repeating broadcasts require a future first-send time, a whole number from 1 to 10,000, and a valid unit",
+    }, { status: 400 });
+  }
+
+  if (repeat) {
+    const schedule = await prisma.scheduledBroadcast.create({
+      data: {
+        createdById: user.id,
+        title,
+        message,
+        audience,
+        recipientMode,
+        recipientIds: recipientMode === "SELECTED" ? recipientIds : [],
+        sendSentinel,
+        sendTelegram,
+        highPriority,
+        repeatEvery,
+        repeatUnit: repeatUnit!,
+        nextFire: firstSend,
+      },
+      include: { createdBy: { select: { name: true } } },
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: "BROADCAST_SCHEDULED",
+      entityType: "ScheduledBroadcast",
+      entityId: schedule.id,
+      after: {
+        title,
+        audience,
+        recipientMode,
+        recipientIds: recipientMode === "SELECTED" ? recipientIds : undefined,
+        highPriority,
+        sendSentinel,
+        sendTelegram,
+        repeatEvery,
+        repeatUnit,
+        firstSend,
+      },
+      userName: user.name,
+      details: `Scheduled repeating broadcast “${title}” every ${repeatEvery} ${repeatUnit!.toLowerCase()}(s)`,
+    });
+
+    return NextResponse.json({ scheduled: true, schedule }, { status: 201 });
   }
 
   const broadcastId = randomUUID();

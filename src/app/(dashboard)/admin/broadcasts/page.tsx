@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
 import TgUser from "@/components/TgUser";
+import Dropdown from "@/components/Dropdown";
 import {
   canSendBroadcastToTelegramGroup,
   type BroadcastAudience,
@@ -22,6 +23,19 @@ interface BroadcastConfig {
   recipients: BroadcastRecipient[];
   counts: { admins: number; donors: number; devs: number; everyone: number };
   telegramConfigured: boolean;
+  schedules: ScheduledBroadcast[];
+}
+
+interface ScheduledBroadcast {
+  id: string;
+  title: string;
+  audience: BroadcastAudience;
+  repeatEvery: number;
+  repeatUnit: string;
+  nextFire: string;
+  lastFiredAt?: string | null;
+  lastError?: string | null;
+  createdBy: { name: string };
 }
 
 interface DeliveryResults {
@@ -48,6 +62,10 @@ export default function BroadcastsPage() {
   const [sendSentinel, setSendSentinel] = useState(true);
   const [sendTelegram, setSendTelegram] = useState(false);
   const [highPriority, setHighPriority] = useState(true);
+  const [repeat, setRepeat] = useState(false);
+  const [firstSend, setFirstSend] = useState("");
+  const [repeatEvery, setRepeatEvery] = useState("1");
+  const [repeatUnit, setRepeatUnit] = useState("DAY");
   const [audience, setAudience] = useState<BroadcastAudience>("DONORS");
   const [recipientMode, setRecipientMode] = useState<BroadcastRecipientMode>("ALL");
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
@@ -99,7 +117,8 @@ export default function BroadcastsPage() {
     title.trim()
     && message.trim()
     && (sendSentinel || sendTelegram)
-    && (!sendSentinel || sentinelRecipientCount > 0),
+    && (!sendSentinel || sentinelRecipientCount > 0)
+    && (!repeat || Boolean(firstSend && Number(repeatEvery) >= 1))
   );
   const destinations = [
     sendSentinel ? `${sentinelRecipientCount} selected member${sentinelRecipientCount === 1 ? "" : "s"} in Sentinel` : null,
@@ -191,10 +210,32 @@ export default function BroadcastsPage() {
           audience,
           recipientMode,
           recipientIds: recipientMode === "SELECTED" ? selectedRecipientIds : [],
+          repeat,
+          firstSend: repeat ? new Date(firstSend).toISOString() : undefined,
+          repeatEvery: repeat ? Number(repeatEvery) : undefined,
+          repeatUnit: repeat ? repeatUnit : undefined,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Broadcast failed");
+
+      if (data.scheduled) {
+        setConfig((current) => current ? {
+          ...current,
+          schedules: [...current.schedules, data.schedule].sort(
+            (a, b) => new Date(a.nextFire).getTime() - new Date(b.nextFire).getTime(),
+          ),
+        } : current);
+        setFeedback({ tone: "success", text: "Repeating broadcast scheduled." });
+        setTitle("");
+        setMessage("");
+        setSelectedRecipientIds([]);
+        setRepeat(false);
+        setFirstSend("");
+        setRepeatEvery("1");
+        setRepeatUnit("DAY");
+        return;
+      }
 
       const results = data.results as DeliveryResults;
       const parts: string[] = [];
@@ -222,15 +263,31 @@ export default function BroadcastsPage() {
     }
   }
 
+  async function cancelSchedule(id: string) {
+    const response = await fetch(`/api/broadcasts/${id}`, { method: "DELETE" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      setFeedback({ tone: "error", text: data?.error || "Could not cancel repeating broadcast" });
+      return;
+    }
+    setConfig((current) => current ? {
+      ...current,
+      schedules: current.schedules.filter((schedule) => schedule.id !== id),
+    } : current);
+    setFeedback({ tone: "success", text: "Repeating broadcast cancelled." });
+  }
+
   return (
     <div className="max-w-4xl">
       <ConfirmDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         onConfirm={sendBroadcast}
-        title="Send this broadcast now?"
-        message={`This will immediately notify ${destinations}.`}
-        confirmLabel="Send broadcast"
+        title={repeat ? "Schedule this repeating broadcast?" : "Send this broadcast now?"}
+        message={repeat
+          ? `This will first notify ${destinations} on ${firstSend ? new Date(firstSend).toLocaleString() : "the selected date"}, then repeat.`
+          : `This will immediately notify ${destinations}.`}
+        confirmLabel={repeat ? "Schedule broadcast" : "Send broadcast"}
         variant="default"
         loading={sending}
       />
@@ -523,6 +580,73 @@ export default function BroadcastsPage() {
             </div>
           </fieldset>
 
+          <fieldset>
+            <legend className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Timing</legend>
+            <div className="grid grid-cols-2 rounded-xl border border-[var(--border)] bg-bg-deep p-1">
+              <button
+                type="button"
+                aria-pressed={!repeat}
+                onClick={() => setRepeat(false)}
+                className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${!repeat
+                  ? "bg-[var(--bg-hover)] text-text-primary shadow-sm"
+                  : "text-text-tertiary hover:text-text-primary"}`}
+              >
+                Send now
+              </button>
+              <button
+                type="button"
+                aria-pressed={repeat}
+                onClick={() => setRepeat(true)}
+                className={`rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors ${repeat
+                  ? "bg-lime/10 text-lime shadow-sm"
+                  : "text-text-tertiary hover:text-text-primary"}`}
+              >
+                Schedule & repeat
+              </button>
+            </div>
+            {repeat && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1.4fr_0.7fr_1fr]">
+                <label>
+                  <span className="mb-2 block font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">First send</span>
+                  <input
+                    type="datetime-local"
+                    value={firstSend}
+                    onChange={(event) => setFirstSend(event.target.value)}
+                    required
+                    className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-4 py-3 text-sm text-text-primary outline-none transition-colors focus:border-lime/30"
+                  />
+                </label>
+                <label>
+                  <span className="mb-2 block font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Repeat every</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10000"
+                    step="1"
+                    value={repeatEvery}
+                    onChange={(event) => setRepeatEvery(event.target.value)}
+                    required
+                    className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-4 py-3 text-sm text-text-primary outline-none transition-colors focus:border-lime/30"
+                  />
+                </label>
+                <label>
+                  <span className="mb-2 block font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Unit</span>
+                  <Dropdown
+                    value={repeatUnit}
+                    options={[
+                      { value: "MINUTE", label: "Minutes" },
+                      { value: "HOUR", label: "Hours" },
+                      { value: "DAY", label: "Days" },
+                      { value: "WEEK", label: "Weeks" },
+                      { value: "MONTH", label: "Months" },
+                    ]}
+                    onChange={setRepeatUnit}
+                  />
+                </label>
+              </div>
+            )}
+          </fieldset>
+
           {!sendSentinel && !sendTelegram && (
             <p className="text-xs text-coral">Select at least one destination.</p>
           )}
@@ -543,16 +667,45 @@ export default function BroadcastsPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] p-5 sm:p-6">
-          <p className="text-xs text-text-tertiary">Broadcasts are immediate and recorded in the audit log.</p>
+          <p className="text-xs text-text-tertiary">
+            {repeat ? "Repeating broadcasts run until cancelled and each delivery is audited." : "Immediate broadcasts are recorded in the audit log."}
+          </p>
           <button
             type="submit"
             disabled={!canSend || sending}
             className="rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void transition-colors hover:bg-lime/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Review & send
+            {repeat ? "Review & schedule" : "Review & send"}
           </button>
         </div>
       </form>
+
+      {(config?.schedules.length ?? 0) > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-3 font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">Repeating broadcasts</h2>
+          <div className="space-y-3">
+            {config!.schedules.map((schedule) => (
+              <div key={schedule.id} className="card flex items-start justify-between gap-4 p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-text-primary">{schedule.title}</p>
+                  <p className="mt-1 text-xs text-text-tertiary">
+                    {schedule.audience.toLowerCase()} · every {schedule.repeatEvery} {schedule.repeatUnit.toLowerCase()}{schedule.repeatEvery === 1 ? "" : "s"}
+                    {" · "}next {new Date(schedule.nextFire).toLocaleString()} · by {schedule.createdBy.name}
+                  </p>
+                  {schedule.lastError && <p className="mt-1 text-xs text-coral">Last delivery: {schedule.lastError}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => cancelSchedule(schedule.id)}
+                  className="shrink-0 rounded-full bg-coral/10 px-3 py-1.5 text-xs font-semibold text-coral transition-colors hover:bg-coral/20"
+                >
+                  Cancel repeat
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

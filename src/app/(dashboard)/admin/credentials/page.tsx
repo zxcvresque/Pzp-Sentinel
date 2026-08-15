@@ -5,6 +5,7 @@ import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
+import Dropdown from "@/components/Dropdown";
 
 type AccessLevel = "PUBLIC_KEY" | "FULL";
 
@@ -44,6 +45,8 @@ interface Credential {
   createdBy: UserRef;
   vpsServer?: { id: string; name: string } | null;
   credKind?: string | null;
+  service?: { id: string; name: string } | null;
+  expiresAt?: string | null;
   revisions: Revision[];
   createdAt: string;
 }
@@ -140,6 +143,9 @@ export default function CredentialsPage() {
   const [fields, setFields] = useState<{ label: string; value: string }[]>([{ label: "", value: "" }]);
   const [accessMap, setAccessMap] = useState<Record<string, AccessLevel>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
+  const [serviceId, setServiceId] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
 
   async function refresh() {
     const fresh = await fetch("/api/credentials").then((r) => r.json());
@@ -150,10 +156,12 @@ export default function CredentialsPage() {
     Promise.all([
       fetch("/api/credentials").then((r) => (r.ok ? r.json() : { credentials: [] })),
       fetch("/api/users").then((r) => (r.ok ? r.json() : { users: [] })),
-    ]).then(([credData, userData]) => {
+      fetch("/api/services").then((r) => (r.ok ? r.json() : { services: [] })),
+    ]).then(([credData, userData, serviceData]) => {
       setCredentials(credData.credentials || []);
       const allUsers = userData.users || [];
       setDevs(allUsers.filter((u: { roles: string[] }) => u.roles.includes("DEV")));
+      setServices(serviceData.services || []);
       setLoading(false);
     });
   }, []);
@@ -172,6 +180,8 @@ export default function CredentialsPage() {
     setPlatform(cred.platform);
     setFields([{ label: cred.label, value: cred.value }]);
     setAccessMap(Object.fromEntries(cred.accesses.map((a) => [a.userId, a.accessLevel])));
+    setServiceId(cred.service?.id || "");
+    setExpiresAt(cred.expiresAt?.slice(0, 10) || "");
     setShowForm(true);
   }
 
@@ -180,6 +190,8 @@ export default function CredentialsPage() {
     setPlatform("");
     setFields([{ label: "", value: "" }]);
     setAccessMap({});
+    setServiceId("");
+    setExpiresAt("");
     setShowForm(false);
   }
 
@@ -216,7 +228,7 @@ export default function CredentialsPage() {
     const accesses = accessesPayload();
 
     if (editId) {
-      const body = { platform, label: validFields[0]?.label, value: validFields[0]?.value, accesses };
+      const body = { platform, label: validFields[0]?.label, value: validFields[0]?.value, accesses, serviceId: serviceId || null, expiresAt: expiresAt || null };
       await fetch(`/api/credentials/${editId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -224,7 +236,7 @@ export default function CredentialsPage() {
       });
     } else {
       for (const field of validFields) {
-        const body = { platform, label: field.label, value: field.value, accesses };
+        const body = { platform, label: field.label, value: field.value, accesses, serviceId: serviceId || null, expiresAt: expiresAt || null };
         await fetch("/api/credentials", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -331,6 +343,11 @@ export default function CredentialsPage() {
               required
               className="w-full sm:w-1/3 bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
             />
+          </div>
+
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            <div><label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Linked service</label><Dropdown value={serviceId} options={[{ value: "", label: "No service" }, ...services.map((service) => ({ value: service.id, label: service.name }))]} onChange={setServiceId} /></div>
+            <div><label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Expires / rotate by</label><input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" /></div>
           </div>
 
           <div className="mb-4">

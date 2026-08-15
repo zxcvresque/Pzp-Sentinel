@@ -102,9 +102,17 @@ The admin transaction screen works as a responsive card interface on mobile and 
 | Selection | Select visible rows or every matching filtered record, up to 5,000 transactions |
 | Bulk actions | Approve pending records, reject with a shared reason, or void with a required reason |
 | Failure handling | Reports requested, succeeded, and failed counts plus the failure for each affected record |
-| Editing | Amount, currency, method, direction, type, date, description, donor/source, and up to 10 attachments (any file type, 20 MB each) |
+| Editing | Amount, currency, method, direction, type, date, description, donor/source, service linking/creation, and up to 10 attachments (any file type, 20 MB each) |
 | Reviewed records | Material edits require an explicit warning and confirmation |
 | Exports and mirrors | CSV export, manual Sheets sync, and on-demand workbook backup |
+
+### Purchase and service workflow
+
+**Admin → Services → Record Purchase** is the unified entry point for operational spending. A one-time purchase creates an approved expense transaction. A recurring purchase atomically creates the transaction, linked service and billing history, optional encrypted credentials, service files, and an admin renewal reminder. Supabase, VPS, domain and GitHub templates prefill the common service shape and credential labels.
+
+Existing outgoing subscription transactions expose three explicit choices: **No service**, **Link existing service**, or **Create service from transaction**. Service detail pages consolidate billing history, credentials (metadata only; secrets stay in the encrypted vault), renewal dates, files, reminders and open operational alerts.
+
+The bot generates deduplicated alerts for upcoming renewals, overdue manual payments and expiring credentials. A recorded cost increase creates a high-priority alert immediately. **Admin → Reconciliation** combines unmatched BMC records, unmatched/incomplete Razorpay processing and likely duplicate ledger entries.
 
 ### Ledger lifecycle
 
@@ -179,6 +187,8 @@ Normal-priority broadcasts remain in Sentinel's notification center without an i
 
 The title supports inline formatting and is limited to 80 characters. The message supports block and inline formatting and is limited to 3,500 characters.
 
+Broadcast timing is independent from operational reminders. An admin can send immediately or schedule a repeating broadcast with a first-send date and a custom interval in minutes, hours, days, weeks, or months. The saved audience, selected recipients, priority, and destinations are reused on each occurrence. Active repeating broadcasts are listed below the composer and continue until an admin cancels them; every occurrence is recorded in the audit log.
+
 | Authoring syntax | Result | Title | Message |
 | --- | --- | :---: | :---: |
 | `**important**` | Bold | ✓ | ✓ |
@@ -216,6 +226,10 @@ flowchart LR
     class DENY denied
     class LOG audit
 ```
+
+### Admin reminders
+
+**Admin → Reminders** is a separate, admin-only message queue. Reminders always target every active admin, so there is no audience selector. Each reminder can fire once or repeat on a custom minute, hour, day, week, or month interval and can be delivered in Sentinel, by Telegram DM, or through both channels. The bot process claims each due occurrence before delivery, advances repeating schedules without time drift, and completes one-time reminders after they fire.
 
 Telegram delivery falls back to `TG_GROUP_ID` when a separate donation group is not configured. Sending to the group requires the bot to be a member with permission to post.
 
@@ -417,6 +431,8 @@ flowchart LR
 | --- | --- | --- |
 | `/api/auth/*` | `auth.ts`, `bot.ts`, middleware | Telegram verification, OTP/login-token flow, session, logout, and profile |
 | `/api/transactions/*` | `transaction-query.ts`, audit/notification/Sheets modules | Ledger CRUD, pagination, filters, selection, bulk actions, stats, and CSV export |
+| `/api/purchases`, `/api/services/*` | service templates, encrypted vault, reminders | Atomic purchase/service recording, service detail and billing history |
+| `/api/reconciliation` | Razorpay/BMC receipts and ledger heuristics | Provider matching, safe Razorpay recovery, and possible duplicate review |
 | `/api/broadcasts` | `broadcast-format.ts`, notifications, audit | Admin-only rich donor broadcasts |
 | `/api/payments/razorpay/*` | `razorpay.ts`, `razorpay-signatures.ts`, `invite-token.ts` | Orders, capture verification, donor permissions, and guest invitations |
 | `/api/bmc/*` | `bmc-webhook.ts` | Hosted-checkout config, signed webhook ingestion, and optional legacy sync |
@@ -510,6 +526,7 @@ TG_GROUP_ID="-100xxxxxxxxxx"
 TG_TOPIC_AUDIT="6"
 TG_TOPIC_TRANSACTIONS="12"
 TG_TOPIC_SCREENSHOTS="18"
+TG_TOPIC_ATTACHMENTS="548"
 TG_TOPIC_BACKUPS="24"
 
 TG_DONATION_GROUP_ID="-100xxxxxxxxxx"
@@ -639,7 +656,8 @@ Sentinel remains the data-entry authority. Voided transactions remain in history
 | --- | --- |
 | Audit topic | Actor/action summaries, broadcasts, and sensitive operational events |
 | Transactions topic | Created, edited, reviewed, and voided ledger records |
-| Screenshots topic | Contribution proofs and submitted SSH public keys |
+| Screenshots topic (`TG_TOPIC_SCREENSHOTS`) | Profile pictures/avatars and low-value visual or key staging |
+| Attachments topic (`TG_TOPIC_ATTACHMENTS`) | Every durable transaction attachment: receipts, proofs, PDFs, screenshots and documents |
 | Backups topic | Timestamped Google Sheets workbook snapshots |
 | Donors group/topic | Donation acknowledgements and admin broadcasts |
 | Direct messages | Login, approval/rejection, role, reminder, task, credential, and system notices |
@@ -696,7 +714,7 @@ sudo systemctl daemon-reload
 - **Financial retention:** voiding records `voidedAt`, `voidedBy`, and `voidReason`; it does not delete the transaction or its audit relation.
 - **Mutation evidence:** transaction create/edit/review/void events are written to PostgreSQL and mirrored to configured Telegram/GitHub log destinations.
 - **Provider verification:** Razorpay HMAC/payment verification and BMC webhook signature verification happen on the server.
-- **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints. Transaction attachments accept any file type up to 20 MB each, are stored beneath the persistent git-ignored `./data/transaction-attachments` directory, and require an authorized session to download.
+- **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints. Transaction attachments accept any file type up to 20 MB each, are stored beneath the persistent git-ignored `./data/transaction-attachments` directory, require an authorized session to download, and are copied to `TG_TOPIC_ATTACHMENTS` as durable Telegram documents when the transaction is created or explicitly saved. Telegram file/message IDs and retryable archive errors are retained in each attachment's metadata. Existing historical files are not migrated automatically.
 - **Operational visibility:** bulk actions return partial failures rather than implying that every selected record succeeded.
 
 The application log is append-oriented, but its strength still depends on production database permissions, GitHub repository protection, Telegram retention, and careful secret management.

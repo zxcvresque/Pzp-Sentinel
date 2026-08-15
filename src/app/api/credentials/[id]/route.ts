@@ -29,7 +29,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { platform, label, value, accesses } = body;
+  const { platform, label, value, accesses, serviceId, expiresAt } = body;
 
   const existing = await prisma.credential.findUnique({
     where: { id },
@@ -54,6 +54,13 @@ export async function PATCH(
   }
 
   const valueChanged = typeof value === "string" && value.length > 0;
+  if (serviceId && !await prisma.service.findUnique({ where: { id: serviceId }, select: { id: true } })) {
+    return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+  }
+  const parsedExpiry = expiresAt ? new Date(expiresAt) : null;
+  if (parsedExpiry && Number.isNaN(parsedExpiry.getTime())) {
+    return NextResponse.json({ error: "Invalid credential expiry" }, { status: 400 });
+  }
 
   // 1. Scalar fields (value encrypted at rest).
   const credential = await prisma.credential.update({
@@ -62,9 +69,17 @@ export async function PATCH(
       ...(platform && { platform }),
       ...(label && { label }),
       ...(valueChanged && { value: encryptSecret(value) }),
+      ...(serviceId !== undefined && { serviceId: serviceId || null }),
+      ...(expiresAt !== undefined && { expiresAt: parsedExpiry }),
     },
     include: { createdBy: { select: userSelect } },
   });
+  if (expiresAt !== undefined) {
+    await prisma.operationalAlert.updateMany({
+      where: { credentialId: id, status: "OPEN", kind: "CREDENTIAL_EXPIRY" },
+      data: { status: "RESOLVED", resolvedAt: new Date() },
+    });
+  }
 
   // 1b. Write the new value back to the VpsServer column so the admin SSH /
   //     sshpass / authorized_keys builders stay correct.

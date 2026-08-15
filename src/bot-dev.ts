@@ -15,6 +15,10 @@ import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
 import { registerRazorpayFeedbackHandlers } from "./lib/razorpay-feedback-bot";
 import { registerBmcFeedbackHandlers } from "./lib/bmc-feedback-bot";
+import { nextReminderFire } from "./lib/admin-reminders";
+import { broadcastAudienceRoles } from "./lib/broadcast-audience";
+import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "./lib/broadcast-format";
+import { serviceReminderRepeat } from "./lib/service-templates";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -80,6 +84,7 @@ async function notifyAdminsFromBot(
     entityId?: string;
     priority?: string;
     telegramMessage?: string;
+    channel?: "BOT" | "WEB" | "BOTH";
   },
 ) {
   try {
@@ -94,26 +99,28 @@ async function notifyAdminsFromBot(
 
     for (const admin of admins) {
       // In-app notification
-      try {
-        await dbRetry(() =>
-          db.notification.create({
-            data: {
-              userId: admin.id,
-              type: data.type as never,
-              title: data.title,
-              message: data.message,
-              entityId: data.entityId,
-              priority: data.priority || "NORMAL",
-            },
-          }),
-        );
-        console.log(`[notifyAdmins] In-app notification created for admin ${admin.id}`);
-      } catch (err) {
-        console.error(`[notifyAdmins] Failed to create notification for admin ${admin.id}:`, err);
+      if (data.channel !== "BOT") {
+        try {
+          await dbRetry(() =>
+            db.notification.create({
+              data: {
+                userId: admin.id,
+                type: data.type as never,
+                title: data.title,
+                message: data.message,
+                entityId: data.entityId,
+                priority: data.priority || "NORMAL",
+              },
+            }),
+          );
+          console.log(`[notifyAdmins] In-app notification created for admin ${admin.id}`);
+        } catch (err) {
+          console.error(`[notifyAdmins] Failed to create notification for admin ${admin.id}:`, err);
+        }
       }
 
       // Telegram DM
-      if (admin.chatId && data.telegramMessage) {
+      if (data.channel !== "WEB" && admin.chatId && data.telegramMessage) {
         const hasPref = admin.dmPreferences.includes(data.type);
         console.log(`[notifyAdmins] Admin ${admin.id} chatId=${admin.chatId} hasPref=${hasPref}`);
         if (hasPref) {
@@ -130,6 +137,202 @@ async function notifyAdminsFromBot(
     }
   } catch (err) {
     console.error("[notifyAdmins] Top-level failure:", err);
+  }
+}
+
+// ── Admin reminders and repeating broadcasts ─────────────────────────────────
+const ADMIN_MESSAGE_CHECK_INTERVAL = 60 * 1000;
+
+async function checkAdminReminders() {
+  try {
+    const now = new Date();
+    const due = await dbRetry(() => prisma.reminder.findMany({
+      where: { active: true, nextFire: { lte: now } },
+      orderBy: { nextFire: "asc" },
+      take: 50,
+    }));
+
+    for (const reminder of due) {
+      const next = nextReminderFire(
+        reminder.nextFire,
+        now,
+        reminder.frequency,
+        reminder.repeatEvery,
+        reminder.repeatUnit,
+      );
+      const claimed = await dbRetry(() => prisma.reminder.updateMany({
+        where: { id: reminder.id, active: true, nextFire: reminder.nextFire },
+        data: {
+          active: next !== null,
+          nextFire: next ?? reminder.nextFire,
+          lastFiredAt: now,
+        },
+      }));
+      if (claimed.count !== 1) continue;
+
+      await notifyAdminsFromBot(prisma, bot, {
+        type: "REMINDER",
+        title: "Admin reminder",
+        message: reminder.message,
+        entityId: reminder.id,
+        channel: reminder.channel,
+        telegramMessage: `<blockquote><b>🔔 Admin reminder</b></blockquote>\n${escapeBotHtml(reminder.message)}`,
+      });
+      console.log(`[admin-reminder] Sent ${reminder.id}; next=${next?.toISOString() ?? "complete"}`);
+    }
+  } catch (err) {
+    console.error("[admin-reminder] Check failed:", err);
+  }
+}
+
+async function checkScheduledBroadcasts() {
+  try {
+    const now = new Date();
+    const due = await dbRetry(() => prisma.scheduledBroadcast.findMany({
+      where: { active: true, nextFire: { lte: now } },
+      orderBy: { nextFire: "asc" },
+      take: 20,
+      include: { createdBy: { select: { name: true } } },
+    }));
+
+    for (const schedule of due) {
+      const scheduledFor = schedule.nextFire;
+      const next = nextReminderFire(
+        scheduledFor,
+        now,
+        "CUSTOM",
+        schedule.repeatEvery,
+        schedule.repeatUnit,
+      );
+      if (!next) continue;
+      const claimed = await dbRetry(() => prisma.scheduledBroadcast.updateMany({
+        where: { id: schedule.id, active: true, nextFire: scheduledFor },
+        data: { nextFire: next, lastFiredAt: now, lastError: null },
+      }));
+      if (claimed.count !== 1) continue;
+
+      const errors: string[] = [];
+      const roles = broadcastAudienceRoles(schedule.audience);
+      const recipients = await dbRetry(() => prisma.user.findMany({
+        where: {
+          roles: { hasSome: roles },
+          status: "ACTIVE",
+          ...(schedule.recipientMode === "SELECTED" ? { id: { in: schedule.recipientIds } } : {}),
+        },
+        select: { id: true, chatId: true },
+      }));
+      const occurrenceId = `broadcast:${schedule.id}:${scheduledFor.toISOString()}`;
+      const telegramMessage = `<blockquote>📣 ${broadcastInlineToTelegramHtml(schedule.title)}</blockquote>\n${broadcastToTelegramHtml(schedule.message)}\n\n<i>— ${escapeBotHtml(schedule.createdBy.name)}, Sentinel</i>`;
+
+      if (schedule.sendSentinel) {
+        for (const recipient of recipients) {
+          try {
+            await dbRetry(() => prisma.notification.create({
+              data: {
+                userId: recipient.id,
+                type: "SYSTEM",
+                title: schedule.title,
+                message: schedule.message,
+                entityId: occurrenceId,
+                priority: schedule.highPriority ? "HIGH" : "NORMAL",
+              },
+            }));
+            if (schedule.highPriority && recipient.chatId) {
+              await bot.api.sendMessage(recipient.chatId, telegramMessage, { parse_mode: "HTML" });
+            }
+          } catch (error) {
+            errors.push(`recipient ${recipient.id}: ${(error as Error).message}`);
+          }
+        }
+      }
+
+      if (schedule.sendTelegram) {
+        const groupId = process.env.TG_DONATION_GROUP_ID || process.env.TG_GROUP_ID || "";
+        const topicId = process.env.TG_DONATION_TOPIC_ID || "";
+        if (!groupId) {
+          errors.push("Telegram group is not configured");
+        } else {
+          try {
+            await bot.api.sendMessage(groupId, telegramMessage, {
+              parse_mode: "HTML",
+              ...(topicId ? { message_thread_id: Number(topicId) } : {}),
+            });
+          } catch (error) {
+            errors.push(`Telegram group: ${(error as Error).message}`);
+          }
+        }
+      }
+
+      await dbRetry(() => prisma.auditLog.create({
+        data: {
+          userId: schedule.createdById,
+          action: "BROADCAST_REPEAT_SENT",
+          entityType: "ScheduledBroadcast",
+          entityId: schedule.id,
+          after: {
+            scheduledFor: scheduledFor.toISOString(),
+            nextFire: next.toISOString(),
+            recipientCount: recipients.length,
+            errors,
+          },
+        },
+      }));
+      if (errors.length > 0) {
+        await dbRetry(() => prisma.scheduledBroadcast.update({
+          where: { id: schedule.id },
+          data: { lastError: errors.slice(0, 5).join(" | ").slice(0, 2000) },
+        }));
+      }
+      console.log(`[broadcast-repeat] Sent ${schedule.id}; next=${next.toISOString()}; errors=${errors.length}`);
+    }
+  } catch (err) {
+    console.error("[broadcast-repeat] Check failed:", err);
+  }
+}
+
+async function backfillServiceOperations() {
+  try {
+    const admin = await dbRetry(() => prisma.user.findFirst({
+      where: { roles: { has: "ADMIN" }, status: "ACTIVE" },
+      select: { id: true },
+    }));
+    if (!admin) return;
+    const services = await dbRetry(() => prisma.service.findMany({
+      where: { OR: [{ paidTxId: { not: null } }, { expiryDate: { not: null } }] },
+      include: { reminders: { where: { active: true }, select: { id: true } } },
+    }));
+    let links = 0;
+    let reminders = 0;
+    for (const service of services) {
+      if (service.paidTxId) {
+        const paidTxId = service.paidTxId;
+        const linked = await dbRetry(() => prisma.transaction.updateMany({
+          where: { id: paidTxId, serviceId: null },
+          data: { serviceId: service.id },
+        }));
+        links += linked.count;
+      }
+      const repeat = serviceReminderRepeat(service.frequency);
+      if (service.status === "ACTIVE" && service.expiryDate && repeat && service.reminders.length === 0) {
+        await dbRetry(() => prisma.reminder.create({
+          data: {
+            createdById: admin.id,
+            message: `Renew ${service.name}${service.price ? ` (${service.currency} ${service.price})` : ""}`,
+            frequency: "CUSTOM",
+            repeatEvery: repeat.repeatEvery,
+            repeatUnit: repeat.repeatUnit,
+            nextFire: service.expiryDate!,
+            channel: "BOTH",
+            recipientRoles: ["ADMIN"],
+            serviceId: service.id,
+          },
+        }));
+        reminders += 1;
+      }
+    }
+    console.log(`[service-backfill] Linked payments=${links}; reminders=${reminders}`);
+  } catch (error) {
+    console.error("[service-backfill] Failed:", error);
   }
 }
 
@@ -626,6 +829,30 @@ bot.catch((err) => {
 // ── Service expiry checker ─────────────────────────────────────────────
 const EXPIRY_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
+async function createOperationalAlert(params: {
+  fingerprint: string;
+  kind: string;
+  severity: string;
+  title: string;
+  message: string;
+  dueAt?: Date | null;
+  serviceId?: string;
+  credentialId?: string;
+}) {
+  const existing = await dbRetry(() => prisma.operationalAlert.findUnique({ where: { fingerprint: params.fingerprint } }));
+  if (existing) return false;
+  await dbRetry(() => prisma.operationalAlert.create({ data: params }));
+  await notifyAdminsFromBot(prisma, bot, {
+    type: "SYSTEM",
+    title: params.title,
+    message: params.message,
+    entityId: params.serviceId ?? params.credentialId,
+    priority: params.severity,
+    telegramMessage: `<blockquote><b>⚠️ ${escapeBotHtml(params.title)}</b></blockquote>\n${escapeBotHtml(params.message)}`,
+  });
+  return true;
+}
+
 async function checkServiceExpiry() {
   console.log("[expiry] Running service expiry check...");
   try {
@@ -634,10 +861,25 @@ async function checkServiceExpiry() {
     const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
     const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+    const overdue = await dbRetry(() => prisma.service.findMany({
+      where: { status: "ACTIVE", autoRenew: false, expiryDate: { lte: now, not: null } },
+    }));
+    for (const service of overdue) {
+      await createOperationalAlert({
+        fingerprint: `service-overdue:${service.id}:${service.expiryDate!.toISOString()}`,
+        kind: "OVERDUE_PAYMENT",
+        severity: "HIGH",
+        title: `Renewal overdue: ${service.name}`,
+        message: `${service.name} passed its renewal date on ${service.expiryDate!.toLocaleDateString()}. Confirm payment, renewal or cancellation.`,
+        dueAt: service.expiryDate,
+        serviceId: service.id,
+      });
+    }
+
     // Auto-expire services past their date
     const expired = await dbRetry(() =>
       prisma.service.updateMany({
-        where: { status: "ACTIVE", expiryDate: { lte: now, not: null } },
+        where: { status: "ACTIVE", autoRenew: false, expiryDate: { lte: now, not: null } },
         data: { status: "EXPIRED" },
       }),
     );
@@ -658,7 +900,6 @@ async function checkServiceExpiry() {
 
     if (expiring.length === 0) {
       console.log("[expiry] No services expiring soon.");
-      return;
     }
 
     for (const svc of expiring) {
@@ -681,22 +922,41 @@ async function checkServiceExpiry() {
         priceDetail = `\nPrice: ${svc.currency} ${svc.price}/${svc.frequency.toLowerCase()}`;
       }
 
-      await notifyAdminsFromBot(prisma, bot, {
-        type: "SYSTEM",
-        title: `Service Expiring: ${svc.name}`,
-        message: `${svc.name} expires in ${daysLabel} (${dateStr}). Renew or update the service.`,
-        entityId: svc.id,
-        priority,
-        telegramMessage:
-          `<blockquote><b>${emoji} ${heading}</b></blockquote>\n` +
-          `<b>${svc.name}</b> (${svc.category})\n` +
-          `Expires: ${dateStr} (${daysLabel} left)${priceDetail}`,
+      const bucket = daysLeft <= 1 ? 1 : daysLeft <= 3 ? 3 : 7;
+      await createOperationalAlert({
+        fingerprint: `renewal-upcoming:${svc.id}:${expiryDate.toISOString()}:${bucket}`,
+        kind: "UPCOMING_RENEWAL",
+        severity: priority,
+        title: `${emoji} ${heading}: ${svc.name}`,
+        message: `${svc.name} expires in ${daysLabel} (${dateStr}). Renew or update the service.${priceDetail}`,
+        dueAt: expiryDate,
+        serviceId: svc.id,
       });
 
       console.log(`[expiry] Alerted: ${svc.name} — ${daysLabel} left`);
     }
 
     console.log(`[expiry] Done. ${expiring.length} alert(s) sent.`);
+
+    const credentialHorizon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const credentials = await dbRetry(() => prisma.credential.findMany({
+      where: { parentId: null, status: "APPROVED", expiresAt: { not: null, lte: credentialHorizon } },
+      select: { id: true, platform: true, label: true, expiresAt: true, serviceId: true },
+    }));
+    for (const credential of credentials) {
+      const days = Math.ceil((credential.expiresAt!.getTime() - now.getTime()) / 86_400_000);
+      const bucket = days <= 0 ? "overdue" : days <= 1 ? "1" : days <= 7 ? "7" : "30";
+      await createOperationalAlert({
+        fingerprint: `credential-expiry:${credential.id}:${credential.expiresAt!.toISOString()}:${bucket}`,
+        kind: "CREDENTIAL_EXPIRY",
+        severity: days <= 1 ? "HIGH" : "NORMAL",
+        title: `Credential ${days <= 0 ? "expired" : "expiring"}: ${credential.label}`,
+        message: `${credential.platform} · ${credential.label} ${days <= 0 ? "has expired" : `expires in ${days} day${days === 1 ? "" : "s"}`}. Rotate or renew it in the credential vault.`,
+        dueAt: credential.expiresAt,
+        credentialId: credential.id,
+        serviceId: credential.serviceId ?? undefined,
+      });
+    }
   } catch (err) {
     console.error("[expiry] Check failed:", err);
   }
@@ -809,6 +1069,7 @@ async function checkSubscriptionRenewals() {
       const price = sub.price != null ? Number(sub.price) : 0;
       if (!(price > 0)) continue;
       try {
+        const nextExpiry = advanceCycle(now, sub.frequency);
         const tx = await dbRetry(() =>
           prisma.transaction.create({
             data: {
@@ -821,6 +1082,7 @@ async function checkSubscriptionRenewals() {
               status: "APPROVED",
               date: now,
               createdById: admin.id,
+              serviceId: sub.id,
             },
           }),
         );
@@ -830,10 +1092,14 @@ async function checkSubscriptionRenewals() {
             data: {
               paidTxId: tx.id,
               lastRenewalDate: now,
-              expiryDate: advanceCycle(now, sub.frequency),
+              expiryDate: nextExpiry,
             },
           }),
         );
+        await dbRetry(() => prisma.reminder.updateMany({
+          where: { serviceId: sub.id, active: true },
+          data: { nextFire: nextExpiry },
+        }));
         scheduleFinanceAutomation({
           action: "CREATED",
           actorName: "Sentinel Auto-Renewal",
@@ -877,6 +1143,16 @@ async function checkSubscriptionRenewals() {
         checkSubscriptionRenewals();
         setInterval(checkSubscriptionRenewals, SUB_RENEWAL_CHECK_INTERVAL);
       }, 30_000);
+      // Admin reminders and repeating broadcasts are separate queues.
+      setTimeout(() => {
+        checkAdminReminders();
+        checkScheduledBroadcasts();
+        setInterval(checkAdminReminders, ADMIN_MESSAGE_CHECK_INTERVAL);
+        setInterval(checkScheduledBroadcasts, ADMIN_MESSAGE_CHECK_INTERVAL);
+      }, 40_000);
+      console.log("[admin-messages] Scheduled — first check in 40s, then every minute");
+      setTimeout(backfillServiceOperations, 55_000);
+      console.log("[service-backfill] Existing service links/reminders will be checked in 55s");
       console.log("[sub-renewal] Scheduled — first check in 30s, then every 24h");
     },
   });

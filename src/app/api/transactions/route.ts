@@ -10,6 +10,8 @@ import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
 import { parseDonationFrequency } from "@/lib/donation-frequency";
+import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archive";
+import { serviceReminderRepeat } from "@/lib/service-templates";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
         createdBy: true,
         reviewedBy: true,
         voidedBy: true,
+        linkedService: { select: { id: true, name: true } },
         ...(isAdmin ? {
           bmcWebhookEvents: {
             select: {
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { amount, currency, method, direction, type, description, proofFileId, fromUserId } = body;
+  const { amount, currency, method, direction, type, description, date, proofFileId, fromUserId, serviceId, createService } = body;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const donationFrequency = parseDonationFrequency(body.donationFrequency);
 
@@ -91,6 +94,10 @@ export async function POST(req: NextRequest) {
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
     return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 });
   }
+  const transactionDate = date ? new Date(date) : new Date();
+  if (Number.isNaN(transactionDate.getTime())) {
+    return NextResponse.json({ error: "Invalid transaction date" }, { status: 400 });
+  }
 
   // DONOR can only create direction=IN (donations)
   if (isDonor && !isAdmin && direction && direction !== "IN") {
@@ -101,11 +108,41 @@ export async function POST(req: NextRequest) {
   if (fromUserId !== undefined && fromUserId !== null && (typeof fromUserId !== "string" || fromUserId.trim() === "")) {
     return NextResponse.json({ error: "fromUserId must be a non-empty string" }, { status: 400 });
   }
+  if (serviceId) {
+    const service = await prisma.service.findUnique({ where: { id: serviceId }, select: { id: true } });
+    if (!service) return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+  }
+  let serviceDraft: { name: string; category: string; frequency: "WEEKLY" | "MONTHLY" | "YEARLY"; nextRenewal: Date } | null = null;
+  if (createService) {
+    const name = typeof createService.name === "string" ? createService.name.trim() : "";
+    const category = typeof createService.category === "string" ? createService.category.trim() : "";
+    const frequency = ["WEEKLY", "MONTHLY", "YEARLY"].includes(createService.frequency)
+      ? createService.frequency as "WEEKLY" | "MONTHLY" | "YEARLY"
+      : null;
+    const nextRenewal = createService.nextRenewal ? new Date(createService.nextRenewal) : null;
+    if (direction !== "OUT" || type !== "SUBSCRIPTION" || !name || !category || !frequency || !nextRenewal || Number.isNaN(nextRenewal.getTime())) {
+      return NextResponse.json({ error: "Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal" }, { status: 400 });
+    }
+    serviceDraft = { name, category, frequency, nextRenewal };
+  }
 
   const txStatus = isAdmin && direction === "OUT" ? "APPROVED" : "PENDING";
 
-  const transaction = await prisma.transaction.create({
-    data: {
+  const transaction = await prisma.$transaction(async (db) => {
+    const service = serviceDraft ? await db.service.create({
+      data: {
+        name: serviceDraft.name,
+        category: serviceDraft.category,
+        price: new Prisma.Decimal(amount),
+        currency: currency || "INR",
+        frequency: serviceDraft.frequency,
+        expiryDate: serviceDraft.nextRenewal,
+        lastRenewalDate: transactionDate,
+        status: "ACTIVE",
+        attachments,
+      },
+    }) : null;
+    const created = await db.transaction.create({ data: {
       amount: new Prisma.Decimal(amount),
       currency: currency || "INR",
       method: method || "OTHER",
@@ -113,13 +150,30 @@ export async function POST(req: NextRequest) {
       type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
       donationFrequency,
       description,
+      date: transactionDate,
       proofFileId: proofFileId || null,
       attachments,
       fromUserId: fromUserId || (direction === "IN" ? user.id : null),
       status: txStatus,
       createdById: user.id,
-    },
-    include: { fromUser: true, createdBy: true },
+      serviceId: direction === "OUT" && type === "SUBSCRIPTION" ? service?.id || serviceId || null : null,
+    }, include: { fromUser: true, createdBy: true, linkedService: { select: { id: true, name: true } } } });
+    if (service) {
+      await db.service.update({ where: { id: service.id }, data: { paidTxId: created.id } });
+      const repeat = serviceReminderRepeat(service.frequency);
+      if (repeat) await db.reminder.create({ data: {
+        createdById: user.id,
+        message: `Renew ${service.name} (${service.currency} ${service.price})`,
+        frequency: "CUSTOM",
+        repeatEvery: repeat.repeatEvery,
+        repeatUnit: repeat.repeatUnit,
+        nextFire: service.expiryDate!,
+        channel: "BOTH",
+        recipientRoles: ["ADMIN"],
+        serviceId: service.id,
+      } });
+    }
+    return created;
   });
   const identityUser = transaction.fromUser || transaction.createdBy;
 
@@ -166,7 +220,7 @@ export async function POST(req: NextRequest) {
     logProofScreenshot(transaction.id, proofFileId, description);
   }
 
-  // Log proof screenshots context to TG screenshots topic
+  // Legacy Telegram-backed image proofs still go to Screenshots.
   if (attachments.length > 0) {
     logProofScreenshots({
       id: transaction.id,
@@ -177,6 +231,19 @@ export async function POST(req: NextRequest) {
       attachments,
     }).catch(() => {});
   }
+
+  // All locally stored files (PDFs included) are durably copied to the
+  // dedicated Attachments topic. Failure does not roll back the transaction;
+  // metadata retains the error so a later edit/startup backfill can retry it.
+  const attachmentArchive = attachments.length > 0
+    ? await archiveTransactionAttachmentsToTelegram({
+        id: transaction.id,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        description: transaction.description,
+        attachments: transaction.attachments,
+      })
+    : [];
 
   // Notify admins when a pending donation needs approval
   if (txStatus === "PENDING") {
@@ -203,5 +270,5 @@ export async function POST(req: NextRequest) {
     sendBackup: true,
   });
 
-  return NextResponse.json({ transaction }, { status: 201 });
+  return NextResponse.json({ transaction, attachmentArchive }, { status: 201 });
 }

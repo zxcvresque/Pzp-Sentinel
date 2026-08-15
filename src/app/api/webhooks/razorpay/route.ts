@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
     if (eventId) {
       const duplicate = await prisma.razorpayWebhookEvent.findUnique({ where: { eventId } });
-      if (duplicate) return NextResponse.json({ ok: true, duplicate: true });
+      if (duplicate?.status === "PROCESSED") return NextResponse.json({ ok: true, duplicate: true });
     }
 
     const body = JSON.parse(rawBody) as WebhookPayload;
@@ -43,6 +43,15 @@ export async function POST(request: NextRequest) {
     const orderId = body.payload?.order?.entity?.id || body.payload?.payment?.entity?.order_id;
     const subscription = body.payload?.subscription?.entity;
     const subscriptionEvent = normalizeRazorpaySubscriptionEvent(event, subscription);
+    let processingStatus = "PROCESSED";
+    const resourceId = paymentId || subscriptionEvent?.subscriptionId || orderId || null;
+    if (eventId) {
+      await prisma.razorpayWebhookEvent.upsert({
+        where: { eventId },
+        update: { eventType: event, resourceId, payload: body as never, status: "RECEIVED" },
+        create: { eventId, eventType: event, resourceId, payload: body as never, status: "RECEIVED" },
+      });
+    }
 
     if (event === "subscription.charged" && subscriptionEvent && paymentId) {
       await finalizeMonthlySubscriptionCharge({
@@ -61,16 +70,14 @@ export async function POST(request: NextRequest) {
       });
       if (storedOrder) {
         await finalizeCapturedDonation({ orderId, paymentId, actorName: "Razorpay webhook" });
+      } else {
+        processingStatus = "UNMATCHED";
       }
     } else if (subscriptionEvent) {
       await handleRazorpaySubscriptionLifecycle(subscriptionEvent);
     }
 
-    if (eventId) {
-      await prisma.razorpayWebhookEvent.create({
-        data: { eventId, eventType: event },
-      }).catch(() => {});
-    }
+    if (eventId) await prisma.razorpayWebhookEvent.update({ where: { eventId }, data: { status: processingStatus } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const status = error instanceof RazorpayError ? error.status : 500;

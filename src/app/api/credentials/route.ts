@@ -23,6 +23,7 @@ export async function GET() {
           accesses: { include: { user: { select: userSelect } } },
           createdBy: { select: userSelect },
           vpsServer: { select: { id: true, name: true } },
+          service: { select: { id: true, name: true } },
           revisions: {
             where: { status: "PENDING" },
             include: { createdBy: { select: userSelect } },
@@ -127,7 +128,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { platform, label, value, accesses, parentId } = body;
+  const { platform, label, value, accesses, parentId, serviceId, expiresAt } = body;
 
   if (!platform || !label || !value) {
     return NextResponse.json(
@@ -137,6 +138,13 @@ export async function POST(req: NextRequest) {
   }
 
   if (isAdmin) {
+    if (serviceId && !await prisma.service.findUnique({ where: { id: serviceId }, select: { id: true } })) {
+      return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+    }
+    const parsedExpiry = expiresAt ? new Date(expiresAt) : null;
+    if (parsedExpiry && Number.isNaN(parsedExpiry.getTime())) {
+      return NextResponse.json({ error: "Invalid credential expiry" }, { status: 400 });
+    }
     // Validate the share list — force-choice: every share must name an explicit level.
     const accessRows: { userId: string; accessLevel: AccessLevel }[] = Array.isArray(accesses)
       ? accesses
@@ -157,6 +165,8 @@ export async function POST(req: NextRequest) {
         value: encryptSecret(value),
         status: "APPROVED",
         createdById: user.id,
+        serviceId: serviceId || null,
+        expiresAt: parsedExpiry,
         accesses: accessRows.length
           ? {
               create: accessRows.map((a) => ({

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const linksByRole = {
   ADMIN: [
     { label: "Catalogue", href: "/admin/services" },
+    { label: "Record Purchase", href: "/admin/purchases" },
     { label: "Credentials", href: "/admin/credentials" },
     { label: "VPS Stats", href: "/admin/vps" },
   ],

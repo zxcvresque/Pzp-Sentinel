@@ -1,0 +1,86 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import ServicesNav from "@/components/ServicesNav";
+
+interface ServiceDetail {
+  id: string;
+  name: string;
+  category: string;
+  price: string | null;
+  currency: string | null;
+  frequency: string | null;
+  status: string | null;
+  planUrl: string | null;
+  expiryDate: string | null;
+  lastRenewalDate: string | null;
+  attachments: string[];
+  transactions: Array<{ id: string; amount: string; currency: string; method: string; status: string; date: string; description: string; attachments: string[]; createdBy: { name: string } }>;
+  credentials: Array<{ id: string; platform: string; label: string; status: string; expiresAt: string | null; updatedAt: string }>;
+  reminders: Array<{ id: string; message: string; nextFire: string; repeatEvery: number | null; repeatUnit: string | null; channel: string }>;
+  alerts: Array<{ id: string; kind: string; severity: string; title: string; message: string; dueAt: string | null }>;
+}
+
+export default function ServiceDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const [service, setService] = useState<ServiceDetail | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/services/${id}`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load service");
+        setService(data.service);
+      })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "Could not load service"));
+  }, [id]);
+
+  if (error) return <div className="rounded-xl border border-coral/20 bg-coral/8 p-4 text-coral">{error}</div>;
+  if (!service) return <div className="skeleton h-72 w-full" />;
+
+  return (
+    <div>
+      <ServicesNav role="ADMIN" />
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div><Link href="/admin/services" className="text-xs text-text-tertiary hover:text-lime">← Service catalogue</Link><h1 className="mt-2 text-3xl font-extrabold">{service.name}</h1><p className="mt-1 text-sm text-text-secondary">{service.category} · {service.status || "Untracked"}</p></div>
+        {service.planUrl && <a href={service.planUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-lime">Open plan ↗</a>}
+      </div>
+
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Current cost" value={service.price ? `${service.currency} ${Number(service.price).toLocaleString()}` : "—"} />
+        <Stat label="Billing" value={service.frequency?.toLowerCase() || "—"} />
+        <Stat label="Next renewal" value={service.expiryDate ? new Date(service.expiryDate).toLocaleDateString() : "—"} />
+        <Stat label="Last paid" value={service.lastRenewalDate ? new Date(service.lastRenewalDate).toLocaleDateString() : "—"} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Panel title={`Billing history · ${service.transactions.length}`}>
+          {service.transactions.length ? service.transactions.map((transaction) => <div key={transaction.id} className="border-b border-[var(--border)] py-3 last:border-0"><div className="flex justify-between gap-3 text-sm"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span><span className="text-text-tertiary">{new Date(transaction.date).toLocaleDateString()}</span></div><p className="mt-1 text-xs text-text-secondary">{transaction.description} · {transaction.method} · {transaction.status}</p>{transaction.attachments.length > 0 && <p className="mt-1 text-xs text-violet">📎 {transaction.attachments.length} attachment(s)</p>}</div>) : <Empty text="No linked payments yet." />}
+        </Panel>
+
+        <Panel title={`Credentials · ${service.credentials.length}`}>
+          {service.credentials.length ? service.credentials.map((credential) => <Link key={credential.id} href="/admin/credentials" className="block border-b border-[var(--border)] py-3 last:border-0"><div className="flex justify-between gap-3 text-sm"><span className="font-semibold">{credential.label}</span><span className="text-text-tertiary">{credential.status}</span></div><p className="mt-1 text-xs text-text-secondary">{credential.platform}{credential.expiresAt ? ` · expires ${new Date(credential.expiresAt).toLocaleDateString()}` : ""}</p></Link>) : <Empty text="No linked credentials." />}
+        </Panel>
+
+        <Panel title={`Renewal reminders · ${service.reminders.length}`}>
+          {service.reminders.length ? service.reminders.map((reminder) => <div key={reminder.id} className="border-b border-[var(--border)] py-3 last:border-0"><p className="text-sm font-semibold">{reminder.message}</p><p className="mt-1 text-xs text-text-tertiary">Next {new Date(reminder.nextFire).toLocaleString()} · {reminder.channel.toLowerCase()}</p></div>) : <Empty text="No active renewal reminder." />}
+        </Panel>
+
+        <Panel title={`Open alerts · ${service.alerts.length}`}>
+          {service.alerts.length ? service.alerts.map((alert) => <div key={alert.id} className="border-b border-[var(--border)] py-3 last:border-0"><div className="flex items-center gap-2"><span className={`rounded-full px-2 py-0.5 font-mono text-[9px] ${alert.severity === "HIGH" ? "bg-coral/10 text-coral" : "bg-amber/10 text-amber"}`}>{alert.severity}</span><span className="text-sm font-semibold">{alert.title}</span></div><p className="mt-1 text-xs text-text-secondary">{alert.message}</p></div>) : <Empty text="No open alerts." />}
+        </Panel>
+
+        <Panel title={`Files · ${service.attachments.length}`}>
+          {service.attachments.length ? service.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block truncate border-b border-[var(--border)] py-3 text-sm text-violet last:border-0">📎 {decodeURIComponent(url.split("/").pop() || "Attachment")}</a>) : <Empty text="No service files." />}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) { return <div className="card p-4"><p className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">{label}</p><p className="mt-2 text-lg font-bold text-text-primary">{value}</p></div>; }
+function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="card p-5"><h2 className="mb-2 font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">{title}</h2>{children}</section>; }
+function Empty({ text }: { text: string }) { return <p className="py-5 text-sm text-text-tertiary">{text}</p>; }

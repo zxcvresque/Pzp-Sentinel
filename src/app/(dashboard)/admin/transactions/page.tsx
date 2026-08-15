@@ -39,9 +39,11 @@ interface Transaction {
     supporterId: string | null;
     attributionStatus: string;
   }>;
+  linkedService?: { id: string; name: string } | null;
 }
 
 interface UserOption { id: string; name: string; telegramUser: string | null }
+interface ServiceOption { id: string; name: string; category: string }
 type ActionKind = "APPROVE" | "REJECT" | "VOID";
 
 const defaultFilters = {
@@ -107,11 +109,12 @@ export default function TransactionsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [action, setAction] = useState<{ kind: ActionKind; ids: string[] } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewedEditConfirm, setReviewedEditConfirm] = useState(false);
   const [pendingReviewedSubmit, setPendingReviewedSubmit] = useState(false);
-  const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: [] as string[] });
+  const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] as string[] });
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
 
@@ -145,13 +148,14 @@ export default function TransactionsPage() {
     void load();
   }, [load]);
   useEffect(() => { fetch("/api/users").then((r) => r.json()).then((d) => setUsers((d.users || []).filter((u: { roles?: string[] }) => u.roles?.includes("DONOR")))).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/services").then((r) => r.json()).then((d) => setServices(d.services || [])).catch(() => {}); }, []);
 
   function updateFilter(key: keyof typeof defaultFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); setSelected(new Set()); }
-  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", attachments: [] }); setUploadingAttachments(false); setEditingId(null); setShowCreate(false); }
+  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] }); setUploadingAttachments(false); setEditingId(null); setShowCreate(false); }
   function startEdit(tx: Transaction) {
     if (tx.voidedAt) return;
     setShowCreate(false); setEditingId(tx.id);
-    setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", attachments: [...tx.attachments] });
+    setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", serviceAction: tx.linkedService ? "LINK" : "NONE", serviceId: tx.linkedService?.id || "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [...tx.attachments] });
     setTimeout(() => document.getElementById(`editor-${tx.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
   }
 
@@ -159,12 +163,16 @@ export default function TransactionsPage() {
     setSaving(true); setFeedback(null);
     try {
       const editing = transactions.find((tx) => tx.id === editingId);
-      const payload = { ...form, fromUserId: form.direction === "IN" ? form.fromUserId || null : null, confirmReviewedEdit };
+      const payload = { ...form, fromUserId: form.direction === "IN" ? form.fromUserId || null : null, serviceId: form.serviceAction === "LINK" ? form.serviceId || null : null, createService: form.serviceAction === "CREATE" ? { name: form.newServiceName, category: form.newServiceCategory, frequency: form.newServiceFrequency, nextRenewal: form.newServiceRenewal } : undefined, confirmReviewedEdit };
       const response = await fetch(editingId ? `/api/transactions/${editingId}` : "/api/transactions", { method: editingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (response.status === 409 && editing && editing.status !== "PENDING" && !confirmReviewedEdit) { setPendingReviewedSubmit(true); setReviewedEditConfirm(true); return; }
       if (!response.ok) throw new Error(data.error || "Could not save transaction");
-      setFeedback({ tone: "success", text: editingId ? "Transaction updated and audit trail recorded." : "Transaction created." }); resetForm(); await load();
+      const archiveFailures = (data.attachmentArchive || []).filter((result: { archived: boolean }) => !result.archived);
+      setFeedback(archiveFailures.length > 0
+        ? { tone: "error", text: `Transaction saved, but ${archiveFailures.length} attachment${archiveFailures.length === 1 ? "" : "s"} could not be copied to Telegram. Saving the transaction again will retry.` }
+        : { tone: "success", text: editingId ? "Transaction updated, audited, and attachments archived." : "Transaction created and attachments archived." });
+      resetForm(); await load();
     } catch (e) { setFeedback({ tone: "error", text: e instanceof Error ? e.message : "Could not save transaction" }); }
     finally { setSaving(false); }
   }
@@ -212,7 +220,10 @@ export default function TransactionsPage() {
         <Field label="Description"><input required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" /></Field>
         <Field label="Date"><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" /></Field>
         {form.direction === "IN" && <SelectField label="Donor / source user" value={form.fromUserId} options={[["", "External / unlinked"], ...users.map((u) => [u.id, `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`])]} onChange={(v) => setForm({ ...form, fromUserId: v })} />}
+        {form.direction === "OUT" && form.type === "SUBSCRIPTION" && <SelectField label="Service record" value={form.serviceAction} options={[["NONE", "No service"], ["LINK", "Link existing service"], ["CREATE", "Create service from transaction"]]} onChange={(v) => setForm({ ...form, serviceAction: v, serviceId: v === "LINK" ? form.serviceId : "" })} />}
+        {form.direction === "OUT" && form.type === "SUBSCRIPTION" && form.serviceAction === "LINK" && <SelectField label="Existing service" value={form.serviceId} options={[["", "Choose service"], ...services.map((service) => [service.id, `${service.name} · ${service.category}`])]} onChange={(v) => setForm({ ...form, serviceId: v })} />}
       </div>
+      {form.direction === "OUT" && form.type === "SUBSCRIPTION" && form.serviceAction === "CREATE" && <div className="mt-4 grid gap-4 rounded-xl border border-lime/15 bg-lime/[.03] p-4 sm:grid-cols-4"><Field label="Service name"><input required value={form.newServiceName} onChange={(e) => setForm({ ...form, newServiceName: e.target.value })} className="input" /></Field><Field label="Category"><input required value={form.newServiceCategory} onChange={(e) => setForm({ ...form, newServiceCategory: e.target.value })} className="input" /></Field><SelectField label="Billing" value={form.newServiceFrequency} options={[["WEEKLY", "Weekly"], ["MONTHLY", "Monthly"], ["YEARLY", "Yearly"]]} onChange={(v) => setForm({ ...form, newServiceFrequency: v })} /><Field label="Next renewal"><input required type="date" value={form.newServiceRenewal} onChange={(e) => setForm({ ...form, newServiceRenewal: e.target.value })} className="input" /></Field></div>}
       <TransactionAttachmentField value={form.attachments} onChange={(attachments) => setForm({ ...form, attachments })} onUploadingChange={setUploadingAttachments} />
       <button disabled={saving || uploadingAttachments || !form.amount || !form.description.trim()} className="mt-4 rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void disabled:opacity-40">{uploadingAttachments ? "Uploading attachments..." : saving ? "Saving..." : editingId ? "Save changes" : "Log transaction"}</button>
     </form>;
@@ -287,6 +298,7 @@ export default function TransactionsPage() {
             <div className="text-sm font-medium text-text-primary">{tx.description}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
               <span>{tx.type}</span>
+              {tx.linkedService && <><span>·</span><a href={`/admin/services/${tx.linkedService.id}`} className="text-lime hover:underline">Service: {tx.linkedService.name}</a></>}
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
               {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
               {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}

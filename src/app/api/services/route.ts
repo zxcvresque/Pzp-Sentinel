@@ -6,6 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { logTransaction as logTelegramTransaction } from "@/lib/telegram-log";
 import { logTransaction as logGithubTransaction } from "@/lib/github-log";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { serviceReminderRepeat } from "@/lib/service-templates";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -92,6 +93,26 @@ export async function POST(req: NextRequest) {
         lastRenewalDate: payment ? paidAt : undefined,
       },
     });
+
+    if (payment) {
+      await db.transaction.update({ where: { id: payment.id }, data: { serviceId: service.id } });
+    }
+    const repeat = serviceReminderRepeat(service.frequency);
+    if (service.expiryDate && repeat) {
+      await db.reminder.create({
+        data: {
+          createdById: user.id,
+          message: `Renew ${service.name}${service.price ? ` (${service.currency} ${service.price})` : ""}`,
+          frequency: "CUSTOM",
+          repeatEvery: repeat.repeatEvery,
+          repeatUnit: repeat.repeatUnit,
+          nextFire: service.expiryDate,
+          channel: "BOTH",
+          recipientRoles: ["ADMIN"],
+          serviceId: service.id,
+        },
+      });
+    }
 
     return { service, payment };
   });

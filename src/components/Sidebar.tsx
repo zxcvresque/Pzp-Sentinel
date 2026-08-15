@@ -179,6 +179,7 @@ const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
     { label: "Dashboard",     shortLabel: "Home",    href: "/admin",                icon: "", Icon: IconDashboardGrid },
     { label: "Transactions",  shortLabel: "Txns",    href: "/admin/transactions",   icon: "", Icon: IconTransactions },
+    { label: "Reconciliation", shortLabel: "Match",   href: "/admin/reconciliation", icon: "", Icon: IconTransactions },
     { label: "Services",      shortLabel: "Svc",     href: "/admin/services",       icon: "", Icon: IconServer },
     { label: "Donors",        shortLabel: "Donors",  href: "/admin/donors",         icon: "", Icon: IconTrophy },
     { label: "Broadcasts",    shortLabel: "Send",    href: "/admin/broadcasts",     icon: "", Icon: IconBell },

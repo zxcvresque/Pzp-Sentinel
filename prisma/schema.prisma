@@ -115,12 +115,33 @@ enum ReminderFreq {
   DAILY
   WEEKLY
   MONTHLY
+  CUSTOM
+}
+
+enum ReminderRepeatUnit {
+  MINUTE
+  HOUR
+  DAY
+  WEEK
+  MONTH
 }
 
 enum Channel {
   BOT
   WEB
   BOTH
+}
+
+enum BroadcastAudienceScope {
+  ADMINS
+  DONORS
+  DEVS
+  EVERYONE
+}
+
+enum BroadcastRecipientMode {
+  ALL
+  SELECTED
 }
 
 model User {
@@ -150,6 +171,7 @@ model User {
   tasksAssigned         Task[]                  @relation("TaskAssignee")
   tasksCreated          Task[]                  @relation("TaskCreatedBy")
   remindersCreated      Reminder[]
+  broadcastSchedules   ScheduledBroadcast[]
   projectMembers        Project[]               @relation("ProjectMembers")
   credentialsCreated    Credential[]            @relation("CredCreatedBy")
   credentialsReviewed   Credential[]            @relation("CredReviewedBy")
@@ -218,6 +240,8 @@ model Transaction {
   createdById         String
   createdBy           User          @relation("TxCreatedBy", fields: [createdById], references: [id])
   createdAt           DateTime      @default(now())
+  serviceId           String?
+  linkedService       Service?      @relation("ServiceTransactions", fields: [serviceId], references: [id], onDelete: SetNull)
 
   service           Service?           @relation("SubPaidTx")
   auditLogs         AuditLog[]
@@ -226,6 +250,7 @@ model Transaction {
   bmcCheckoutIntent BmcCheckoutIntent?
 
   @@index([razorpaySubscriptionId, date])
+  @@index([serviceId, date])
 }
 
 // Server-owned Razorpay order state. Checkout responses are never trusted until
@@ -336,7 +361,15 @@ model RazorpayWebhookEvent {
   id        String   @id @default(cuid())
   eventId   String   @unique
   eventType String
+  resourceId String?
+  payload   Json?
+  // PROCESSED default keeps historical receipt rows from appearing as false
+  // reconciliation failures; new webhook ingestion writes RECEIVED explicitly.
+  status    String   @default("PROCESSED")
   createdAt DateTime @default(now())
+
+  @@index([status, eventType, createdAt])
+  @@index([resourceId])
 }
 
 // Durable receipt log for Buy Me a Coffee webhook deliveries. The event key
@@ -445,11 +478,16 @@ model Service {
   paidTxId        String?      @unique
   paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
   status          SubStatus?
+  attachments     String[]     @default([])
   // Optional link back to the VPS server that created this subscription.
   // SetNull so deleting a server preserves the Service + its transaction history.
   vpsServerId     String?      @unique
   vpsServer       VpsServer?   @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
   createdAt       DateTime     @default(now())
+  transactions    Transaction[] @relation("ServiceTransactions")
+  credentials     Credential[]
+  reminders       Reminder[]
+  alerts          OperationalAlert[]
 }
 
 // Admin-managed provider accounts used by the Services > API Usage dashboard.
@@ -514,15 +552,49 @@ model Task {
 }
 
 model Reminder {
-  id             String       @id @default(cuid())
+  id             String              @id @default(cuid())
   createdById    String
-  createdBy      User         @relation(fields: [createdById], references: [id])
+  createdBy      User                @relation(fields: [createdById], references: [id])
   message        String
-  frequency      ReminderFreq @default(ONCE)
+  frequency      ReminderFreq        @default(ONCE)
+  repeatEvery    Int?
+  repeatUnit     ReminderRepeatUnit?
   nextFire       DateTime
-  channel        Channel      @default(BOTH)
-  recipientRoles Role[]
-  createdAt      DateTime     @default(now())
+  lastFiredAt    DateTime?
+  active         Boolean             @default(true)
+  channel        Channel             @default(BOTH)
+  // Kept for compatibility with existing databases. Admin reminders always
+  // write ADMIN here; the audience is no longer configurable in the UI/API.
+  recipientRoles Role[]              @default([ADMIN])
+  createdAt      DateTime            @default(now())
+  serviceId      String?
+  service        Service?            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([active, nextFire])
+  @@index([serviceId, active])
+}
+
+model ScheduledBroadcast {
+  id             String                 @id @default(cuid())
+  createdById    String
+  createdBy      User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  title          String
+  message        String
+  audience       BroadcastAudienceScope
+  recipientMode  BroadcastRecipientMode @default(ALL)
+  recipientIds   String[]               @default([])
+  sendSentinel   Boolean                @default(true)
+  sendTelegram   Boolean                @default(false)
+  highPriority   Boolean                @default(true)
+  repeatEvery    Int
+  repeatUnit     ReminderRepeatUnit
+  nextFire       DateTime
+  lastFiredAt    DateTime?
+  lastError      String?
+  active         Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+
+  @@index([active, nextFire])
 }
 
 enum CredStatus {
@@ -554,11 +626,39 @@ model Credential {
   // VPS link: when this credential mirrors a VpsServer secret.
   vpsServerId  String?
   vpsServer    VpsServer?         @relation(fields: [vpsServerId], references: [id], onDelete: Cascade)
+  serviceId    String?
+  service      Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  expiresAt    DateTime?
   credKind     String? // "VPS_PASSWORD" | "VPS_SSH_KEY" — used to find/sync the linked row
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
+  alerts       OperationalAlert[]
 
   @@index([vpsServerId])
+  @@index([serviceId])
+  @@index([expiresAt])
+}
+
+model OperationalAlert {
+  id           String      @id @default(cuid())
+  fingerprint  String      @unique
+  kind         String
+  severity     String      @default("NORMAL")
+  title        String
+  message      String
+  status       String      @default("OPEN")
+  dueAt        DateTime?
+  serviceId    String?
+  service      Service?    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  credentialId String?
+  credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  resolvedAt   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([status, severity, dueAt])
+  @@index([serviceId, status])
+  @@index([credentialId, status])
 }
 
 // Per-dev access to a credential. Replaces the old implicit M2M `assignees`.

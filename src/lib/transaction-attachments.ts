@@ -10,6 +10,11 @@ export interface StoredTransactionAttachment {
   size: number;
   uploaderId: string;
   uploadedAt: string;
+  transactionId?: string;
+  telegramFileId?: string;
+  telegramMessageId?: number;
+  telegramArchivedAt?: string;
+  telegramArchiveError?: string;
 }
 
 export function transactionAttachmentRoot() {
@@ -30,4 +35,9 @@ export function safeAttachmentName(value: string) {
 
 export function transactionAttachmentUrl(id: string, originalName: string) {
   return `/api/attachments/${id}/${encodeURIComponent(originalName)}`;
+}
+
+export function transactionAttachmentIdFromUrl(url: string) {
+  const match = url.match(/^\/api\/attachments\/([0-9a-f-]{36})\//i);
+  return match?.[1] ?? null;
 }

@@ -6,6 +6,7 @@ import FormExample from "@/components/FormExample";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
+import Link from "next/link";
 
 interface ColumnDef {
   key: string;
@@ -292,12 +293,10 @@ export default function ServicesPage() {
           Service <span className="font-display text-lime">Catalog</span>
         </h1>
         {!showForm && (
-          <button
-            onClick={openCreateForm}
-            className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90"
-          >
-            Add Service
-          </button>
+          <div className="flex gap-2">
+            <Link href="/admin/purchases" className="rounded-full border border-lime/25 px-4 py-2.5 text-sm font-semibold text-lime">Record purchase</Link>
+            <button onClick={openCreateForm} className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90">Add Service</button>
+          </div>
         )}
       </div>
 
@@ -695,6 +694,7 @@ export default function ServicesPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          <Link href={`/admin/services/${svc.id}`} className="px-3 py-1.5 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20">Open</Link>
                           <button
                             onClick={() => openEditForm(svc)}
                             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20"
