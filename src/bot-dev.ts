@@ -551,7 +551,7 @@ bot.command("start", async (ctx) => {
     .map((r) => roleLabels[r] || r)
     .join("\n");
   const donorWebsite = user.roles.includes("DONOR")
-    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piraztezparty.com">sentinel.piraztezparty.com</a>.`
+    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piratezparty.com">sentinel.piratezparty.com</a>.`
     : "";
 
   try {
