@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { Bot } from "grammy";
+import type { InlineKeyboardMarkup } from "@grammyjs/types";
 import type { NotifType } from "@/generated/prisma/enums";
 
 // Lazy bot instance for sending DMs — avoids module-level throw
@@ -50,12 +51,17 @@ export async function notify(data: {
   entityId?: string;
   priority?: "LOW" | "NORMAL" | "HIGH";
   telegramMessage?: string;
+  /** Custom Telegram buttons, used for private interactive notification flows. */
+  telegramReplyMarkup?: InlineKeyboardMarkup;
   /** Relative path (e.g. "/admin/transactions") — becomes an inline Mini App button */
   actionUrl?: string;
   /** Override the button label (default: "Open Sentinel") */
   actionLabel?: string;
 }) {
-  const { userId, type, title, message, entityId, priority = "NORMAL", telegramMessage, actionUrl, actionLabel } = data;
+  const {
+    userId, type, title, message, entityId, priority = "NORMAL", telegramMessage,
+    telegramReplyMarkup, actionUrl, actionLabel,
+  } = data;
 
   // 1. Create in-app notification
   const notification = await prisma.notification.create({
@@ -80,9 +86,9 @@ export async function notify(data: {
       // Derive a readable label from the destination path if none given
       const btnLabel = actionLabel ?? deriveBtnLabel(actionUrl);
       // Use web_app so it opens inside the Mini App overlay, not the in-app browser
-      const replyMarkup = actionUrl
+      const replyMarkup = telegramReplyMarkup ?? (actionUrl
         ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${actionUrl}` } }]] }
-        : undefined;
+        : undefined);
       await dmBot.api.sendMessage(user.chatId, tgText, {
         parse_mode: "HTML",
         reply_markup: replyMarkup,

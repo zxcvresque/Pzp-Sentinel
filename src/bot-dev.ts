@@ -13,6 +13,7 @@ import { reminderDue } from "./lib/donation-reminders";
 import { scheduleFinanceAutomation } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
+import { registerRazorpayFeedbackHandlers } from "./lib/razorpay-feedback-bot";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -614,6 +615,7 @@ bot.command("help", async (ctx) => {
   }
 });
 
+registerRazorpayFeedbackHandlers(bot, prisma);
 
 bot.catch((err) => {
   console.error("Bot error:", err);

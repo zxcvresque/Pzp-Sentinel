@@ -10,6 +10,11 @@ import { verifyCheckoutHmac, verifySubscriptionHmac, verifyWebhookHmac } from "@
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
+import {
+  razorpayFeedbackKeyboard,
+  subscriptionAlertPolicy,
+  type NormalizedRazorpaySubscriptionEvent,
+} from "@/lib/razorpay-subscription-events";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -415,6 +420,161 @@ export function verifyWebhookSignature(rawBody: string, signature: string) {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
   if (!secret) throw new RazorpayError("Razorpay webhook secret is not configured", 503);
   return verifyWebhookHmac(rawBody, secret, signature);
+}
+
+function subscriptionAlertCopy(action: string, amount: string) {
+  switch (action) {
+    case "cancelled":
+      return {
+        title: "Monthly autopay cancelled",
+        donor: `Your ${amount} monthly Razorpay autopay has been cancelled. No future automatic charges will be made.`,
+        admin: `The ${amount} monthly Razorpay autopay was cancelled.`,
+      };
+    case "paused":
+      return {
+        title: "Monthly autopay paused",
+        donor: `Your ${amount} monthly Razorpay autopay has been paused. Automatic charges will remain stopped until it is resumed.`,
+        admin: `The ${amount} monthly Razorpay autopay was paused.`,
+      };
+    case "pending":
+      return {
+        title: "Monthly autopay needs attention",
+        donor: `Razorpay could not complete the scheduled ${amount} charge and may retry automatically. Check the payment-method notification from Razorpay.`,
+        admin: `The ${amount} monthly Razorpay autopay is pending.`,
+      };
+    case "halted":
+      return {
+        title: "Monthly autopay halted",
+        donor: `Razorpay exhausted its retries for your ${amount} monthly autopay. Automatic charging has stopped until the payment method is fixed.`,
+        admin: `The ${amount} monthly Razorpay autopay was halted after unsuccessful retries.`,
+      };
+    case "resumed":
+    case "activated":
+      return {
+        title: "Monthly autopay active",
+        donor: `Your ${amount} monthly Razorpay autopay is active and future charges will run automatically.`,
+        admin: `The ${amount} monthly Razorpay autopay is active.`,
+      };
+    case "completed":
+      return {
+        title: "Monthly autopay completed",
+        donor: `Your ${amount} monthly Razorpay autopay completed its scheduled billing cycles.`,
+        admin: `The ${amount} monthly Razorpay autopay completed its scheduled billing cycles.`,
+      };
+    case "expired":
+      return {
+        title: "Monthly autopay expired",
+        donor: `Your ${amount} monthly Razorpay autopay expired before it became active.`,
+        admin: `The ${amount} monthly Razorpay autopay expired before activation.`,
+      };
+    default:
+      return null;
+  }
+}
+
+export async function handleRazorpaySubscriptionLifecycle(event: NormalizedRazorpaySubscriptionEvent) {
+  const stored = await prisma.razorpaySubscription.findUnique({
+    where: { razorpaySubscriptionId: event.subscriptionId },
+    include: { user: true },
+  });
+  if (!stored) return { matched: false };
+
+  const updated = await prisma.razorpaySubscription.update({
+    where: { id: stored.id },
+    data: {
+      status: event.status,
+      ...(event.paidCount !== undefined ? { paidCount: event.paidCount } : {}),
+      ...(event.remainingCount !== undefined ? { remainingCount: event.remainingCount } : {}),
+      ...(event.nextChargeAt !== undefined ? { nextChargeAt: event.nextChargeAt } : {}),
+      ...(event.endedAt !== undefined ? { endedAt: event.endedAt } : {}),
+      ...(event.cancelInitiatedBy !== undefined ? { cancelInitiatedBy: event.cancelInitiatedBy } : {}),
+      ...(event.pauseInitiatedBy !== undefined ? { pauseInitiatedBy: event.pauseInitiatedBy } : {}),
+      lastWebhookEvent: event.event,
+      lastWebhookAt: new Date(),
+    },
+  });
+
+  const initiator = event.cancelInitiatedBy || event.pauseInitiatedBy;
+  await logAudit({
+    userId: stored.userId,
+    action: `RAZORPAY_${event.event.replaceAll(".", "_").toUpperCase()}`,
+    entityType: "RazorpaySubscription",
+    entityId: stored.id,
+    before: { status: stored.status, paidCount: stored.paidCount },
+    after: { ...event, status: updated.status },
+    userName: "Razorpay webhook",
+    details: `${stored.user.name} · ${event.status}${initiator ? ` · initiated by ${initiator}` : ""} · ${stored.razorpaySubscriptionId}`,
+  });
+
+  const policy = subscriptionAlertPolicy(event.action);
+  const amount = `₹${(stored.amount / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const copy = subscriptionAlertCopy(event.action, amount);
+  if (!copy) return { matched: true, subscription: updated };
+
+  let feedbackId: string | null = null;
+  if (event.action === "halted" || event.action === "cancelled") {
+    const activeFeedback = await prisma.razorpaySubscriptionFeedback.findFirst({
+      where: {
+        subscriptionId: stored.id,
+        stage: { in: ["ASK_WANTED", "ASK_CANCELLED", "AWAITING_REASON"] },
+      },
+      orderBy: { requestedAt: "desc" },
+    });
+    if (activeFeedback?.stage === "ASK_WANTED") {
+      feedbackId = activeFeedback.id;
+    } else if (!activeFeedback) {
+      const feedback = await prisma.razorpaySubscriptionFeedback.create({
+        data: {
+          subscriptionId: stored.id,
+          userId: stored.userId,
+          triggerAction: event.action.toUpperCase(),
+        },
+      });
+      feedbackId = feedback.id;
+    }
+  }
+
+  const initiatorSuffix = initiator ? ` Initiated by: ${initiator}.` : "";
+  if (policy.donor) {
+    const feedbackQuestion = feedbackId
+      ? "Did this stop or fail even though you still wanted to continue donating?"
+      : undefined;
+    await notify({
+      userId: stored.userId,
+      type: "SYSTEM",
+      title: copy.title,
+      message: `${copy.donor}${initiatorSuffix}`,
+      entityId: stored.id,
+      priority: policy.priority,
+      actionUrl: "/donor",
+      telegramMessage: formatTgMessage(
+        copy.title,
+        copy.donor,
+        [
+          initiator ? `Initiated by: ${escapeTelegramHtml(initiator)}` : null,
+          feedbackQuestion ? `<b>${feedbackQuestion}</b>` : null,
+        ].filter(Boolean).join("\n") || undefined,
+      ),
+      telegramReplyMarkup: feedbackId ? razorpayFeedbackKeyboard(feedbackId) : undefined,
+    });
+  }
+  if (policy.admins) {
+    const adminMessage = `${stored.user.name}: ${copy.admin}${initiatorSuffix}`;
+    await notifyAdmins({
+      type: "SYSTEM",
+      title: copy.title,
+      message: adminMessage,
+      entityId: stored.id,
+      priority: policy.priority,
+      actionUrl: "/admin/transactions",
+      telegramMessage: formatTgMessage(
+        copy.title,
+        `${escapeTelegramHtml(stored.user.name)}: ${escapeTelegramHtml(copy.admin)}`,
+        initiator ? `Initiated by: ${escapeTelegramHtml(initiator)}` : undefined,
+      ),
+    });
+  }
+  return { matched: true, subscription: updated };
 }
 
 async function fetchPayment(paymentId: string) {

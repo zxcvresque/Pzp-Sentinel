@@ -607,6 +607,8 @@ https://sentinel.piratezparty.com/api/webhooks/razorpay
 
 Subscribe to `payment.captured`, `order.paid`, `payment.failed`, and all Razorpay Subscription events—especially `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.paused`, `subscription.resumed`, and `subscription.completed`. Use a dedicated webhook secret; never reuse or expose `RAZORPAY_KEY_SECRET`.
 
+Sentinel retains each subscription's status, paid and remaining counts, next charge/end timestamps, and Razorpay's pause/cancellation initiator. Lifecycle alerts remain private: pending charges notify the donor, while paused/active/completed changes notify the donor and admins; cancelled or halted subscriptions send high-priority donor and admin alerts. After cancellation or exhausted retries, the donor receives a two-step Telegram follow-up that distinguishes an unwanted payment failure from a deliberate cancellation, collects a reason, thanks them, and privately sends the response to every active admin. These responses are never posted to the public donation group.
+
 Standard Razorpay Payment Links are one-time and fixed-amount. A fixed ₹100 `rzp.io` page therefore cannot collect a donor-selected custom amount by monthly autopay; use Sentinel's Monthly checkout, which creates the amount-specific Plan and Subscription through Razorpay's APIs.
 
 Donor access is enforced server-side:

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { logAuditEvent } from "@/lib/telegram-log";
 import { webhookCallback } from "grammy";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
+import { registerRazorpayFeedbackHandlers } from "@/lib/razorpay-feedback-bot";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -104,6 +105,8 @@ bot.command("start", async (ctx) => {
     }
   );
 });
+
+registerRazorpayFeedbackHandlers(bot, prisma);
 
 const handleUpdate = webhookCallback(bot, "std/http");
 

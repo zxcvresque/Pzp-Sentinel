@@ -3,9 +3,14 @@ import { prisma } from "@/lib/db";
 import {
   finalizeCapturedDonation,
   finalizeMonthlySubscriptionCharge,
+  handleRazorpaySubscriptionLifecycle,
   RazorpayError,
   verifyWebhookSignature,
 } from "@/lib/razorpay";
+import {
+  normalizeRazorpaySubscriptionEvent,
+  type RazorpaySubscriptionWebhookEntity,
+} from "@/lib/razorpay-subscription-events";
 
 export const runtime = "nodejs";
 
@@ -14,7 +19,7 @@ type WebhookPayload = {
   payload?: {
     payment?: { entity?: { id?: string; order_id?: string } };
     order?: { entity?: { id?: string } };
-    subscription?: { entity?: { id?: string; status?: string; paid_count?: number } };
+    subscription?: { entity?: RazorpaySubscriptionWebhookEntity };
   };
 };
 
@@ -37,13 +42,14 @@ export async function POST(request: NextRequest) {
     const paymentId = body.payload?.payment?.entity?.id;
     const orderId = body.payload?.order?.entity?.id || body.payload?.payment?.entity?.order_id;
     const subscription = body.payload?.subscription?.entity;
+    const subscriptionEvent = normalizeRazorpaySubscriptionEvent(event, subscription);
 
-    if (event === "subscription.charged" && subscription?.id && paymentId) {
+    if (event === "subscription.charged" && subscriptionEvent && paymentId) {
       await finalizeMonthlySubscriptionCharge({
-        subscriptionId: subscription.id,
+        subscriptionId: subscriptionEvent.subscriptionId,
         paymentId,
-        status: subscription.status,
-        paidCount: subscription.paid_count,
+        status: subscriptionEvent.status,
+        paidCount: subscriptionEvent.paidCount,
       });
     } else if ((event === "payment.captured" || event === "order.paid") && orderId && paymentId) {
       // Subscription invoice payments also emit payment events, but their order
@@ -56,14 +62,8 @@ export async function POST(request: NextRequest) {
       if (storedOrder) {
         await finalizeCapturedDonation({ orderId, paymentId, actorName: "Razorpay webhook" });
       }
-    } else if (subscription?.id && event.startsWith("subscription.")) {
-      await prisma.razorpaySubscription.updateMany({
-        where: { razorpaySubscriptionId: subscription.id },
-        data: {
-          status: (subscription.status || event.split(".").at(-1) || "updated").toUpperCase(),
-          ...(Number.isInteger(subscription.paid_count) ? { paidCount: subscription.paid_count } : {}),
-        },
-      });
+    } else if (subscriptionEvent) {
+      await handleRazorpaySubscriptionLifecycle(subscriptionEvent);
     }
 
     if (eventId) {

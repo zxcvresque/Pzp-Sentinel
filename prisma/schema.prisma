@@ -157,6 +157,7 @@ model User {
   notifications         Notification[]
   razorpayOrders        RazorpayOrder[]
   razorpaySubscriptions RazorpaySubscription[]
+  razorpaySubscriptionFeedback RazorpaySubscriptionFeedback[]
   oneTimeInvitesCreated OneTimeDonationInvite[] @relation("OneTimeInviteCreator")
   bmcCheckoutIntents    BmcCheckoutIntent[]
   bmcSupporterLinks     BmcSupporterLink[]
@@ -268,11 +269,45 @@ model RazorpaySubscription {
   status                   String   @default("CREATED")
   totalCount               Int      @default(1200)
   paidCount                Int      @default(0)
+  remainingCount           Int?
+  nextChargeAt             DateTime?
+  endedAt                  DateTime?
+  cancelInitiatedBy        String?
+  pauseInitiatedBy         String?
+  lastWebhookEvent         String?
+  lastWebhookAt            DateTime?
   testMode                 Boolean  @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
+  feedback                 RazorpaySubscriptionFeedback[]
 
   @@index([userId, createdAt])
+}
+
+enum RazorpayFeedbackStage {
+  ASK_WANTED
+  ASK_CANCELLED
+  AWAITING_REASON
+  COMPLETED
+}
+
+model RazorpaySubscriptionFeedback {
+  id                     String                @id @default(cuid())
+  subscriptionId         String
+  subscription           RazorpaySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  userId                 String
+  user                   User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  triggerAction          String
+  stage                  RazorpayFeedbackStage @default(ASK_WANTED)
+  wantedToDonate         Boolean?
+  deliberateCancellation Boolean?
+  reason                 String?
+  requestedAt            DateTime              @default(now())
+  respondedAt            DateTime?
+  updatedAt              DateTime              @updatedAt
+
+  @@index([subscriptionId, stage, requestedAt])
+  @@index([userId, stage, requestedAt])
 }
 
 model OneTimeDonationInvite {
