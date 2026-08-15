@@ -8,6 +8,7 @@ import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
 import { groupThanks, dmThanks, donorHandle } from "@/lib/donation-thanks";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { monthlyReminderUpdate } from "@/lib/donation-frequency";
 
 export async function POST(
   req: NextRequest,
@@ -112,6 +113,13 @@ export async function POST(
   // Recorded by someone other than the donor (incl. external donors).
   const onBehalf = isDonation && (onBehalfLinked || !updated.fromUserId);
 
+  if (isDonation && updated.fromUserId) {
+    const reminderUpdate = monthlyReminderUpdate(updated.donationFrequency, updated.date);
+    if (reminderUpdate) {
+      await prisma.user.update({ where: { id: updated.fromUserId }, data: reminderUpdate });
+    }
+  }
+
   // In-app notification + Telegram DM for the donor (tiered personal thanks for donations)
   if (updated.fromUserId) {
     const donorName = updated.fromUser?.name ?? "there";
@@ -143,7 +151,7 @@ export async function POST(
   // Public thank-you in the donations group (donations only).
   if (isDonation) {
     const handle = donorHandle(updated.fromUser?.name, updated.fromUser?.telegramUser);
-    let groupMsg = groupThanks(handle, amountNum, updated.currency);
+    let groupMsg = groupThanks(handle, amountNum, updated.currency, updated.donationFrequency);
     if (onBehalf) groupMsg += `\n<i>(recorded by ${recorderName} on their behalf)</i>`;
     postDonationThanks(groupMsg).catch((err) =>
       console.error("[approve] group thanks failed:", err),

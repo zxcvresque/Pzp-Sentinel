@@ -151,12 +151,14 @@ export async function PATCH(
         update: {
           supporterEmail: bmcReceipt.supporterEmail,
           lastSeenAt: new Date(),
+          donationFrequency: updated.donationFrequency,
         },
         create: {
           accountSlug: bmcAccountSlug(),
           supporterId: bmcReceipt.supporterId,
           supporterEmail: bmcReceipt.supporterEmail,
           userId: updated.fromUserId,
+          donationFrequency: updated.donationFrequency,
         },
       });
     }

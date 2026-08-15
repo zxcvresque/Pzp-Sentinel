@@ -44,6 +44,7 @@ export async function GET() {
       roles: user.roles,
       dmPreferences: user.dmPreferences,
       donateReminderCadence: user.donateReminderCadence,
+      donateReminderAnchorAt: user.donateReminderAnchorAt?.toISOString() ?? null,
       donateReminderEveryN: user.donateReminderEveryN,
       donateReminderUnit: user.donateReminderUnit,
       donateReminderTimeMin: user.donateReminderTimeMin,

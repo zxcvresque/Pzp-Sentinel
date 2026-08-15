@@ -122,6 +122,15 @@ stateDiagram-v2
     Approved --> Voided: admin voids with reason
     Rejected --> Voided: admin voids with reason
     Voided --> [*]: retained outside active totals
+
+    classDef pending fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef approved fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef rejected fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef voided fill:#e2e8f0,stroke:#64748b,color:#0f172a
+    class Pending pending
+    class Approved approved
+    class Rejected rejected
+    class Voided voided
 ```
 
 Voided records are excluded from active balances, donor totals, statistics, and leaderboard calculations. They remain queryable through the lifecycle filter and remain present in the Sheets transaction history for reconciliation.
@@ -138,16 +147,20 @@ sequenceDiagram
     participant Audit as Audit + Telegram logs
     participant Sheets as Google Sheets mirror
 
-    Donor->>UI: Submit contribution and proof
-    UI->>API: POST /api/transactions
-    API->>DB: Create PENDING transaction
-    API-->>Admin: High-priority notification
-    Admin->>UI: Approve, reject, edit, or void
-    UI->>API: Confirmed mutation
-    API->>DB: Update status or void metadata
-    API->>Audit: Append actor, reason, before, and after
-    API-->>Donor: In-app and Telegram notification
-    API-->>Sheets: Schedule mirror refresh and backup
+    rect rgb(219, 234, 254)
+        Donor->>UI: Submit contribution and proof
+        UI->>API: POST /api/transactions
+        API->>DB: Create PENDING transaction
+        API-->>Admin: High-priority notification
+    end
+    rect rgb(220, 252, 231)
+        Admin->>UI: Approve, reject, edit, or void
+        UI->>API: Confirmed mutation
+        API->>DB: Update status or void metadata
+        API->>Audit: Append actor, reason, before, and after
+        API-->>Donor: In-app and Telegram notification
+        API-->>Sheets: Schedule mirror refresh and backup
+    end
 ```
 
 ---
@@ -191,6 +204,17 @@ flowchart LR
     N --> BELL[Notification center]
     T --> POST[Equivalent Telegram HTML]
     API --> LOG[Audit record with delivery result]
+
+    classDef compose fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef decision fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef delivery fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef denied fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    classDef audit fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    class A,AUD,P,V,API compose
+    class AUTH,DEST decision
+    class N,T,POP,BELL,POST delivery
+    class DENY denied
+    class LOG audit
 ```
 
 Telegram delivery falls back to `TG_GROUP_ID` when a separate donation group is not configured. Sending to the group requires the bot to be a member with permission to post.
@@ -253,6 +277,17 @@ flowchart TB
     AGENT -->|heartbeat every 30 seconds| ROUTES
     PM2 --> NEXT
     PM2 --> BOT
+
+    classDef client fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef app fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef integration fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef fleet fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    class MINI,WEB,ADMIN client
+    class MW,NEXT,ROUTES,DOMAIN,BOT app
+    class PG,FILES data
+    class TG,RZP,BMC,GS,GH,FX integration
+    class AGENT,PM2 fleet
 ```
 
 ### Runtime boundaries
@@ -367,6 +402,13 @@ flowchart LR
     DB --> CLIENT
     CLIENT -. generated from .-> SCHEMA
     CLIENT --> POSTGRES
+
+    classDef presentation fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef domain fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef persistence fill:#fef3c7,stroke:#d97706,color:#78350f
+    class PAGES,UI,API presentation
+    class AUTH,TX,NOTIFY,FORMAT,PAY,VAULT,AUDIT,SHEETS,BOTLIB domain
+    class DB,CLIENT,SCHEMA,POSTGRES persistence
 ```
 
 ### Route ownership
@@ -487,6 +529,7 @@ BMC_TOKEN=""
 RAZORPAY_KEY_ID="rzp_test_or_live_key_id"
 RAZORPAY_KEY_SECRET="your-key-secret"
 RAZORPAY_WEBHOOK_SECRET="a-separate-webhook-secret"
+RAZORPAY_SUBSCRIPTION_TOTAL_COUNT="1200"
 ```
 
 `BMC_TOKEN` is optional and exists only for legacy accounts that still provide API access. The configured Razorpay key ID is the source of truth for test versus live mode.
@@ -509,6 +552,29 @@ Keep the two GitHub tokens separate when they require different repository scope
 
 ## Integrations
 
+### Donation checkout flow
+
+```mermaid
+flowchart LR
+    D[Donor enters a custom amount] --> F{One time or monthly?}
+    F -->|One time| O[BMC or verified Razorpay order]
+    F -->|Monthly| P{Payment provider}
+    P -->|BMC| B[First note links supporter]
+    P -->|Razorpay| R[Plan, subscription, and mandate]
+    O --> T1[Ledger and thank-you with #onetime]
+    B --> T2[Recurring ledger, dated reminder, and #monthly]
+    R --> T2
+
+    classDef input fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef choice fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef provider fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef result fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class D input
+    class F,P choice
+    class O,B,R provider
+    class T1,T2 result
+```
+
 ### Buy Me a Coffee
 
 Sentinel uses BMC in three ways:
@@ -525,11 +591,13 @@ https://sentinel.piratezparty.com/api/bmc/webhook
 
 Enable the payment, refund, extra-purchase, recurring donation, membership, commission, and wishlist event types available to the account. Retries remain idempotent because Sentinel stores a unique event key. Test deliveries are retained for verification but excluded from live treasury totals.
 
+Before opening BMC, an authenticated donor chooses **One time** or **Monthly** and receives a single-use Sentinel code to paste into BMC's support note. A valid first webhook binds BMC's signed `supporter_id` to that donor. Future payments—including monthly autopay updates—then remain attributed without another code. If the first note omitted the code, an admin can assign the unmatched BMC transaction to a donor in Transactions; that reconciliation creates the same trusted supporter link for later payments.
+
 When replacing the BMC account, update `BMC_PAGE_URL`, `BMC_ACCOUNT_SLUG`, and `BMC_WEBHOOK_SECRET`, run `bash upgrade.sh`, then send a BMC test event. Previously imported transactions remain in the database, while the account slug namespaces new provider IDs to avoid collisions.
 
 ### Razorpay
 
-Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. The signed webhook recovers payments when the payer closes the browser before client verification finishes.
+For one-time payments, Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. For monthly custom amounts, Sentinel creates a fixed-amount monthly Plan dynamically, creates a bounded Subscription, opens Razorpay mandate authorisation, verifies the subscription signature, and records each successful `subscription.charged` payment idempotently.
 
 Configure the webhook as:
 
@@ -537,7 +605,9 @@ Configure the webhook as:
 https://sentinel.piratezparty.com/api/webhooks/razorpay
 ```
 
-Subscribe to `payment.captured`, `order.paid`, and `payment.failed`. Use a dedicated webhook secret; never reuse or expose `RAZORPAY_KEY_SECRET`.
+Subscribe to `payment.captured`, `order.paid`, `payment.failed`, and all Razorpay Subscription events—especially `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.paused`, `subscription.resumed`, and `subscription.completed`. Use a dedicated webhook secret; never reuse or expose `RAZORPAY_KEY_SECRET`.
+
+Standard Razorpay Payment Links are one-time and fixed-amount. A fixed ₹100 `rzp.io` page therefore cannot collect a donor-selected custom amount by monthly autopay; use Sentinel's Monthly checkout, which creates the amount-specific Plan and Subscription through Razorpay's APIs.
 
 Donor access is enforced server-side:
 
@@ -642,6 +712,17 @@ flowchart LR
     BOT --> DB
     PM2[PM2 supervisor] --> WEB
     PM2 --> BOT
+
+    classDef edge fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef runtime fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef data fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef external fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+    classDef operations fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    class USER,PROXY edge
+    class WEB,BOT runtime
+    class DB data
+    class TG external
+    class PM2 operations
 ```
 
 ### One-command upgrade

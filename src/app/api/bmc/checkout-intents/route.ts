@@ -7,10 +7,11 @@ import {
   generateBmcAttributionCode,
   hashBmcAttributionCode,
 } from "@/lib/bmc-attribution";
+import { parseDonationFrequency } from "@/lib/donation-frequency";
 
 export const runtime = "nodejs";
 
-export async function POST() {
+export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user || !hasRole(user.roles, "DONOR")) {
     return NextResponse.json({ error: "Only approved donors can create a BMC payment reference" }, { status: 403 });
@@ -23,6 +24,8 @@ export async function POST() {
     return NextResponse.json({ error: "Buy Me a Coffee checkout is not configured" }, { status: 503 });
   }
 
+  const body = await request.json().catch(() => ({}));
+  const donationFrequency = parseDonationFrequency(body.donationFrequency);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + BMC_INTENT_TTL_MINUTES * 60_000);
   const code = generateBmcAttributionCode();
@@ -38,6 +41,7 @@ export async function POST() {
       data: {
         userId: user.id,
         codeHash: hashBmcAttributionCode(code),
+        donationFrequency,
         expiresAt,
       },
     });
@@ -50,12 +54,13 @@ export async function POST() {
     entityId: intent.id,
     after: { expiresAt: expiresAt.toISOString() },
     userName: user.name,
-    details: `${user.name} generated a one-time BMC attribution reference`,
+    details: `${user.name} generated a ${donationFrequency === "MONTHLY" ? "monthly" : "one-time"} BMC attribution reference`,
   });
 
   return NextResponse.json({
     code,
     expiresAt: expiresAt.toISOString(),
     checkoutUrl,
+    donationFrequency,
   });
 }

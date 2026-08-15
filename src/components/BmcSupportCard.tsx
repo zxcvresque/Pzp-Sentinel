@@ -22,6 +22,7 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
   const [preparing, setPreparing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
 
   useEffect(() => {
     const url = guestToken ? `/api/bmc/config?token=${encodeURIComponent(guestToken)}` : "/api/bmc/config";
@@ -43,7 +44,11 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
     setPreparing(true);
     setError("");
     try {
-      const response = await fetch("/api/bmc/checkout-intents", { method: "POST" });
+      const response = await fetch("/api/bmc/checkout-intents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ donationFrequency }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not prepare BMC checkout");
       setIntent(data);
@@ -84,6 +89,20 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
             <p className="max-w-2xl text-sm leading-6 text-text-secondary">
               Support Piratezparty with a contribution, membership, commission, or wishlist payment.
             </p>
+            {!adminPreview && !guestToken && (
+              <div className="mt-4 inline-flex rounded-xl border border-amber/20 bg-black/15 p-1" aria-label="Donation frequency">
+                {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    onClick={() => { setDonationFrequency(frequency); setIntent(null); setError(""); }}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-amber text-bg-void" : "text-text-secondary hover:text-text-primary"}`}
+                  >
+                    {frequency === "MONTHLY" ? "Monthly" : "One time"}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="mt-3 flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">
               <span className={`h-1.5 w-1.5 rounded-full ${config.configured ? "bg-mint" : "bg-amber"}`} />
               {config.configured ? "Secure checkout · opens in browser" : "Currently unavailable"}
@@ -111,7 +130,7 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
           >
             <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={20} height={29} className="h-6 w-auto object-contain" />
-            {preparing ? "Preparing secure reference..." : intent ? "Generate a new reference" : "Continue with BMC"}
+            {preparing ? "Preparing secure reference..." : intent ? "Generate a new reference" : `Continue ${donationFrequency === "MONTHLY" ? "monthly" : "one time"}`}
           </button>
         ) : (
           <span className="shrink-0 rounded-full border border-amber/20 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-amber">Unavailable</span>
@@ -124,6 +143,11 @@ export default function BmcSupportCard({ adminPreview = false, guestToken }: { a
               <div className="font-mono text-[9px] uppercase tracking-[.12em] text-amber">Required for automatic attribution</div>
               <p className="mt-1 text-sm leading-6 text-text-secondary">
                 Copy this one-time reference and paste it into BMC&apos;s <strong className="text-text-primary">support note / “Say something nice”</strong> field before paying.
+              </p>
+              <p className="mt-2 text-xs leading-5 text-text-tertiary">
+                {donationFrequency === "MONTHLY"
+                  ? "On BMC, choose Monthly and enter your custom amount. The code is needed only on the first payment; signed future autopay webhooks use your verified BMC supporter ID and stay linked automatically."
+                  : "On BMC, choose One time and enter your custom amount. If the code is missing, an admin can assign the payment from the donor list; that verified supporter ID is remembered for future payments."}
               </p>
               <button
                 type="button"

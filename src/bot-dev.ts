@@ -3,8 +3,13 @@ import { Bot } from "grammy";
 import { PrismaClient, Prisma } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
-import { logAuditEvent } from "./lib/telegram-log";
-import { donateReminderMessage } from "./lib/donation-thanks";
+import { logAuditEvent, postDonationThanks } from "./lib/telegram-log";
+import {
+  donateReminderMessage,
+  donorHandle,
+  monthlyDonationReminderGroupMessage,
+} from "./lib/donation-thanks";
+import { reminderDue } from "./lib/donation-reminders";
 import { scheduleFinanceAutomation } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
@@ -696,80 +701,6 @@ async function checkServiceExpiry() {
 // ── Donor donate-reminders ─────────────────────────────────────────────
 // 30-min poll so the donor's chosen time-of-day is honored within ~30 min.
 const DONATE_REMINDER_CHECK_INTERVAL = 30 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-type ReminderDonor = {
-  donateReminderCadence: string;
-  lastDonateReminderAt: Date | null;
-  donateReminderEveryN: number | null;
-  donateReminderUnit: string | null;
-  donateReminderTimeMin: number;
-  donateReminderTz: string;
-};
-
-// {year, month(1-12), day, hour, minute} of `date` in the given IANA timezone.
-// Falls back to UTC if the zone is somehow invalid.
-function localParts(date: Date, tz: string) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(date);
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
-    let hour = get("hour");
-    if (hour === 24) hour = 0; // some ICU builds emit 24 at midnight
-    return { year: get("year"), month: get("month"), day: get("day"), hour, minute: get("minute") };
-  } catch {
-    return {
-      year: date.getUTCFullYear(),
-      month: date.getUTCMonth() + 1,
-      day: date.getUTCDate(),
-      hour: date.getUTCHours(),
-      minute: date.getUTCMinutes(),
-    };
-  }
-}
-
-// A reminder fires only once the donor's local time-of-day has been reached, AND
-// the cadence interval has elapsed. Weekly/biweekly/custom-day/week roll from the
-// last reminder; monthly fires on/after the 5th once per local calendar month;
-// custom-month advances by whole local calendar months.
-function reminderDue(d: ReminderDonor, now: Date): boolean {
-  const tz = d.donateReminderTz || "Asia/Kolkata";
-  const nowL = localParts(now, tz);
-  const timeReached = nowL.hour * 60 + nowL.minute >= (d.donateReminderTimeMin ?? 540);
-  if (!timeReached) return false;
-
-  const last = d.lastDonateReminderAt;
-  const cadence = d.donateReminderCadence;
-
-  if (cadence === "WEEKLY") return !last || now.getTime() - last.getTime() >= 7 * DAY_MS;
-  if (cadence === "BIWEEKLY") return !last || now.getTime() - last.getTime() >= 14 * DAY_MS;
-  if (cadence === "MONTHLY") {
-    if (nowL.day < 5) return false;
-    if (!last) return true;
-    const lastL = localParts(last, tz);
-    return lastL.year !== nowL.year || lastL.month !== nowL.month;
-  }
-  if (cadence === "CUSTOM") {
-    if (!last) return true;
-    const n = d.donateReminderEveryN ?? 1;
-    const unit = d.donateReminderUnit ?? "WEEK";
-    if (unit === "DAY") return now.getTime() - last.getTime() >= n * DAY_MS;
-    if (unit === "WEEK") return now.getTime() - last.getTime() >= n * 7 * DAY_MS;
-    if (unit === "MONTH") {
-      const lastL = localParts(last, tz);
-      const monthsElapsed = (nowL.year - lastL.year) * 12 + (nowL.month - lastL.month);
-      return monthsElapsed >= n;
-    }
-  }
-  return false;
-}
 
 async function checkDonateReminders() {
   console.log("[donate-reminder] Running donor reminder check...");
@@ -789,10 +720,12 @@ async function checkDonateReminders() {
           chatId: true,
           donateReminderCadence: true,
           lastDonateReminderAt: true,
+          donateReminderAnchorAt: true,
           donateReminderEveryN: true,
           donateReminderUnit: true,
           donateReminderTimeMin: true,
           donateReminderTz: true,
+          telegramUser: true,
         },
       }),
     );
@@ -804,6 +737,9 @@ async function checkDonateReminders() {
       const isFirst = !d.lastDonateReminderAt;
       try {
         await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name, isFirst), { parse_mode: "HTML" });
+        if (d.donateReminderCadence === "MONTHLY" && d.donateReminderAnchorAt) {
+          await postDonationThanks(monthlyDonationReminderGroupMessage(donorHandle(d.name, d.telegramUser)));
+        }
         sent++;
       } catch (e) {
         console.error(`[donate-reminder] DM failed for ${d.id}:`, (e as Error).message);

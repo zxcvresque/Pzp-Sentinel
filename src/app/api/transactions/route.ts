@@ -9,6 +9,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
+import { parseDonationFrequency } from "@/lib/donation-frequency";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { amount, currency, method, direction, type, description, proofFileId, fromUserId } = body;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const donationFrequency = parseDonationFrequency(body.donationFrequency);
 
   if (!amount || !description) {
     return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
       method: method || "OTHER",
       direction: direction || "IN",
       type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
+      donationFrequency,
       description,
       proofFileId: proofFileId || null,
       attachments,

@@ -43,6 +43,7 @@ export default function DonorDashboard() {
   const [currency, setCurrency] = useState("INR");
   const [method, setMethod] = useState("UPI");
   const [reference, setReference] = useState("");
+  const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -158,6 +159,7 @@ export default function DonorDashboard() {
           direction: "IN",
           type: "DONATION",
           description: desc,
+          donationFrequency,
           attachments: attachmentUrls,
         }),
       });
@@ -172,6 +174,7 @@ export default function DonorDashboard() {
       setShowForm(false);
       setAmount("");
       setReference("");
+      setDonationFrequency("ONE_TIME");
       setFiles([]);
       setPreviews([]);
       setSuccess(true);
@@ -279,6 +282,21 @@ export default function DonorDashboard() {
           </div>
           <FormExample lines={["Amount: 1000 · Currency: INR · Method: UPI", "Reference: UPI transaction ID or note"]} />
           <form onSubmit={handleSubmit}>
+            <div className="mb-4">
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Donation frequency</span>
+              <div className="inline-flex rounded-xl border border-[var(--border)] bg-bg-deep p-1">
+                {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    onClick={() => setDonationFrequency(frequency)}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-lime text-bg-void" : "text-text-secondary"}`}
+                  >
+                    {frequency === "MONTHLY" ? "Monthly" : "One time"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               {/* Amount */}
               <div>

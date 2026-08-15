@@ -80,7 +80,10 @@ function eventResource(type: string, data: Record<string, unknown>): string {
     return text(data.id) || text(data.wishlist_payment_id) || text(objectValue(data.wishlist).id) || "unknown";
   }
   if (type.startsWith("membership.")) return text(data.id) || text(data.membership_id) || text(data.psp_id) || "unknown";
-  if (type.startsWith("recurring_donation.")) return text(data.id) || text(data.support_id) || text(data.psp_id) || "unknown";
+  if (type.startsWith("recurring_donation.")) {
+    return text(data.transaction_id) || text(data.payment_id) || text(data.purchase_id)
+      || text(data.id) || text(data.support_id) || text(data.psp_id) || "unknown";
+  }
   return text(data.id) || "unknown";
 }
 
@@ -173,7 +176,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
   };
 }
 
-export function bmcTransactionKeys(type: string, resourceId: string): string[] {
+export function bmcTransactionKeys(type: string, resourceId: string, providerEventId?: string | null): string[] {
   const slug = bmcAccountSlug();
   const kind = type.startsWith("extra_purchase.") ? "extra"
     : type.startsWith("commission_order.") ? "commission"
@@ -181,5 +184,8 @@ export function bmcTransactionKeys(type: string, resourceId: string): string[] {
         : type.startsWith("membership.") ? "membership"
           : type.startsWith("recurring_donation.") ? "monthly"
             : "support";
-  return [`bmc_${kind}_${slug}_${resourceId}`, `bmc_${kind}_${resourceId}`];
+  const stableResource = type === "recurring_donation.updated" && providerEventId
+    ? `event_${providerEventId}`
+    : resourceId;
+  return [`bmc_${kind}_${slug}_${stableResource}`, `bmc_${kind}_${stableResource}`];
 }

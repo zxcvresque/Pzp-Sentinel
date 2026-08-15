@@ -143,11 +143,18 @@ export function donorHandle(name?: string | null, username?: string | null): str
 }
 
 /** Public group thank-you. `handle` should be "@username" (or a fallback name). */
-export function groupThanks(handle: string, amount: number, currency: string): string {
+export function groupThanks(
+  handle: string,
+  amount: number,
+  currency: string,
+  frequency: string = "ONE_TIME",
+): string {
   const tier = tierFor(amount, currency);
-  return pick(GROUP_TEMPLATES[tier])
+  const message = pick(GROUP_TEMPLATES[tier])
     .replaceAll("{user}", handle)
     .replaceAll("{amount}", formatAmount(amount, currency));
+  const hashtag = frequency === "MONTHLY" ? "#monthly" : "#onetime";
+  return `${message}\n\n<blockquote>${hashtag}</blockquote>`;
 }
 
 /** Personal DM thank-you. */
@@ -165,4 +172,9 @@ export function donateReminderMessage(name: string, isFirst: boolean): string {
     ? "\n\n<i>This is your first reminder — want these more or less often, or off? Set your preference anytime in your Profile → Donation reminders.</i>"
     : "\n\n<i>Change how often you get these in your Profile → Donation reminders.</i>";
   return base + suffix;
+}
+
+/** Public nudge used only for donors who explicitly selected monthly giving. */
+export function monthlyDonationReminderGroupMessage(handle: string): string {
+  return `🏴‍☠️ Friendly monthly support reminder for ${handle} — today matches your chosen giving date. No pressure, and thank you for keeping PzP sailing!\n\n#monthly`;
 }

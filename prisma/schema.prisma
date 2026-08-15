@@ -31,6 +31,11 @@ enum DonateCadence {
   OFF
 }
 
+enum DonationFrequency {
+  ONE_TIME
+  MONTHLY
+}
+
 enum ReminderUnit {
   DAY
   WEEK
@@ -151,6 +156,7 @@ model User {
   credentialAccess      CredentialAccess[]      @relation("CredAccessUser")
   notifications         Notification[]
   razorpayOrders        RazorpayOrder[]
+  razorpaySubscriptions RazorpaySubscription[]
   oneTimeInvitesCreated OneTimeDonationInvite[] @relation("OneTimeInviteCreator")
   bmcCheckoutIntents    BmcCheckoutIntent[]
   bmcSupporterLinks     BmcSupporterLink[]
@@ -158,6 +164,9 @@ model User {
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence DonateCadence @default(MONTHLY)
   lastDonateReminderAt  DateTime?
+  // A donor who explicitly chooses monthly giving is reminded on this local
+  // day-of-month instead of the generic 5th-of-the-month default.
+  donateReminderAnchorAt DateTime?
   // CUSTOM cadence: remind every N units (e.g. every 3 DAYs / 2 WEEKs / 1 MONTH).
   donateReminderEveryN  Int?
   donateReminderUnit    ReminderUnit?
@@ -183,6 +192,11 @@ model Transaction {
   paymentMethodDetail String?
   direction           Direction
   type                TxType        @default(OTHER)
+  donationFrequency   DonationFrequency @default(ONE_TIME)
+  // Provider payment ID for recurring rails whose charges do not use a
+  // Sentinel RazorpayOrder. Unique so webhook retries cannot duplicate income.
+  providerPaymentId   String?       @unique
+  razorpaySubscriptionId String?
   fromUserId          String?
   fromUser            User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
   description         String
@@ -208,6 +222,8 @@ model Transaction {
   razorpayOrder     RazorpayOrder?
   bmcWebhookEvents  BmcWebhookEvent[]
   bmcCheckoutIntent BmcCheckoutIntent?
+
+  @@index([razorpaySubscriptionId, date])
 }
 
 // Server-owned Razorpay order state. Checkout responses are never trusted until
@@ -226,11 +242,35 @@ model RazorpayOrder {
   amount          Int // smallest currency unit (paise for INR)
   currency        Currency               @default(INR)
   description     String
+  donationFrequency DonationFrequency @default(ONE_TIME)
   testMode        Boolean                @default(false)
   status          RazorpayOrderStatus    @default(CREATED)
   paidAt          DateTime?
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+// A custom-amount monthly mandate. Razorpay plans have fixed amounts, so the
+// server creates a plan for the selected amount and then creates a subscription
+// from that plan. Subsequent charges arrive through subscription webhooks.
+model RazorpaySubscription {
+  id                       String   @id @default(cuid())
+  razorpaySubscriptionId   String   @unique
+  razorpayPlanId           String
+  authorizationPaymentId   String?  @unique
+  userId                   String
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amount                   Int
+  currency                 Currency @default(INR)
+  description              String
+  status                   String   @default("CREATED")
+  totalCount               Int      @default(1200)
+  paidCount                Int      @default(0)
+  testMode                 Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   @@index([userId, createdAt])
 }
@@ -302,6 +342,7 @@ model BmcCheckoutIntent {
   userId        String
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   codeHash      String       @unique
+  donationFrequency DonationFrequency @default(ONE_TIME)
   expiresAt     DateTime
   consumedAt    DateTime?
   transactionId String?      @unique
@@ -320,6 +361,7 @@ model BmcSupporterLink {
   supporterEmail String?
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  donationFrequency DonationFrequency @default(ONE_TIME)
   verifiedAt     DateTime @default(now())
   lastSeenAt     DateTime @default(now())
   createdAt      DateTime @default(now())

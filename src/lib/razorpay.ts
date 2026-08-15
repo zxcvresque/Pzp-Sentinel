@@ -6,9 +6,10 @@ import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { groupThanks, donorHandle, dmThanks } from "@/lib/donation-thanks";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
-import { verifyCheckoutHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
+import { verifyCheckoutHmac, verifySubscriptionHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
+import { monthlyReminderUpdate } from "@/lib/donation-frequency";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -35,6 +36,17 @@ type RazorpayPaymentResponse = {
   bank?: string;
   card?: { network?: string; type?: string; issuer?: string };
   created_at?: number;
+};
+
+type RazorpayPlanResponse = { id: string };
+
+type RazorpaySubscriptionResponse = {
+  id: string;
+  plan_id: string;
+  status: string;
+  paid_count?: number;
+  total_count: number;
+  short_url?: string;
 };
 
 function razorpayPaymentDetail(payment: RazorpayPaymentResponse): string | null {
@@ -287,6 +299,109 @@ export async function createDonationOrder(params: {
   };
 }
 
+export async function createMonthlyDonationSubscription(params: {
+  userId: string;
+  amount: unknown;
+  description?: unknown;
+  requireAccess?: boolean;
+}) {
+  const amountRupees = typeof params.amount === "number" ? params.amount : Number(params.amount);
+  const amount = Math.round(amountRupees * 100);
+  if (!Number.isSafeInteger(amount) || amount < MIN_DONATION_PAISE || amount > MAX_DONATION_PAISE) {
+    throw new RazorpayError("Enter an amount between ₹1 and ₹10,00,000", 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: params.userId },
+    select: { id: true, name: true, razorpayAccess: true },
+  });
+  if (!user) throw new RazorpayError("User not found", 404);
+  if (params.requireAccess && !user.razorpayAccess) {
+    throw new RazorpayError("Razorpay checkout is not currently enabled for your account", 403);
+  }
+
+  const config = credentials();
+  const reusable = await prisma.razorpaySubscription.findFirst({
+    where: {
+      userId: user.id,
+      amount,
+      status: "CREATED",
+      createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (reusable) {
+    return {
+      id: reusable.razorpaySubscriptionId,
+      amount: reusable.amount,
+      currency: reusable.currency,
+      description: reusable.description,
+      keyId: config.keyId,
+      testMode: config.testMode,
+      prefill: { name: user.name },
+    };
+  }
+
+  const note = typeof params.description === "string" ? params.description.trim().slice(0, 120) : "";
+  const description = note || "Monthly donation to Piratezparty";
+  // Plans describe only amount + cadence, so donors choosing the same amount
+  // can safely share one plan while retaining separate subscriptions/mandates.
+  // Keep test and live plans isolated even if their amounts match.
+  const existingPlan = await prisma.razorpaySubscription.findFirst({
+    where: { amount, currency: "INR", testMode: config.testMode },
+    select: { razorpayPlanId: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const planId = existingPlan?.razorpayPlanId || (await razorpayRequest<RazorpayPlanResponse>("/plans", {
+    method: "POST",
+    body: JSON.stringify({
+      period: "monthly",
+      interval: 1,
+      item: {
+        name: "PzP monthly support",
+        amount,
+        currency: "INR",
+        description: `Monthly PzP donation · ₹${amountRupees.toLocaleString("en-IN")}`,
+      },
+      notes: { sentinel_frequency: "monthly", sentinel_amount_paise: String(amount) },
+    }),
+  })).id;
+  const configuredTotal = Number(process.env.RAZORPAY_SUBSCRIPTION_TOTAL_COUNT || 1200);
+  const totalCount = Number.isInteger(configuredTotal) ? Math.min(1200, Math.max(1, configuredTotal)) : 1200;
+  const remote = await razorpayRequest<RazorpaySubscriptionResponse>("/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({
+      plan_id: planId,
+      total_count: totalCount,
+      quantity: 1,
+      customer_notify: true,
+      notes: { sentinel_user_id: user.id, sentinel_frequency: "monthly" },
+    }),
+  });
+  const subscription = await prisma.razorpaySubscription.create({
+    data: {
+      razorpaySubscriptionId: remote.id,
+      razorpayPlanId: planId,
+      userId: user.id,
+      amount,
+      currency: "INR",
+      description,
+      status: remote.status.toUpperCase(),
+      totalCount,
+      testMode: config.testMode,
+    },
+  });
+  return {
+    id: subscription.razorpaySubscriptionId,
+    amount: subscription.amount,
+    currency: subscription.currency,
+    description: subscription.description,
+    keyId: config.keyId,
+    testMode: config.testMode,
+    prefill: { name: user.name },
+  };
+}
+
 export function verifyCheckoutSignature(params: {
   orderId: string;
   paymentId: string;
@@ -304,6 +419,36 @@ export function verifyWebhookSignature(rawBody: string, signature: string) {
 
 async function fetchPayment(paymentId: string) {
   return razorpayRequest<RazorpayPaymentResponse>(`/payments/${encodeURIComponent(paymentId)}`);
+}
+
+export async function verifyMonthlySubscriptionCheckout(params: {
+  subscriptionId: string;
+  paymentId: string;
+  signature: string;
+  expectedUserId: string;
+}) {
+  const stored = await prisma.razorpaySubscription.findFirst({
+    where: { razorpaySubscriptionId: params.subscriptionId, userId: params.expectedUserId },
+  });
+  if (!stored) throw new RazorpayError("Monthly subscription was not found", 404);
+  const { keySecret } = credentials();
+  if (!verifySubscriptionHmac(stored.razorpaySubscriptionId, params.paymentId, keySecret, params.signature)) {
+    throw new RazorpayError("Subscription signature verification failed", 400);
+  }
+  const remote = await razorpayRequest<RazorpaySubscriptionResponse>(
+    `/subscriptions/${encodeURIComponent(stored.razorpaySubscriptionId)}`,
+  );
+  if (remote.id !== stored.razorpaySubscriptionId || remote.plan_id !== stored.razorpayPlanId) {
+    throw new RazorpayError("Subscription details do not match Sentinel records", 400);
+  }
+  return prisma.razorpaySubscription.update({
+    where: { id: stored.id },
+    data: {
+      authorizationPaymentId: params.paymentId,
+      status: remote.status.toUpperCase(),
+      paidCount: remote.paid_count ?? stored.paidCount,
+    },
+  });
 }
 
 export async function finalizeCapturedDonation(params: {
@@ -365,6 +510,7 @@ export async function finalizeCapturedDonation(params: {
           paymentMethodDetail: razorpayPaymentDetail(payment),
           direction: "IN",
           type: "DONATION",
+          donationFrequency: stored.donationFrequency,
           fromUserId: stored.userId,
           description: `${stored.testMode ? "[TEST] " : ""}${stored.description}${stored.invite ? `${stored.invite.telegramUser ? ` · @${stored.invite.telegramUser}` : ""} · TG ${stored.invite.telegramId}` : ""} · ${payment.id}`,
           date: payment.created_at ? new Date(payment.created_at * 1000) : new Date(),
@@ -463,7 +609,7 @@ export async function finalizeCapturedDonation(params: {
 
   if (!stored.testMode) {
     const handle = donorHandle(payerName, payerTelegramUser);
-    postDonationThanks(groupThanks(handle, Number(amount), "INR")).catch(() => {});
+    postDonationThanks(groupThanks(handle, Number(amount), "INR", stored.donationFrequency)).catch(() => {});
   }
   scheduleFinanceAutomation({
     action: stored.testMode ? "RAZORPAY_TEST_CAPTURED" : "RAZORPAY_CAPTURED",
@@ -472,5 +618,147 @@ export async function finalizeCapturedDonation(params: {
     sendBackup: true,
   });
 
+  return { transaction, duplicate: false };
+}
+
+export async function finalizeMonthlySubscriptionCharge(params: {
+  subscriptionId: string;
+  paymentId: string;
+  status?: string;
+  paidCount?: number;
+}) {
+  const stored = await prisma.razorpaySubscription.findUnique({
+    where: { razorpaySubscriptionId: params.subscriptionId },
+    include: { user: true },
+  });
+  if (!stored) throw new RazorpayError("Monthly subscription was not found", 404);
+
+  const duplicate = await prisma.transaction.findUnique({ where: { providerPaymentId: params.paymentId } });
+  if (duplicate) return { transaction: duplicate, duplicate: true };
+
+  const payment = await fetchPayment(params.paymentId);
+  if (
+    payment.id !== params.paymentId
+    || payment.amount !== stored.amount
+    || payment.currency !== stored.currency
+  ) {
+    throw new RazorpayError("Subscription charge does not match Sentinel records", 400);
+  }
+  if (payment.status !== "captured" || !payment.captured) {
+    throw new RazorpayError("Subscription charge is not captured", 409);
+  }
+
+  const donatedAt = payment.created_at ? new Date(payment.created_at * 1000) : new Date();
+  const amount = (stored.amount / 100).toFixed(2);
+  let transaction;
+  try {
+    transaction = await prisma.$transaction(async (db) => {
+      const existing = await db.transaction.findUnique({ where: { providerPaymentId: payment.id } });
+      if (existing) return existing;
+      const created = await db.transaction.create({
+        data: {
+          amount,
+          currency: stored.currency,
+          method: "RAZORPAY",
+          paymentMethodDetail: razorpayPaymentDetail(payment),
+          direction: "IN",
+          type: "DONATION",
+          donationFrequency: "MONTHLY",
+          providerPaymentId: payment.id,
+          razorpaySubscriptionId: stored.razorpaySubscriptionId,
+          fromUserId: stored.userId,
+          description: `${stored.testMode ? "[TEST] " : ""}${stored.description} · Monthly autopay · ${payment.id}`,
+          date: donatedAt,
+          status: "APPROVED",
+          isTest: stored.testMode,
+          createdById: stored.userId,
+        },
+      });
+      await db.razorpaySubscription.update({
+        where: { id: stored.id },
+        data: {
+          status: (params.status || "ACTIVE").toUpperCase(),
+          paidCount: Number.isInteger(params.paidCount) ? params.paidCount : { increment: 1 },
+        },
+      });
+      await db.user.update({
+        where: { id: stored.userId },
+        data: monthlyReminderUpdate("MONTHLY", donatedAt)!,
+      });
+      return created;
+    });
+  } catch (error) {
+    const existing = await prisma.transaction.findUnique({ where: { providerPaymentId: payment.id } });
+    if (existing) return { transaction: existing, duplicate: true };
+    throw error;
+  }
+
+  const symbolAmount = `₹${Number(amount).toLocaleString("en-IN")}`;
+  await logAudit({
+    userId: stored.userId,
+    action: "RAZORPAY_SUBSCRIPTION_CHARGED",
+    entityType: "Transaction",
+    entityId: transaction.id,
+    transactionId: transaction.id,
+    after: transaction,
+    userName: "Razorpay subscription webhook",
+    details: `${stored.testMode ? "TEST " : ""}${symbolAmount} · ${payment.id} · ${stored.razorpaySubscriptionId}`,
+  });
+  logTransaction({
+    id: transaction.id,
+    amount: transaction.amount,
+    currency: transaction.currency,
+    method: transaction.method,
+    direction: transaction.direction,
+    type: transaction.type,
+    description: transaction.description,
+    status: transaction.status,
+    identityName: stored.user.name,
+    identityTelegramUser: stored.user.telegramUser,
+    identityTelegramId: stored.user.telegramId,
+    createdByName: "Razorpay autopay",
+  });
+  ghLogTransaction({
+    action: "RAZORPAY_CAPTURED",
+    userId: stored.userId,
+    userName: stored.user.name,
+    amount,
+    currency: stored.currency,
+    direction: "IN",
+    method: "RAZORPAY",
+    entityId: transaction.id,
+    details: `Monthly autopay · ${payment.id}`,
+  });
+
+  if (!stored.testMode) {
+    await notify({
+      userId: stored.userId,
+      type: "TX_APPROVED",
+      title: "Monthly donation received — thank you!",
+      message: `${symbolAmount} was collected securely through Razorpay autopay.`,
+      entityId: transaction.id,
+      actionUrl: "/donor",
+      telegramMessage: dmThanks(stored.user.name, Number(amount), stored.currency),
+    });
+    await postDonationThanks(groupThanks(
+      donorHandle(stored.user.name, stored.user.telegramUser),
+      Number(amount),
+      stored.currency,
+      "MONTHLY",
+    ));
+  }
+  notifyAdmins({
+    type: "SYSTEM",
+    title: stored.testMode ? "Razorpay test subscription charged" : "Razorpay monthly donation captured",
+    message: `${stored.user.name} paid ${symbolAmount} by monthly autopay.`,
+    entityId: transaction.id,
+    actionUrl: "/admin/transactions",
+  }).catch(() => {});
+  scheduleFinanceAutomation({
+    action: stored.testMode ? "RAZORPAY_TEST_CAPTURED" : "RAZORPAY_CAPTURED",
+    actorName: "Razorpay subscription webhook",
+    transactionId: transaction.id,
+    sendBackup: true,
+  });
   return { transaction, duplicate: false };
 }

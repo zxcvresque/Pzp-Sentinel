@@ -1,6 +1,6 @@
 import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
-import { parseBmcWebhook, verifyBmcSignature } from "./bmc-webhook";
+import { bmcTransactionKeys, parseBmcWebhook, verifyBmcSignature } from "./bmc-webhook";
 
 describe("Buy Me a Coffee webhook", () => {
   it("verifies the current x-signature-sha256 HMAC in constant-time format", () => {
@@ -73,5 +73,13 @@ describe("Buy Me a Coffee webhook", () => {
     expect(current.eventKey).toBe("live:42");
     expect(legacy.type).toBe("recurring_donation.started");
     expect(legacy.amount).toBe(5);
+  });
+
+  it("uses each recurring update event as an idempotent monthly charge key", () => {
+    const first = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-1");
+    const retry = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-1");
+    const nextMonth = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-2");
+    expect(first).toEqual(retry);
+    expect(first).not.toEqual(nextMonth);
   });
 });

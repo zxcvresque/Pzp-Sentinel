@@ -142,7 +142,7 @@ export default function DonateReminderCard() {
           Donation reminders
         </span>
         <span className="text-sm text-text-secondary">
-          Get a friendly DM nudge to donate. Default is monthly — change it, set a custom schedule, or turn it off anytime.
+          Get a friendly DM nudge. The default is the 5th; choosing Monthly at checkout moves it to that donation date and also posts the reminder in the donations group.
         </span>
       </div>
 

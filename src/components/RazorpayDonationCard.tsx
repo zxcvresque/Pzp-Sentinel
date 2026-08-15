@@ -5,7 +5,8 @@ import Image from "next/image";
 
 type CheckoutSuccess = {
   razorpay_payment_id: string;
-  razorpay_order_id: string;
+  razorpay_order_id?: string;
+  razorpay_subscription_id?: string;
   razorpay_signature: string;
 };
 
@@ -96,6 +97,7 @@ export default function RazorpayDonationCard({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
   const presets = [251, 501, 1001, 2501];
 
   async function beginPayment() {
@@ -108,8 +110,12 @@ export default function RazorpayDonationCard({
     setMessage({ type: "info", text: "Preparing secure checkout…" });
 
     try {
+      const monthly = donationFrequency === "MONTHLY" && !guestToken;
+      const createUrl = monthly
+        ? "/api/payments/razorpay/subscriptions"
+        : guestToken ? "/api/payments/razorpay/guest/orders" : "/api/payments/razorpay/orders";
       const [orderResponse] = await Promise.all([
-        fetch(guestToken ? "/api/payments/razorpay/guest/orders" : "/api/payments/razorpay/orders", {
+        fetch(createUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ amount: parsed, description: note.trim() || undefined, token: guestToken }),
@@ -120,20 +126,21 @@ export default function RazorpayDonationCard({
       if (!orderResponse.ok) throw new Error(orderData.error || "Could not create checkout");
       if (!window.Razorpay) throw new Error("Razorpay Checkout is unavailable");
 
-      const order = orderData.order as {
+      const order = (monthly ? orderData.subscription : orderData.order) as {
         id: string; amount: number; currency: string; description: string; keyId: string; testMode: boolean;
         prefill: { name: string };
       };
-      const checkout = new window.Razorpay({
+      const checkoutOptions: Record<string, unknown> = {
         key: order.keyId,
-        amount: order.amount,
         currency: order.currency,
         name: "Sentinel · PzP",
         description: order.description,
         image: `${window.location.origin}/logo-icon.webp`,
-        order_id: order.id,
         prefill: order.prefill,
-        notes: { source: adminPreview ? "admin_donors" : "donor_dashboard" },
+        notes: {
+          source: adminPreview ? "admin_donors" : "donor_dashboard",
+          donation_frequency: monthly ? "monthly" : "one_time",
+        },
         theme: { color: getComputedStyle(document.documentElement).getPropertyValue("--lime").trim() || "#6FD1D7" },
         retry: { enabled: true },
         modal: {
@@ -146,7 +153,10 @@ export default function RazorpayDonationCard({
         handler: async (response: CheckoutSuccess) => {
           setMessage({ type: "info", text: "Verifying the captured payment…" });
           try {
-            const verifyResponse = await fetch(guestToken ? "/api/payments/razorpay/guest/verify" : "/api/payments/razorpay/verify", {
+            const verifyUrl = monthly
+              ? "/api/payments/razorpay/subscriptions/verify"
+              : guestToken ? "/api/payments/razorpay/guest/verify" : "/api/payments/razorpay/verify";
+            const verifyResponse = await fetch(verifyUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ ...response, token: guestToken }),
@@ -155,9 +165,11 @@ export default function RazorpayDonationCard({
             if (!verifyResponse.ok) throw new Error(verified.error || "Payment verification failed");
             setMessage({
               type: "success",
-              text: order.testMode
-                ? "Test payment verified and tracked. It is excluded from real finance totals."
-                : "Payment received and tracked automatically. Thank you!",
+              text: monthly
+                ? "Monthly autopay authorised. Razorpay will charge this amount each month and Sentinel will track each successful charge automatically."
+                : order.testMode
+                  ? "Test payment verified and tracked. It is excluded from real finance totals."
+                  : "Payment received and tracked automatically. Thank you!",
             });
             await onSuccess?.();
           } catch (error) {
@@ -166,7 +178,13 @@ export default function RazorpayDonationCard({
             setBusy(false);
           }
         },
-      });
+      };
+      if (monthly) checkoutOptions.subscription_id = order.id;
+      else {
+        checkoutOptions.amount = order.amount;
+        checkoutOptions.order_id = order.id;
+      }
+      const checkout = new window.Razorpay(checkoutOptions);
       checkout.on("payment.failed", (response) => {
         setBusy(false);
         setMessage({ type: "error", text: response.error?.description || "The payment failed. Please try again." });
@@ -195,8 +213,28 @@ export default function RazorpayDonationCard({
             Make a <span className="font-display text-lime">donation</span> securely
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-text-secondary">
-            Choose an amount and complete your payment securely with Razorpay.
+            Choose one time or monthly, enter any amount, and complete checkout securely with Razorpay.
           </p>
+
+          {!guestToken && (
+            <div className="mt-4 inline-flex rounded-xl border border-[var(--border)] bg-black/15 p-1" aria-label="Donation frequency">
+              {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
+                <button
+                  key={frequency}
+                  type="button"
+                  onClick={() => { setDonationFrequency(frequency); setMessage(null); }}
+                  className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-lime text-bg-void" : "text-text-secondary hover:text-text-primary"}`}
+                >
+                  {frequency === "MONTHLY" ? "Monthly autopay" : "One time"}
+                </button>
+              ))}
+            </div>
+          )}
+          {donationFrequency === "MONTHLY" && !guestToken && (
+            <p className="mt-2 text-xs leading-5 text-text-tertiary">
+              Razorpay will ask you to authorise a mandate, then automatically charge the chosen amount every month.
+            </p>
+          )}
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {presets.map((preset) => (
@@ -226,7 +264,7 @@ export default function RazorpayDonationCard({
 
           <button type="button" onClick={beginPayment} disabled={busy || !amount}
             className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-lime px-5 py-3 text-sm font-bold text-bg-void shadow-[0_10px_30px_var(--lime-glow)] transition-all hover:-translate-y-0.5 hover:brightness-105 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-45 sm:w-auto sm:min-w-52">
-            <span>{busy ? "Please wait…" : `Pay ₹${Number(amount || 0).toLocaleString("en-IN")}`}</span>
+            <span>{busy ? "Please wait…" : donationFrequency === "MONTHLY" && !guestToken ? `Authorise ₹${Number(amount || 0).toLocaleString("en-IN")} monthly` : `Pay ₹${Number(amount || 0).toLocaleString("en-IN")}`}</span>
             {!busy && <span aria-hidden="true">→</span>}
           </button>
 
@@ -240,7 +278,7 @@ export default function RazorpayDonationCard({
         <div className="rounded-2xl border border-white/[.07] bg-white/[.025] p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-lime/20 bg-lime/8 text-lime"><QrGlyph /></div>
-            <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">UPI, cards, wallets and more</p></div>
+            <div><p className="text-sm font-semibold">One checkout, your choice</p><p className="mt-0.5 text-xs text-text-tertiary">One time or monthly autopay</p></div>
           </div>
           <div className="mt-3 rounded-2xl border border-[var(--border)] bg-black/15 p-3">
             <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment methods</p>

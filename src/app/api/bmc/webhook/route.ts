@@ -7,6 +7,9 @@ import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { bmcTransactionKeys, parseBmcWebhook, verifyBmcSignature, type NormalizedBmcEvent } from "@/lib/bmc-webhook";
 import { bmcAccountSlug, extractBmcAttributionCode, hashBmcAttributionCode } from "@/lib/bmc-attribution";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
+import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
+import { dmThanks, donorHandle, groupThanks } from "@/lib/donation-thanks";
+import { monthlyReminderUpdate } from "@/lib/donation-frequency";
 
 const CREATED_EVENTS = new Set([
   "donation.created",
@@ -15,6 +18,7 @@ const CREATED_EVENTS = new Set([
   "wishlist_payment.created",
   "membership.started",
   "recurring_donation.started",
+  "recurring_donation.updated",
 ]);
 
 const REFUND_EVENTS = new Set([
@@ -55,7 +59,7 @@ function transactionDescription(event: NormalizedBmcEvent) {
 }
 
 async function findTransaction(event: NormalizedBmcEvent) {
-  const keys = bmcTransactionKeys(event.type, event.resourceId);
+  const keys = bmcTransactionKeys(event.type, event.resourceId, event.providerEventId);
   return prisma.transaction.findFirst({ where: { bmcEventId: { in: keys } } });
 }
 
@@ -64,7 +68,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     throw new Error(`${event.type} has no positive payment amount`);
   }
 
-  const keys = bmcTransactionKeys(event.type, event.resourceId);
+  const keys = bmcTransactionKeys(event.type, event.resourceId, event.providerEventId);
   const [eventId] = keys;
   const accountSlug = bmcAccountSlug();
   const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
@@ -108,6 +112,9 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     }
 
     const fromUserId = knownLink?.userId || intent?.userId || null;
+    const donationFrequency = event.type.startsWith("recurring_donation.") || event.type.startsWith("membership.")
+      ? "MONTHLY"
+      : "ONE_TIME";
     const transaction = await db.transaction.create({
       data: {
         amount: new Prisma.Decimal(event.amount),
@@ -115,6 +122,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         method: "BMC",
         direction: "IN",
         type: "DONATION",
+        donationFrequency,
         fromUserId,
         description: transactionDescription(event),
         status: "APPROVED",
@@ -132,6 +140,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         data: {
           supporterEmail: event.supporterEmail || knownLink.supporterEmail,
           lastSeenAt: new Date(),
+          donationFrequency,
         },
       });
     } else if (intent && event.supporterId) {
@@ -141,6 +150,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
           supporterId: event.supporterId,
           supporterEmail: event.supporterEmail,
           userId: intent.userId,
+          donationFrequency,
         },
       });
     }
@@ -149,6 +159,10 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         where: { id: intent.id },
         data: { transactionId: transaction.id },
       });
+    }
+    if (fromUserId) {
+      const reminderUpdate = monthlyReminderUpdate(donationFrequency, event.occurredAt);
+      if (reminderUpdate) await db.user.update({ where: { id: fromUserId }, data: reminderUpdate });
     }
 
     return {
@@ -191,13 +205,29 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
       message: `${amount} was received through Buy Me a Coffee and added to your donation history.`,
       entityId: transaction.id,
       actionUrl: "/donor",
-      telegramMessage: formatTgMessage(
-        "BMC Donation Received",
-        `${amount} received`,
-        "It is now linked to your Sentinel account.",
-      ),
+      telegramMessage: dmThanks(matchedDonor.name, event.amount, event.currency),
     });
   }
+
+  if (event.liveMode) {
+    const handle = donorHandle(matchedDonor?.name || event.supporterName, matchedDonor?.telegramUser);
+    await postDonationThanks(groupThanks(handle, event.amount, event.currency, transaction.donationFrequency));
+  }
+
+  logTransaction({
+    id: transaction.id,
+    amount: transaction.amount,
+    currency: transaction.currency,
+    method: transaction.method,
+    direction: transaction.direction,
+    type: transaction.type,
+    description: transaction.description,
+    status: transaction.status,
+    identityName: matchedDonor?.name || event.supporterName,
+    identityTelegramUser: matchedDonor?.telegramUser,
+    identityTelegramId: matchedDonor?.telegramId || event.supporterId || "BMC",
+    createdByName: "Buy Me a Coffee",
+  });
 
   scheduleFinanceAutomation({
     action: "CREATED",
@@ -313,7 +343,7 @@ export async function POST(request: NextRequest) {
     let status = "NOTED";
     let attributionStatus = "NOT_APPLICABLE";
 
-    if (CREATED_EVENTS.has(event.type)) {
+    if (CREATED_EVENTS.has(event.type) && event.amount > 0) {
       const result = await createTransaction(event, admin.id);
       transactionId = result.transaction.id;
       status = result.duplicate ? "DUPLICATE_RESOURCE" : "CREATED";

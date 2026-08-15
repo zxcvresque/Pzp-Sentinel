@@ -15,3 +15,7 @@ export function verifyCheckoutHmac(orderId: string, paymentId: string, secret: s
 export function verifyWebhookHmac(rawBody: string, secret: string, signature: string) {
   return verifyHmac(rawBody, secret, signature);
 }
+
+export function verifySubscriptionHmac(subscriptionId: string, paymentId: string, secret: string, signature: string) {
+  return verifyHmac(`${paymentId}|${subscriptionId}`, secret, signature);
+}
