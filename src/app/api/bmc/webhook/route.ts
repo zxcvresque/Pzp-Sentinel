@@ -10,6 +10,11 @@ import { escapeTelegramHtml } from "@/lib/telegram-format";
 import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
 import { dmThanks, donorHandle, groupThanks } from "@/lib/donation-thanks";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
+import {
+  bmcFeedbackKeyboard,
+  isBmcCancellationEvent,
+  shouldPromptBmcDonor,
+} from "@/lib/bmc-subscription-feedback";
 
 const CREATED_EVENTS = new Set([
   "donation.created",
@@ -60,7 +65,10 @@ function transactionDescription(event: NormalizedBmcEvent) {
 
 async function findTransaction(event: NormalizedBmcEvent) {
   const keys = bmcTransactionKeys(event.type, event.resourceId, event.providerEventId);
-  return prisma.transaction.findFirst({ where: { bmcEventId: { in: keys } } });
+  return prisma.transaction.findFirst({
+    where: { bmcEventId: { in: keys } },
+    include: { fromUser: true },
+  });
 }
 
 async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
@@ -264,18 +272,68 @@ async function refundTransaction(event: NormalizedBmcEvent) {
   return transaction;
 }
 
-async function notifyLifecycle(event: NormalizedBmcEvent) {
+async function notifyLifecycle(event: NormalizedBmcEvent, transaction: Awaited<ReturnType<typeof findTransaction>>) {
   const state = event.type.split(".").at(-1) || "updated";
+  const cancellation = isBmcCancellationEvent(event.type);
+  const supporterLink = !transaction?.fromUser && event.supporterId
+    ? await prisma.bmcSupporterLink.findUnique({
+        where: {
+          accountSlug_supporterId: {
+            accountSlug: bmcAccountSlug(),
+            supporterId: event.supporterId,
+          },
+        },
+        include: { user: true },
+      })
+    : null;
+  const donor = transaction?.fromUser || supporterLink?.user || null;
   await notifyAdmins({
     type: "SYSTEM",
-    title: `BMC ${eventLabel(event.type)} ${state}`,
-    message: `${event.supporterName} · ${event.itemLabel || eventLabel(event.type)}`,
+    title: `${event.liveMode ? "BMC" : "Test BMC"} ${eventLabel(event.type)} ${state}`,
+    message: `${event.supporterName} · ${event.itemLabel || eventLabel(event.type)}${donor ? ` · linked to ${donor.name}` : " · donor unidentified"}`,
+    priority: cancellation ? "HIGH" : "NORMAL",
     actionUrl: "/admin/transactions",
     telegramMessage: formatTgMessage(
       `BMC ${eventLabel(event.type)}`,
       `${event.supporterName} · ${state}`,
-      event.itemLabel || undefined,
+      donor ? `Linked to ${escapeTelegramHtml(donor.name)}` : "Donor unidentified; private follow-up unavailable.",
     ),
+  });
+
+  if (!shouldPromptBmcDonor(event.type, event.liveMode, donor?.id) || !donor) return;
+  const amount = event.amount > 0
+    ? new Prisma.Decimal(event.amount)
+    : transaction?.amount ?? null;
+  const currency = transaction?.currency || event.currency;
+  const feedback = await prisma.bmcSubscriptionFeedback.upsert({
+    where: { eventKey: event.eventKey },
+    create: {
+      eventKey: event.eventKey,
+      userId: donor.id,
+      supporterId: event.supporterId,
+      supporterName: event.supporterName,
+      triggerType: event.type,
+      amount,
+      currency,
+    },
+    update: {},
+  });
+  if (feedback.stage !== "ASK_WANTED") return;
+  const label = event.type.startsWith("membership.") ? "membership" : "monthly support";
+  const question = "Did this stop even though you still wanted to continue donating?";
+  await notify({
+    userId: donor.id,
+    type: "SYSTEM",
+    title: `BMC ${label} cancelled`,
+    message: `Buy Me a Coffee reported that your ${label} was cancelled. ${question}`,
+    entityId: feedback.id,
+    priority: "HIGH",
+    telegramMessage: formatTgMessage(
+      `BMC ${label} cancelled`,
+      `Buy Me a Coffee reported that your ${label} was cancelled.`,
+      `<b>${question}</b>`,
+    ),
+    telegramReplyMarkup: bmcFeedbackKeyboard(feedback.id),
   });
 }
 
@@ -354,8 +412,8 @@ export async function POST(request: NextRequest) {
       status = transaction ? "REFUNDED" : "REFUND_UNMATCHED";
       attributionStatus = transaction?.fromUserId ? "ATTRIBUTED" : transaction ? "UNMATCHED" : "NOT_APPLICABLE";
     } else if (LIFECYCLE_EVENTS.has(event.type)) {
-      await notifyLifecycle(event);
       const transaction = await findTransaction(event);
+      await notifyLifecycle(event, transaction);
       transactionId = transaction?.id || null;
       status = event.type.split(".").at(-1)?.toUpperCase() || "NOTED";
       attributionStatus = transaction?.fromUserId ? "ATTRIBUTED" : transaction ? "UNMATCHED" : "NOT_APPLICABLE";

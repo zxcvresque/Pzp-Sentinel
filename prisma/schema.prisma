@@ -161,6 +161,7 @@ model User {
   oneTimeInvitesCreated OneTimeDonationInvite[] @relation("OneTimeInviteCreator")
   bmcCheckoutIntents    BmcCheckoutIntent[]
   bmcSupporterLinks     BmcSupporterLink[]
+  bmcSubscriptionFeedback BmcSubscriptionFeedback[]
 
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence DonateCadence @default(MONTHLY)
@@ -404,6 +405,27 @@ model BmcSupporterLink {
 
   @@unique([accountSlug, supporterId])
   @@index([userId])
+}
+
+model BmcSubscriptionFeedback {
+  id                     String                @id @default(cuid())
+  eventKey               String                @unique
+  userId                 String
+  user                   User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  supporterId            String?
+  supporterName          String
+  triggerType            String
+  amount                 Decimal?
+  currency               Currency?
+  stage                  RazorpayFeedbackStage @default(ASK_WANTED)
+  wantedToDonate         Boolean?
+  deliberateCancellation Boolean?
+  reason                 String?
+  requestedAt            DateTime              @default(now())
+  respondedAt            DateTime?
+  updatedAt              DateTime              @updatedAt
+
+  @@index([userId, stage, requestedAt])
 }
 
 model Service {

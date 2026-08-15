@@ -593,6 +593,8 @@ Enable the payment, refund, extra-purchase, recurring donation, membership, comm
 
 Before opening BMC, an authenticated donor chooses **One time** or **Monthly** and receives a single-use Sentinel code to paste into BMC's support note. A valid first webhook binds BMC's signed `supporter_id` to that donor. Future payments—including monthly autopay updates—then remain attributed without another code. If the first note omitted the code, an admin can assign the unmatched BMC transaction to a donor in Transactions; that reconciliation creates the same trusted supporter link for later payments.
 
+When BMC reports `recurring_donation.cancelled` or `membership.cancelled`, Sentinel privately alerts admins. A linked donor also receives the same private two-step Telegram questionnaire used for Razorpay cancellations; their reason is retained and sent privately to every active admin. BMC does not expose separate pending/halted renewal events, so the questionnaire distinguishes a deliberate cancellation from an eventual cancellation caused by failed renewals. Unidentified supporters remain admin-only and are never messaged or posted publicly.
+
 When replacing the BMC account, update `BMC_PAGE_URL`, `BMC_ACCOUNT_SLUG`, and `BMC_WEBHOOK_SECRET`, run `bash upgrade.sh`, then send a BMC test event. Previously imported transactions remain in the database, while the account slug namespaces new provider IDs to avoid collisions.
 
 ### Razorpay
