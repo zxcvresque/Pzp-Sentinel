@@ -10,6 +10,7 @@ import {
   type BroadcastAudience,
   type BroadcastRecipientMode,
 } from "@/lib/broadcast-audience";
+import { getRoleColor } from "@/lib/role-colors";
 
 interface BroadcastRecipient {
   id: string;
@@ -54,6 +55,18 @@ const AUDIENCE_OPTIONS: Array<{
   { value: "DEVS", label: "Developers", description: "Active developer accounts", countKey: "devs" },
   { value: "EVERYONE", label: "Everyone", description: "All approved accounts", countKey: "everyone" },
 ];
+
+const EVERYONE_COLOR = {
+  text: "var(--coral)",
+  bg: "rgba(248,113,113,0.12)",
+  border: "rgba(248,113,113,0.30)",
+  rgb: "248,113,113",
+};
+
+function getAudienceColor(audience: BroadcastAudience) {
+  if (audience === "EVERYONE") return EVERYONE_COLOR;
+  return getRoleColor(audience === "ADMINS" ? "ADMIN" : audience === "DEVS" ? "DEV" : "DONOR");
+}
 
 export default function BroadcastsPage() {
   const [config, setConfig] = useState<BroadcastConfig | null>(null);
@@ -383,6 +396,7 @@ export default function BroadcastsPage() {
               {AUDIENCE_OPTIONS.map((option) => {
                 const active = audience === option.value;
                 const count = config?.counts[option.countKey] ?? 0;
+                const color = getAudienceColor(option.value);
                 return (
                   <button
                     key={option.value}
@@ -390,12 +404,20 @@ export default function BroadcastsPage() {
                     aria-pressed={active}
                     onClick={() => changeAudience(option.value)}
                     className={`rounded-xl border p-4 text-left transition-colors ${active
-                      ? "border-lime/35 bg-lime/[0.06]"
+                      ? ""
                       : "border-[var(--border)] bg-bg-deep hover:border-[var(--border-hover)]"}`}
+                    style={active ? {
+                      borderColor: color.border,
+                      background: color.bg,
+                      boxShadow: `0 0 18px rgba(${color.rgb},0.08)`,
+                    } : undefined}
                   >
                     <span className="flex items-center justify-between gap-3">
                       <span className="text-sm font-semibold text-text-primary">{option.label}</span>
-                      <span className={`rounded-full px-2 py-0.5 font-mono text-[9px] ${active ? "bg-lime/12 text-lime" : "bg-[var(--bg-hover)] text-text-tertiary"}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-mono text-[9px] ${active ? "" : "bg-[var(--bg-hover)] text-text-tertiary"}`}
+                        style={active ? { background: color.bg, color: color.text } : undefined}
+                      >
                         {count}
                       </span>
                     </span>
