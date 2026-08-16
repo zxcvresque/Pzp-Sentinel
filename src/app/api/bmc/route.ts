@@ -81,7 +81,6 @@ export async function GET() {
       webhookVerified: Boolean(lastDelivery),
       lastWebhookAt: lastDelivery?.createdAt.toISOString() || null,
       lastWebhookStatus: lastDelivery?.status || null,
-      legacySyncAvailable: Boolean(process.env.BMC_TOKEN?.trim()),
       checkoutUrl: process.env.BMC_PAGE_URL?.trim() || null,
       totalSupporters: new Set(webhookSupporters.length ? webhookSupporters : fallbackSupporters).size,
       totalEarned: Math.round((totalsByCurrency.USD || 0) * 100) / 100,

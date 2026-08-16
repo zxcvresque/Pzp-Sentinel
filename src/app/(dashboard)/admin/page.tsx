@@ -51,7 +51,6 @@ interface BmcStats {
   webhookVerified: boolean;
   lastWebhookAt: string | null;
   lastWebhookStatus: string | null;
-  legacySyncAvailable: boolean;
   checkoutUrl: string | null;
   totalSupporters: number;
   totalEarned: number;
@@ -89,8 +88,6 @@ export default function AdminDashboard() {
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
   const [bmcCurrency, setBmcCurrency] = useState<DisplayCurrency>("USD");
-  const [bmcSyncing, setBmcSyncing] = useState(false);
-  const [bmcResult, setBmcResult] = useState<string | null>(null);
 
   useEffect(() => {
     currencyRef.current = currency;
@@ -175,34 +172,6 @@ export default function AdminDashboard() {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, status: "REJECTED" } : t))
     );
-  }
-
-  async function handleBmcSync() {
-    setBmcSyncing(true);
-    setBmcResult(null);
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 90_000);
-    try {
-      const res = await fetch("/api/bmc/sync", { method: "POST", signal: controller.signal });
-      const data = await res.json();
-      if (!res.ok) {
-        setBmcResult(`Error: ${data.error || "Sync failed"}`);
-        return;
-      }
-      setBmcResult(
-        `Synced ${data.synced} new (${data.monthlySynced || 0} monthly), skipped ${data.skipped} existing` +
-        (data.errors?.length ? ` (${data.errors.length} errors)` : ""),
-      );
-      // Refresh dashboard data
-      load();
-    } catch (error) {
-      setBmcResult(error instanceof DOMException && error.name === "AbortError"
-        ? "Error: BMC sync timed out after 90 seconds"
-        : "Error: Network error during sync");
-    } finally {
-      window.clearTimeout(timeout);
-      setBmcSyncing(false);
-    }
   }
 
   if (loading) {
@@ -611,51 +580,8 @@ export default function AdminDashboard() {
             <span className={`h-1.5 w-1.5 rounded-full ${bmcStats?.webhookVerified ? "bg-mint" : "bg-amber"}`} />
             {bmcStats?.webhookVerified ? "Webhook verified" : bmcStats?.webhookConfigured ? "Webhook unverified" : "Not configured"}
           </span>
-          {bmcStats?.legacySyncAvailable && <button
-            onClick={handleBmcSync}
-            disabled={bmcSyncing}
-            className="font-mono text-[10px] uppercase tracking-[0.08em] px-4 py-1.5 rounded-full border transition-colors flex items-center gap-2"
-            style={{
-              borderColor: "var(--amber)",
-              background: "rgba(251,191,36,0.08)",
-              color: "var(--amber)",
-              opacity: bmcSyncing ? 0.5 : 1,
-            }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={bmcSyncing ? { animation: "spin 1s linear infinite" } : undefined}
-            >
-              <path d="M1.5 8a6.5 6.5 0 0112.3-2.9M14.5 8a6.5 6.5 0 01-12.3 2.9" />
-              <path d="M14.5 2v3h-3" />
-              <path d="M1.5 14v-3h3" />
-            </svg>
-            {bmcSyncing ? "Syncing..." : "Sync BMC"}
-          </button>}
           </div>
         </div>
-
-        {bmcResult && (
-          <div
-            className="mb-3 p-3 rounded-lg text-sm font-mono text-[11px]"
-            style={{
-              background: bmcResult.startsWith("Error")
-                ? "rgba(248,113,113,0.08)"
-                : "rgba(251,191,36,0.08)",
-              border: `1px solid ${bmcResult.startsWith("Error") ? "rgba(248,113,113,0.2)" : "rgba(251,191,36,0.2)"}`,
-              color: bmcResult.startsWith("Error") ? "var(--coral)" : "var(--amber)",
-            }}
-          >
-            {bmcResult}
-          </div>
-        )}
 
         <div className="card p-5">
           <div className="grid grid-cols-2 gap-4 mb-4 sm:grid-cols-4">

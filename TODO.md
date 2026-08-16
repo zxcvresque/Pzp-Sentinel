@@ -34,7 +34,7 @@
 - [ ] Update the existing production `Pzp Netcup` row back to its IPv4 address.
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.
-- [ ] Verify BMC sync/webhook in production.
+- [ ] Verify the signed BMC webhook in production.
 
 ---
 

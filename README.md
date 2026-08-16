@@ -435,7 +435,7 @@ flowchart LR
 | `/api/reconciliation` | Razorpay/BMC receipts and ledger heuristics | Provider matching, safe Razorpay recovery, and possible duplicate review |
 | `/api/broadcasts` | `broadcast-format.ts`, notifications, audit | Admin-only rich donor broadcasts |
 | `/api/payments/razorpay/*` | `razorpay.ts`, `razorpay-signatures.ts`, `invite-token.ts` | Orders, capture verification, donor permissions, and guest invitations |
-| `/api/bmc/*` | `bmc-webhook.ts` | Hosted-checkout config, signed webhook ingestion, and optional legacy sync |
+| `/api/bmc/*` | `bmc-webhook.ts` | Hosted-checkout config, attribution intents, and signed webhook ingestion |
 | `/api/credentials/*` | `secret-crypto.ts` | Encrypted vault CRUD, reveal auditing, access, and review workflow |
 | `/api/vps/*` | `vps-credentials.ts`, `vps-subscription.ts` | Server registry, heartbeats, agent scripts, access requests, and key upload |
 | `/api/projects`, `/api/tasks`, `/api/tags` | Prisma-backed project modules | Board, assignments, subtasks, status, priority, and tags |
@@ -541,7 +541,6 @@ TG_DONATION_TOPIC_ID=""
 BMC_PAGE_URL="https://buymeacoffee.com/your-creator-slug"
 BMC_ACCOUNT_SLUG="your-creator-slug"
 BMC_WEBHOOK_SECRET="your-bmc-signing-secret"
-BMC_TOKEN=""
 
 RAZORPAY_KEY_ID="rzp_test_or_live_key_id"
 RAZORPAY_KEY_SECRET="your-key-secret"
@@ -549,7 +548,7 @@ RAZORPAY_WEBHOOK_SECRET="a-separate-webhook-secret"
 RAZORPAY_SUBSCRIPTION_TOTAL_COUNT="1200"
 ```
 
-`BMC_TOKEN` is optional and exists only for legacy accounts that still provide API access. The configured Razorpay key ID is the source of truth for test versus live mode.
+Buy Me a Coffee data enters Sentinel only through signed webhooks; no BMC REST API token or polling sync is used. The configured Razorpay key ID is the source of truth for test versus live mode.
 
 ### Google and GitHub
 
@@ -594,11 +593,10 @@ flowchart LR
 
 ### Buy Me a Coffee
 
-Sentinel uses BMC in three ways:
+Sentinel uses BMC in two ways:
 
 1. **Hosted checkout:** the configured creator page opens in the system browser. Telegram Mini Apps use Telegram's external-link API so BMC does not run inside and slow the webview.
 2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, understands both current BMC recurring fields (`psp_id`, `current_period_start`) and legacy `subscription_*` fields, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror. BMC's paired `recurring_donation.started` and `recurring_donation.updated` events share one subscription-period key, so they create one transaction and the next billing period creates the next transaction.
-3. **Optional legacy sync:** `POST /api/bmc/sync` is available only when `BMC_TOKEN` is configured. Supporters, extras and subscriptions are reconciled independently; missing pagination metadata is treated as a single page so a broken legacy endpoint cannot leave the dashboard stuck on **Syncing**.
 
 Configure the BMC webhook as:
 
