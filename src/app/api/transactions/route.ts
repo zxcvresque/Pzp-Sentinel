@@ -154,7 +154,10 @@ export async function POST(req: NextRequest) {
       date: transactionDate,
       proofFileId: proofFileId || null,
       attachments,
-      fromUserId: fromUserId || (direction === "IN" ? user.id : null),
+      // Donor-created incoming records can identify the signed-in donor.
+      // Admin-created income stays unlinked unless the admin explicitly picks
+      // a donor; otherwise the recorder would incorrectly enter leaderboards.
+      fromUserId: fromUserId || (direction === "IN" && isDonor && !isAdmin ? user.id : null),
       status: txStatus,
       createdById: user.id,
       serviceId: direction === "OUT" && type === "SUBSCRIPTION" ? service?.id || serviceId || null : null,

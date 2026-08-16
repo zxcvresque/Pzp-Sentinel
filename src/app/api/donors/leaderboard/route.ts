@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { isEligibleLeaderboardDonation } from "@/lib/donation-leaderboard";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -46,23 +47,42 @@ export async function GET(request: NextRequest) {
     select: {
       amount: true,
       fromUserId: true,
-      fromUser: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
+      createdById: true,
+      bmcEventId: true,
+      providerPaymentId: true,
+      razorpaySubscriptionId: true,
+      fromUser: { select: { id: true, name: true, photoUrl: true, telegramUser: true, roles: true } },
     },
   });
 
   // Aggregate by user
   const aggregated: Record<
     string,
-    { userId: string; name: string; totalAmount: number; donationCount: number }
+    {
+      userId: string;
+      name: string;
+      photoUrl: string | null;
+      telegramUser: string | null;
+      totalAmount: number;
+      donationCount: number;
+    }
   > = {};
 
   for (const tx of transactions) {
     if (!tx.fromUserId || !tx.fromUser) continue;
+    if (!isEligibleLeaderboardDonation({
+      fromUserId: tx.fromUserId,
+      fromUserRoles: tx.fromUser.roles,
+      createdById: tx.createdById,
+      providerCaptured: Boolean(tx.bmcEventId || tx.providerPaymentId || tx.razorpaySubscriptionId),
+    })) continue;
     const uid = tx.fromUserId;
     if (!aggregated[uid]) {
       aggregated[uid] = {
         userId: uid,
         name: tx.fromUser.name,
+        photoUrl: tx.fromUser.photoUrl,
+        telegramUser: tx.fromUser.telegramUser,
         totalAmount: 0,
         donationCount: 0,
       };

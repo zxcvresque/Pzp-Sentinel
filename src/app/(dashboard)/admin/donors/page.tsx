@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import TgUser from "@/components/TgUser";
-import RazorpayDonationCard from "@/components/RazorpayDonationCard";
-import BmcSupportCard from "@/components/BmcSupportCard";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import PageTour from "@/components/PageTour";
 
@@ -39,6 +37,7 @@ const periodLabels: Record<Period, string> = {
 export default function DonorsLeaderboard() {
   const [donors, setDonors] = useState<Donor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [periodLoading, setPeriodLoading] = useState(false);
   const [period, setPeriod] = useState<Period>("all");
   const [accessDonors, setAccessDonors] = useState<DonorAccess[]>([]);
   const [accessLoading, setAccessLoading] = useState(true);
@@ -84,7 +83,7 @@ export default function DonorsLeaderboard() {
   }
 
   async function fetchLeaderboard(p: Period) {
-    setLoading(true);
+    setPeriodLoading(true);
     try {
       const res = await fetch(`/api/donors/leaderboard?period=${p}`);
       if (!res.ok) throw new Error("Failed to fetch");
@@ -94,6 +93,7 @@ export default function DonorsLeaderboard() {
       setDonors([]);
     } finally {
       setLoading(false);
+      setPeriodLoading(false);
     }
   }
 
@@ -128,7 +128,7 @@ export default function DonorsLeaderboard() {
     <div>
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-extrabold">
-          Donors <span className="font-display text-lime">& Payments</span>
+          Donor <span className="font-display text-lime">Management</span>
         </h1>
       </div>
 
@@ -194,10 +194,8 @@ export default function DonorsLeaderboard() {
       {accessMessage && <p className="mb-5 rounded-xl border border-[var(--border)] bg-white/[.02] px-3 py-2.5 text-xs text-text-secondary">{accessMessage}</p>}
 
       <OneTimeDonationLinks />
-      <RazorpayDonationCard adminPreview onSuccess={() => fetchLeaderboard(period)} />
-      <BmcSupportCard adminPreview />
 
-      <div data-tour="donor-leaderboard" className="mb-5 mt-10">
+      <div data-tour="donor-leaderboard" className="mb-5 mt-8">
         <h2 className="text-xl font-extrabold">Contribution <span className="font-display text-lime">Leaderboard</span></h2>
       </div>
 
@@ -206,8 +204,11 @@ export default function DonorsLeaderboard() {
         {(Object.keys(periodLabels) as Period[]).map((p) => (
           <button
             key={p}
+            type="button"
+            aria-pressed={period === p}
+            disabled={periodLoading}
             onClick={() => setPeriod(p)}
-            className={`font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors ${
+            className={`font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border transition-colors disabled:cursor-wait ${
               period === p
                 ? "bg-lime text-bg-void border-lime"
                 : "text-text-secondary border-[var(--border)] hover:border-[var(--border-hover)]"
