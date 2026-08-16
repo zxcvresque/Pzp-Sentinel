@@ -6,6 +6,11 @@ describe("transaction query parsing", () => {
     expect(transactionWhereFromParams(new URLSearchParams())).toEqual({ voidedAt: null });
   });
 
+  it("can target one reconciliation transaction directly", () => {
+    expect(transactionWhereFromParams(new URLSearchParams({ transactionId: "tx-bmc-1" })))
+      .toEqual({ id: "tx-bmc-1", voidedAt: null });
+  });
+
   it("builds the complete filtered query", () => {
     const where = transactionWhereFromParams(new URLSearchParams({
       status: "APPROVED",

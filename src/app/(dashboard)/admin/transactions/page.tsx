@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
@@ -124,6 +124,8 @@ export default function TransactionsPage() {
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [targetTransactionId, setTargetTransactionId] = useState("");
+  const openedTargetRef = useRef("");
   const [filters, setFilters] = useState(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -146,14 +148,19 @@ export default function TransactionsPage() {
   const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] as string[] });
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setTargetTransactionId(params.get("transactionId")?.trim() || "");
+  }, []);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), limit: String(limit), sort: filters.sort, lifecycle: filters.lifecycle });
+    if (targetTransactionId) params.set("transactionId", targetTransactionId);
     if (search) params.set("search", search);
     for (const key of ["status", "direction", "currency", "type", "method"] as const) if (filters[key] !== "ALL") params.set(key, filters[key]);
     for (const key of ["dateFrom", "dateTo", "amountMin", "amountMax"] as const) if (filters[key]) params.set(key, filters[key]);
     return params.toString();
-  }, [filters, limit, page, search]);
+  }, [filters, limit, page, search, targetTransactionId]);
 
   const filterQuery = useMemo(() => { const params = new URLSearchParams(queryString); params.delete("page"); params.delete("limit"); return params.toString(); }, [queryString]);
   const activeFilterCount = useMemo(() => (Object.keys(defaultFilters) as Array<keyof typeof defaultFilters>)
@@ -180,13 +187,32 @@ export default function TransactionsPage() {
   useEffect(() => { fetch("/api/services").then((r) => r.json()).then((d) => setServices(d.services || [])).catch(() => {}); }, []);
 
   function updateFilter(key: keyof typeof defaultFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); setSelected(new Set()); }
-  function resetForm() { setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] }); setUploadingAttachments(false); setEditingId(null); setShowCreate(false); }
-  function startEdit(tx: Transaction) {
+  function resetForm() {
+    setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] });
+    setUploadingAttachments(false); setEditingId(null); setShowCreate(false);
+    if (targetTransactionId) {
+      setTargetTransactionId("");
+      openedTargetRef.current = "";
+      const url = new URL(window.location.href);
+      url.searchParams.delete("transactionId");
+      url.searchParams.delete("reconcile");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }
+  const startEdit = useCallback((tx: Transaction) => {
     if (tx.voidedAt) return;
     setShowCreate(false); setEditingId(tx.id);
     setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", serviceAction: tx.linkedService ? "LINK" : "NONE", serviceId: tx.linkedService?.id || "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [...tx.attachments] });
     setTimeout(() => document.getElementById(`editor-${tx.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!targetTransactionId || openedTargetRef.current === targetTransactionId) return;
+    const target = transactions.find((transaction) => transaction.id === targetTransactionId);
+    if (!target) return;
+    openedTargetRef.current = targetTransactionId;
+    startEdit(target);
+  }, [startEdit, targetTransactionId, transactions]);
 
   async function revealProviderDetails(tx: Transaction) {
     setProviderDetails({ open: true, loading: true, method: tx.method, details: null, error: "" });
@@ -250,8 +276,9 @@ export default function TransactionsPage() {
 
   function editor() {
     const editing = transactions.find((tx) => tx.id === editingId);
+    const reconcilingBmc = editing?.method === "BMC" && !editing.fromUser;
     return <form id={editingId ? `editor-${editingId}` : undefined} className="border-t border-violet/20 bg-violet/[0.04] p-4 sm:p-6" onSubmit={(e) => { e.preventDefault(); void submitForm(); }} onClick={(e) => e.stopPropagation()}>
-      <div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">{editingId ? "Edit transaction" : "New transaction"}</h2>{editing && editing.status !== "PENDING" && <p className="mt-1 text-xs text-amber">Reviewed transaction — saving material changes requires confirmation.</p>}</div><button type="button" onClick={resetForm} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[10px] text-text-secondary">Cancel</button></div>
+      <div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="font-mono text-xs uppercase tracking-[0.1em] text-text-secondary">{reconcilingBmc ? "Assign BMC donor" : editingId ? "Edit transaction" : "New transaction"}</h2>{reconcilingBmc && <p className="mt-1 text-xs text-coral">Choose the donor in “Donor / source user”, then save the assignment.</p>}{editing && editing.status !== "PENDING" && <p className="mt-1 text-xs text-amber">Reviewed transaction — saving material changes requires confirmation.</p>}</div><button type="button" onClick={resetForm} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[10px] text-text-secondary">Cancel</button></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Amount"><input required inputMode="decimal" value={form.amount} onChange={(e) => /^\d*\.?\d*$/.test(e.target.value) && setForm({ ...form, amount: e.target.value })} className="input" /></Field>
         <SelectField label="Currency" value={form.currency} options={[["INR", "INR (₹)"], ["USD", "USD ($)"]]} onChange={(v) => setForm({ ...form, currency: v })} />
@@ -266,7 +293,7 @@ export default function TransactionsPage() {
       </div>
       {form.direction === "OUT" && form.type === "SUBSCRIPTION" && form.serviceAction === "CREATE" && <div className="mt-4 grid gap-4 rounded-xl border border-lime/15 bg-lime/[.03] p-4 sm:grid-cols-4"><Field label="Service name"><input required value={form.newServiceName} onChange={(e) => setForm({ ...form, newServiceName: e.target.value })} className="input" /></Field><Field label="Category"><input required value={form.newServiceCategory} onChange={(e) => setForm({ ...form, newServiceCategory: e.target.value })} className="input" /></Field><SelectField label="Billing" value={form.newServiceFrequency} options={[["WEEKLY", "Weekly"], ["MONTHLY", "Monthly"], ["YEARLY", "Yearly"]]} onChange={(v) => setForm({ ...form, newServiceFrequency: v })} /><Field label="Next renewal"><input required type="date" value={form.newServiceRenewal} onChange={(e) => setForm({ ...form, newServiceRenewal: e.target.value })} className="input" /></Field></div>}
       <TransactionAttachmentField value={form.attachments} onChange={(attachments) => setForm({ ...form, attachments })} onUploadingChange={setUploadingAttachments} />
-      <button disabled={saving || uploadingAttachments || !form.amount || !form.description.trim()} className="mt-4 rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void disabled:opacity-40">{uploadingAttachments ? "Uploading attachments..." : saving ? "Saving..." : editingId ? "Save changes" : "Log transaction"}</button>
+      <button disabled={saving || uploadingAttachments || !form.amount || !form.description.trim() || Boolean(reconcilingBmc && !form.fromUserId)} className="mt-4 rounded-full bg-lime px-6 py-2.5 text-sm font-semibold text-bg-void disabled:opacity-40">{uploadingAttachments ? "Uploading attachments..." : saving ? "Saving..." : reconcilingBmc ? "Assign donor" : editingId ? "Save changes" : "Log transaction"}</button>
     </form>;
   }
 

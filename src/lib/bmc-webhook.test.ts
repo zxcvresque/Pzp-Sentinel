@@ -13,9 +13,12 @@ describe("Buy Me a Coffee webhook", () => {
     const body = JSON.stringify({ event_id: 1234, type: "donation.created", data: {} });
     const secret = "webhook-signing-secret";
     const signature = createHmac("sha256", secret).update(body).digest("hex");
+    const base64Signature = createHmac("sha256", secret).update(body).digest("base64");
 
     expect(verifyBmcSignature(body, signature, secret)).toBe(true);
     expect(verifyBmcSignature(body, `sha256=${signature}`, secret)).toBe(true);
+    expect(verifyBmcSignature(Buffer.from(body), signature, secret)).toBe(true);
+    expect(verifyBmcSignature(Buffer.from(body), base64Signature, secret)).toBe(true);
     expect(verifyBmcSignature(`${body} `, signature, secret)).toBe(false);
     expect(verifyBmcSignature(body, "bad", secret)).toBe(false);
   });

@@ -132,12 +132,18 @@ function donationFrequency(type: string, data: Record<string, unknown>): "ONE_TI
     : "ONE_TIME";
 }
 
-export function verifyBmcSignature(rawBody: string, signature: string, secret: string): boolean {
-  const supplied = signature.trim().replace(/^sha256=/i, "").toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(supplied)) return false;
-  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-  const suppliedBuffer = Buffer.from(supplied, "hex");
-  const expectedBuffer = Buffer.from(expected, "hex");
+export function verifyBmcSignature(rawBody: string | Buffer, signature: string, secret: string): boolean {
+  const supplied = signature.trim().replace(/^sha256=/i, "");
+  let suppliedBuffer: Buffer;
+  if (/^[a-f0-9]{64}$/i.test(supplied)) {
+    suppliedBuffer = Buffer.from(supplied, "hex");
+  } else if (/^[a-z0-9+/]{43}=$/i.test(supplied)) {
+    suppliedBuffer = Buffer.from(supplied, "base64");
+  } else {
+    return false;
+  }
+
+  const expectedBuffer = createHmac("sha256", secret).update(rawBody).digest();
   return suppliedBuffer.length === expectedBuffer.length && timingSafeEqual(suppliedBuffer, expectedBuffer);
 }
 

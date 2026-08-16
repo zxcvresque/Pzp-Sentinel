@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { decryptSecret } from "@/lib/secret-crypto";
@@ -13,20 +13,25 @@ const CREATION_EVENTS = [
   "recurring_donation.started",
 ];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!hasRole(user.roles, "ADMIN")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const [transactions, events, lastDelivery] = await Promise.all([
+    const { searchParams } = new URL(request.url);
+    const requestedEventPage = Math.max(1, Number.parseInt(searchParams.get("eventPage") || "1", 10) || 1);
+    const requestedEventLimit = Number.parseInt(searchParams.get("eventLimit") || "6", 10);
+    const eventLimit = [6, 12, 24].includes(requestedEventLimit) ? requestedEventLimit : 6;
+    const eventWhere = { processedAt: { not: null } } as const;
+    const [transactions, events, lastDelivery, webhookActivityTotal, eventGroups] = await Promise.all([
       prisma.transaction.findMany({
         where: { method: "BMC", status: "APPROVED", isTest: false, voidedAt: null },
         orderBy: { date: "desc" },
         select: { id: true, amount: true, currency: true, description: true, date: true, bmcEventId: true, fromUserId: true },
       }),
       prisma.bmcWebhookEvent.findMany({
-        where: { processedAt: { not: null } },
+        where: eventWhere,
         orderBy: { createdAt: "desc" },
         take: 100,
         select: {
@@ -48,9 +53,37 @@ export async function GET() {
         orderBy: { createdAt: "desc" },
         select: { createdAt: true, status: true, liveMode: true },
       }),
+      prisma.bmcWebhookEvent.count({ where: eventWhere }),
+      prisma.bmcWebhookEvent.groupBy({
+        by: ["eventType"],
+        where: eventWhere,
+        _count: { _all: true },
+      }),
     ]);
 
-    const safeEvents = events.map((event) => {
+    const webhookActivityTotalPages = Math.max(1, Math.ceil(webhookActivityTotal / eventLimit));
+    const webhookActivityPage = Math.min(requestedEventPage, webhookActivityTotalPages);
+    const activityEvents = await prisma.bmcWebhookEvent.findMany({
+      where: eventWhere,
+      orderBy: { createdAt: "desc" },
+      skip: (webhookActivityPage - 1) * eventLimit,
+      take: eventLimit,
+      select: {
+        id: true,
+        eventType: true,
+        liveMode: true,
+        supporterName: true,
+        amount: true,
+        currency: true,
+        status: true,
+        attributionStatus: true,
+        transactionId: true,
+        createdAt: true,
+        encryptedPayload: true,
+      },
+    });
+
+    const revealSupporter = <T extends { encryptedPayload: string | null; supporterName: string | null }>(event: T): T => {
       if (!event.encryptedPayload) return event;
       try {
         const normalized = parseBmcWebhook(decryptSecret(event.encryptedPayload));
@@ -58,7 +91,9 @@ export async function GET() {
       } catch {
         return event;
       }
-    });
+    };
+    const safeEvents = events.map(revealSupporter);
+    const safeActivityEvents = activityEvents.map(revealSupporter);
     const totalsByCurrency = transactions.reduce<Record<string, number>>((totals, transaction) => {
       totals[transaction.currency] = (totals[transaction.currency] || 0) + Number(transaction.amount);
       return totals;
@@ -70,9 +105,9 @@ export async function GET() {
       const match = transaction.description.match(/^BMC[^:]*:\s+([^·—]+?)(?:\s+x\d|\s+·|\s+—|$)/);
       return match?.[1]?.trim() || null;
     }).filter((name): name is string => Boolean(name));
-    const eventBreakdown = safeEvents.reduce<Record<string, number>>((counts, event) => {
-      const category = event.eventType.split(".")[0];
-      counts[category] = (counts[category] || 0) + 1;
+    const eventBreakdown = eventGroups.reduce<Record<string, number>>((counts, group) => {
+      const category = group.eventType.split(".")[0];
+      counts[category] = (counts[category] || 0) + group._count._all;
       return counts;
     }, {});
 
@@ -93,7 +128,13 @@ export async function GET() {
         amount: transaction.amount.toString(),
         date: transaction.date.toISOString(),
       })),
-      recentEvents: safeEvents.slice(0, 10).map(({ encryptedPayload, ...event }) => {
+      webhookActivity: {
+        page: webhookActivityPage,
+        limit: eventLimit,
+        total: webhookActivityTotal,
+        totalPages: webhookActivityTotalPages,
+      },
+      recentEvents: safeActivityEvents.map(({ encryptedPayload, ...event }) => {
         void encryptedPayload;
         return {
           ...event,

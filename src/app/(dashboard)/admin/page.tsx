@@ -58,6 +58,12 @@ interface BmcStats {
   totalTransactions: number;
   unmatchedTransactions: number;
   eventBreakdown: Record<string, number>;
+  webhookActivity: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
   recentEvents: {
     id: string;
     eventType: string;
@@ -88,6 +94,8 @@ export default function AdminDashboard() {
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
   const [bmcCurrency, setBmcCurrency] = useState<DisplayCurrency>("USD");
+  const bmcEventPageRef = useRef(1);
+  const [bmcEventLoading, setBmcEventLoading] = useState(false);
 
   useEffect(() => {
     currencyRef.current = currency;
@@ -103,7 +111,7 @@ export default function AdminDashboard() {
     const [txData, statsData, bmcData] = await Promise.all([
       fetch("/api/transactions?limit=10").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/transactions/stats" + (curr !== "INR" ? `?currency=${curr}` : "")).then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/bmc").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch(`/api/bmc?eventPage=${bmcEventPageRef.current}&eventLimit=6`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     if (txData) setTransactions(txData.transactions || []);
     if (statsData) {
@@ -153,6 +161,22 @@ export default function AdminDashboard() {
 
   function chooseBmcCurrency(next: DisplayCurrency) {
     setBmcCurrency(next);
+  }
+
+  async function chooseBmcEventPage(next: number) {
+    if (bmcEventLoading || next < 1 || next === bmcStats?.webhookActivity.page) return;
+    setBmcEventLoading(true);
+    try {
+      const response = await fetch(`/api/bmc?eventPage=${next}&eventLimit=6`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not load webhook activity");
+      const data = await response.json();
+      bmcEventPageRef.current = data.webhookActivity?.page || next;
+      setBmcStats(data);
+    } catch {
+      // Preserve the currently visible page when a background request fails.
+    } finally {
+      setBmcEventLoading(false);
+    }
   }
 
   async function handleApprove(id: string) {
@@ -664,9 +688,12 @@ export default function AdminDashboard() {
 
           {bmcStats?.recentEvents && bmcStats.recentEvents.length > 0 && (
             <div className="mt-4 border-t border-[var(--border)] pt-4">
-              <div className="mb-3 font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Webhook activity</div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Webhook activity · {bmcStats.webhookActivity.total.toLocaleString()} deliveries</div>
+                <div className="font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">Page {bmcStats.webhookActivity.page} of {bmcStats.webhookActivity.totalPages}</div>
+              </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {bmcStats.recentEvents.slice(0, 6).map((event) => (
+                {bmcStats.recentEvents.map((event) => (
                   <div key={event.id} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white/[.015] px-3 py-2.5">
                     <div className="min-w-0">
                       <div className="truncate text-xs font-semibold text-text-primary">{event.eventType.replaceAll("_", " ")}</div>
@@ -682,6 +709,12 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
+              {bmcStats.webhookActivity.totalPages > 1 && (
+                <div className="mt-3 flex justify-end gap-2">
+                  <button type="button" disabled={bmcEventLoading || bmcStats.webhookActivity.page <= 1} onClick={() => void chooseBmcEventPage(bmcStats.webhookActivity.page - 1)} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[10px] text-text-secondary disabled:opacity-30">Previous</button>
+                  <button type="button" disabled={bmcEventLoading || bmcStats.webhookActivity.page >= bmcStats.webhookActivity.totalPages} onClick={() => void chooseBmcEventPage(bmcStats.webhookActivity.page + 1)} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[10px] text-text-secondary disabled:opacity-30">Next</button>
+                </div>
+              )}
             </div>
           )}
 

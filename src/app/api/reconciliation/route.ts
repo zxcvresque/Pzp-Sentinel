@@ -19,7 +19,7 @@ export async function GET() {
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const [unmatchedBmc, unmatchedRazorpayOrders, pendingRazorpayEvents, transactions] = await Promise.all([
     prisma.transaction.findMany({
-      where: { method: "BMC", fromUserId: null, voidedAt: null },
+      where: { method: "BMC", fromUserId: null, isTest: false, voidedAt: null },
       orderBy: { date: "desc" },
       include: {
         bmcWebhookEvents: {
@@ -45,7 +45,7 @@ export async function GET() {
       select: { id: true, eventId: true, eventType: true, resourceId: true, status: true, createdAt: true },
     }),
     prisma.transaction.findMany({
-      where: { createdAt: { gte: since }, status: "APPROVED", voidedAt: null },
+      where: { createdAt: { gte: since }, status: "APPROVED", isTest: false, voidedAt: null },
       orderBy: { date: "asc" },
       select: { id: true, amount: true, currency: true, method: true, date: true, description: true, fromUserId: true, providerPaymentId: true, bmcEventId: true },
     }),

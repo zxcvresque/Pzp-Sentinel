@@ -30,6 +30,7 @@ export function transactionWhereFromParams(
 ): Prisma.TransactionWhereInput {
   const where: Prisma.TransactionWhereInput = {};
   const search = params.get("search")?.trim();
+  const transactionId = params.get("transactionId")?.trim();
   const status = oneOf(params.get("status"), TX_STATUSES);
   const direction = oneOf(params.get("direction"), DIRECTIONS);
   const currency = oneOf(params.get("currency"), CURRENCIES);
@@ -42,6 +43,7 @@ export function transactionWhereFromParams(
   const lifecycle = options.forceActive ? "ACTIVE" : params.get("lifecycle") || "ACTIVE";
 
   if (options.donorUserId) where.fromUserId = options.donorUserId;
+  if (transactionId) where.id = transactionId;
   if (status) where.status = status;
   if (direction) where.direction = direction;
   if (currency) where.currency = currency;

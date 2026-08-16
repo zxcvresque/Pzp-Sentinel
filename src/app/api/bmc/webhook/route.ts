@@ -369,16 +369,36 @@ export async function POST(request: NextRequest) {
   const secret = process.env.BMC_WEBHOOK_SECRET?.trim();
   if (!secret) return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
 
-  const rawBody = await request.text();
+  // BMC signs the exact request bytes. Do not parse or decode the payload
+  // before HMAC verification because even a transport-level byte difference
+  // must fail authentication.
+  const rawBytes = Buffer.from(await request.arrayBuffer());
+  const rawBody = rawBytes.toString("utf8");
   const signature = request.headers.get("x-signature-sha256")
     || request.headers.get("x-bmc-signature")
     || "";
-  const providerSignatureValid = verifyBmcSignature(rawBody, signature, secret);
+  const providerSignatureValid = verifyBmcSignature(rawBytes, signature, secret);
   const recoverySignature = request.headers.get("x-sentinel-bmc-recovery-sha256") || "";
   const operatorRecovery = !providerSignatureValid
     && verifyBmcRecoverySignature(rawBody, recoverySignature, secret);
   if (!providerSignatureValid && !operatorRecovery) {
-    console.warn("[bmc] rejected webhook with invalid signature");
+    const normalizedSignature = signature.trim().replace(/^sha256=/i, "");
+    const signatureEncoding = /^[a-f0-9]{64}$/i.test(normalizedSignature)
+      ? "hex"
+      : /^[a-z0-9+/]{43}=$/i.test(normalizedSignature)
+        ? "base64"
+        : signature
+          ? "unsupported"
+          : "missing";
+    console.warn("[bmc] rejected webhook with invalid signature", {
+      signatureEncoding,
+      signatureLength: signature.length,
+      bodyBytes: rawBytes.length,
+      contentType: request.headers.get("content-type"),
+      contentEncoding: request.headers.get("content-encoding"),
+      userAgent: request.headers.get("user-agent"),
+      cfRay: request.headers.get("cf-ray"),
+    });
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
