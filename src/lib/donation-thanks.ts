@@ -35,18 +35,21 @@ export function formatAmount(amount: number, currency: string): string {
   return `${symbol}${n}`;
 }
 
-// Public group thank-you templates by tier.
-const GROUP_TEMPLATES: Record<DonationTier, string[]> = {
+type GroupTemplate = string | { callout: string; message: string };
+
+// Public group thank-you templates by tier. A callout is rendered as its own
+// bold quote above the thank-you copy.
+const GROUP_TEMPLATES: Record<DonationTier, GroupTemplate[]> = {
   everyBit: [
     "🏴‍☠️ {user} chipped in {amount} — every coin counts, thank you! 🙏",
-    "Ahoy {user}! {amount} added to the treasury. Small waves make big tides 🌊",
+    "Ahoy {user} — {amount} added to the treasury! Small waves make big tides 🌊",
     "{user} pitched in {amount} 💛 grateful for every bit that keeps PzP afloat!",
   ],
   decent: [
     "🙌 {user} dropped {amount} into the chest! Solid support — thank you!",
     "Big thanks to {user} for {amount}! 💪 Exactly what keeps the ship sailing.",
     "{user} just donated {amount} 🏴‍☠️ appreciate you standing with the crew!",
-    "Cheers {user}! {amount} received with gratitude — keeping the lights on 🔆",
+    "Cheers {user} — {amount} received with gratitude! Keeping the lights on 🔆",
     "🎉 {user} contributed {amount}! Members like you make PzP stronger.",
     "{user} backed us with {amount} 💛 respect from the whole crew!",
   ],
@@ -59,7 +62,7 @@ const GROUP_TEMPLATES: Record<DonationTier, string[]> = {
     "{user} just gave {amount} 💛 generous and appreciated — thank you!",
   ],
   great: [
-    "🚀 WHOA — {user} donated {amount}! A massive lift for PzP. Thank you, legend!",
+    { callout: "🚀 WHOA", message: "{user} donated {amount}! A massive lift for PzP. Thank you, legend!" },
     "🏴‍☠️ {user} dropped a hefty {amount}! The whole crew is cheering!",
     "Standing ovation for {user} 👏👏 {amount} donated — this moves the needle!",
     "🔥🔥 {user} contributed {amount}! Generosity like this keeps the dream alive.",
@@ -67,7 +70,7 @@ const GROUP_TEMPLATES: Record<DonationTier, string[]> = {
     "Big love to {user} for {amount} 💛🏴‍☠️ a pillar of this crew. Thank you!",
   ],
   epic: [
-    "🚨 LEGEND ALERT 🚨 {user} donated {amount}! The crew is speechless. 🏴‍☠️",
+    { callout: "🚨 LEGEND ALERT 🚨", message: "{user} donated {amount}! The crew is speechless. 🏴‍☠️" },
     "🤯 {user} dropped a mighty {amount}! Huge for PzP — deepest gratitude!",
     "👑 {user} gave {amount}! Royalty status unlocked — thank you!",
     "🔥 Hats off to {user} — {amount} donated! This changes everything. THANK YOU!",
@@ -75,14 +78,30 @@ const GROUP_TEMPLATES: Record<DonationTier, string[]> = {
     "🙌 {user} backed PzP with a massive {amount}! You keep us sailing, captain!",
   ],
   legendary: [
-    "🏆🏴‍☠️ HALL OF FAME — {user} donated {amount}!! The entire crew bows.",
+    { callout: "🏆🏴‍☠️ HALL OF FAME", message: "{user} donated {amount}!! The entire crew bows." },
     "🚨🔥 {user} DROPPED {amount}!! Monumental for PzP. An absolute legend! 👑",
-    "🤯 We're floored — {user} gave {amount}! Patrons like you make the impossible possible.",
-    "👑👑 ALL HAIL {user} — {amount}!! The treasury sings your name.",
+    { callout: "🤯 WE'RE FLOORED", message: "{user} gave {amount}! Patrons like you make the impossible possible." },
+    { callout: "👑👑 ALL HAIL", message: "{user} donated {amount}!! The treasury sings your name." },
     "🎆 {user} powered PzP with a colossal {amount}! Eternal respect 🏴‍☠️",
     "🙇 {user} contributed an epic {amount}!! You're carrying PzP. THANK YOU, legend!",
   ],
 };
+
+function formatGroupTemplate(template: GroupTemplate, handle: string, amount: string) {
+  const source = typeof template === "string" ? template : template.message;
+  const amountTokenEnd = source.indexOf("{amount}") + "{amount}".length;
+  const terminal = source.slice(amountTokenEnd).match(/^[\s\S]*?[.!?]+(?=\s|$)/);
+  const firstEnd = terminal ? amountTokenEnd + terminal[0].length : source.length;
+  const replaceTokens = (value: string) => value
+    .replaceAll("{user}", handle)
+    .replaceAll("{amount}", amount);
+  const firstSentence = replaceTokens(source.slice(0, firstEnd));
+  const remainder = replaceTokens(source.slice(firstEnd).trimStart());
+  const message = `<b>${firstSentence}</b>${remainder ? ` ${remainder}` : ""}`;
+  return typeof template === "string"
+    ? message
+    : `<blockquote><b>${template.callout}</b></blockquote>\n${message}`;
+}
 
 // Personal DM thank-you templates by tier (warmer, by name).
 const DM_TEMPLATES: Record<DonationTier, string[]> = {
@@ -134,7 +153,10 @@ function pick<T>(arr: T[]): T {
  * `name` comes from the donor's Telegram /start; `username` is their @handle.
  */
 export function donorHandle(name?: string | null, username?: string | null): string {
-  const u = username?.replace(/^@/, "").trim();
+  const rawUsername = username?.replace(/^@/, "").trim();
+  const u = rawUsername && /^[A-Za-z0-9_]{5,32}$/.test(rawUsername)
+    ? rawUsername
+    : undefined;
   const n = name?.trim();
   if (n && u) return `${n} (@${u})`;
   if (u) return `@${u}`;
@@ -150,9 +172,11 @@ export function groupThanks(
   frequency: string = "ONE_TIME",
 ): string {
   const tier = tierFor(amount, currency);
-  const message = pick(GROUP_TEMPLATES[tier])
-    .replaceAll("{user}", handle)
-    .replaceAll("{amount}", formatAmount(amount, currency));
+  const message = formatGroupTemplate(
+    pick(GROUP_TEMPLATES[tier]),
+    handle,
+    formatAmount(amount, currency),
+  );
   const hashtag = frequency === "MONTHLY" ? "#monthly" : "#onetime";
   return `${message}\n\n<blockquote>${hashtag}</blockquote>`;
 }
