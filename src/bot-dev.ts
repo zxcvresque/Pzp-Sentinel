@@ -20,6 +20,7 @@ import { broadcastAudienceRoles } from "./lib/broadcast-audience";
 import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "./lib/broadcast-format";
 import { serviceReminderRepeat } from "./lib/service-templates";
 import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
+import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -152,6 +153,13 @@ async function reconcileProviderPayments() {
     if (result.errors.length) console.warn("[razorpay-reconcile]", result.errors.slice(0, 5));
   } catch (error) {
     console.error("[razorpay-reconcile] Failed:", error);
+  }
+
+  try {
+    const result = await reconcileDonationAnnouncements();
+    console.log(`[donation-announcements] checked=${result.checked}, sent=${result.sent}, skipped=${result.skipped}, failed=${result.failed}`);
+  } catch (error) {
+    console.error("[donation-announcements] Reconciliation failed:", error);
   }
 }
 

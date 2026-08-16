@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { logTransactionReview, postDonationThanks } from "@/lib/telegram-log";
+import { logTransactionReview } from "@/lib/telegram-log";
 import { logApproval, logTransaction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { getAppreciation } from "@/lib/appreciation";
-import { groupThanks, dmThanks, donorHandle } from "@/lib/donation-thanks";
+import { dmThanks } from "@/lib/donation-thanks";
+import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
 
@@ -110,8 +111,6 @@ export async function POST(
   const recorderName = updated.createdBy?.name ?? "an admin";
   // Admin recorded on behalf of a different linked donor (gets a DM note).
   const onBehalfLinked = !!updated.fromUserId && updated.fromUserId !== updated.createdById;
-  // Recorded by someone other than the donor (incl. external donors).
-  const onBehalf = isDonation && (onBehalfLinked || !updated.fromUserId);
 
   if (isDonation && updated.fromUserId) {
     const reminderUpdate = monthlyReminderUpdate(updated.donationFrequency, updated.date);
@@ -148,12 +147,10 @@ export async function POST(
     }).catch((err) => console.error("[approve] notify failed:", err));
   }
 
-  // Public thank-you in the donations group (donations only).
+  // Public funds-group thank-you only for a DONOR's own submission. Provider
+  // captures are announced in their finalizers; admin-noted entries are not.
   if (isDonation) {
-    const handle = donorHandle(updated.fromUser?.name, updated.fromUser?.telegramUser);
-    let groupMsg = groupThanks(handle, amountNum, updated.currency, updated.donationFrequency);
-    if (onBehalf) groupMsg += `\n<i>(recorded by ${recorderName} on their behalf)</i>`;
-    postDonationThanks(groupMsg).catch((err) =>
+    announceDonationTransaction(updated.id).catch((err) =>
       console.error("[approve] group thanks failed:", err),
     );
   }

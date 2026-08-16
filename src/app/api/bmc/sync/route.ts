@@ -8,8 +8,9 @@ import { Prisma } from "@/generated/prisma/client";
 import { bmcAccountSlug, extractBmcAttributionCode, hashBmcAttributionCode } from "@/lib/bmc-attribution";
 import { bmcLegacyPageItems, bmcSubscriptionPaymentKey, nextBmcLegacyPage, type BmcLegacyPage } from "@/lib/bmc-sync";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
-import { dmThanks, donorHandle, groupThanks } from "@/lib/donation-thanks";
-import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
+import { dmThanks } from "@/lib/donation-thanks";
+import { logTransaction } from "@/lib/telegram-log";
+import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { encryptSecret } from "@/lib/secret-crypto";
 
 const BMC_BASE = "https://developers.buymeacoffee.com/api/v1";
@@ -353,12 +354,7 @@ export async function POST() {
             actionUrl: "/donor",
             telegramMessage: dmThanks(result.fromUser.name, amount, currency),
           });
-          await postDonationThanks(groupThanks(
-            donorHandle(result.fromUser.name, result.fromUser.telegramUser),
-            amount,
-            currency,
-            "MONTHLY",
-          ));
+          await announceDonationTransaction(result.id);
         }
         logTransaction({
           id: result.id,

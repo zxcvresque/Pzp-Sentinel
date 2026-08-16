@@ -30,21 +30,26 @@ async function sendToTopic(topic: Topic, text: string) {
 }
 
 /**
- * Post a donation thank-you to the donations group. Uses TG_DONATION_GROUP_ID
- * (+ optional TG_DONATION_TOPIC_ID for a specific topic; omit for General), and
- * falls back to the logs group's General topic for testing when unset.
+ * Post a donation thank-you to the dedicated funds/donations group. Uses
+ * TG_DONATION_GROUP_ID (+ optional TG_DONATION_TOPIC_ID for a specific topic;
+ * omit for General). It deliberately does not fall back to the logs group.
  */
 export async function postDonationThanks(text: string) {
-  const groupId = process.env.TG_DONATION_GROUP_ID || GROUP_ID;
-  if (!groupId) return;
+  const groupId = process.env.TG_DONATION_GROUP_ID;
+  if (!groupId) {
+    console.error("[donation-group] TG_DONATION_GROUP_ID is not configured");
+    return false;
+  }
   const topicId = process.env.TG_DONATION_TOPIC_ID;
   try {
     await bot.api.sendMessage(groupId, text, {
       parse_mode: "HTML",
       ...(topicId ? { message_thread_id: parseInt(topicId) } : {}),
     });
-  } catch {
-    // TG delivery failed — non-blocking
+    return true;
+  } catch (error) {
+    console.error("[donation-group] Telegram delivery failed:", error);
+    return false;
   }
 }
 

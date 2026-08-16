@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
-import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
+import { logTransaction } from "@/lib/telegram-log";
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
 import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
-import { groupThanks, donorHandle, dmThanks } from "@/lib/donation-thanks";
+import { dmThanks } from "@/lib/donation-thanks";
+import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { verifyCheckoutHmac, verifySubscriptionHmac, verifyWebhookHmac } from "@/lib/razorpay-signatures";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
@@ -913,10 +914,7 @@ export async function finalizeCapturedDonation(params: {
     ),
   }).catch(() => {});
 
-  if (!stored.testMode) {
-    const handle = donorHandle(payerName, payerTelegramUser);
-    postDonationThanks(groupThanks(handle, Number(amount), "INR", stored.donationFrequency)).catch(() => {});
-  }
+  if (!stored.testMode) announceDonationTransaction(transaction.id).catch(() => {});
   scheduleFinanceAutomation({
     action: stored.testMode ? "RAZORPAY_TEST_CAPTURED" : "RAZORPAY_CAPTURED",
     actorName,
@@ -1047,12 +1045,7 @@ export async function finalizeMonthlySubscriptionCharge(params: {
       actionUrl: "/donor",
       telegramMessage: dmThanks(stored.user.name, Number(amount), stored.currency),
     });
-    await postDonationThanks(groupThanks(
-      donorHandle(stored.user.name, stored.user.telegramUser),
-      Number(amount),
-      stored.currency,
-      "MONTHLY",
-    ));
+    await announceDonationTransaction(transaction.id);
   }
   notifyAdmins({
     type: "SYSTEM",

@@ -13,8 +13,9 @@ import {
 } from "@/lib/bmc-webhook";
 import { bmcAccountSlug, extractBmcAttributionCode, hashBmcAttributionCode } from "@/lib/bmc-attribution";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
-import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
-import { dmThanks, donorHandle, groupThanks } from "@/lib/donation-thanks";
+import { logTransaction } from "@/lib/telegram-log";
+import { dmThanks } from "@/lib/donation-thanks";
+import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
 import {
   bmcFeedbackKeyboard,
@@ -241,10 +242,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     });
   }
 
-  if (event.liveMode) {
-    const handle = donorHandle(matchedDonor?.name || event.supporterName, matchedDonor?.telegramUser);
-    await postDonationThanks(groupThanks(handle, event.amount, event.currency, transaction.donationFrequency));
-  }
+  if (event.liveMode) await announceDonationTransaction(transaction.id);
 
   logTransaction({
     id: transaction.id,

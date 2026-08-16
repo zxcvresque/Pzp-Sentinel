@@ -240,6 +240,10 @@ model Transaction {
   voidedBy            User?         @relation("TxVoidedBy", fields: [voidedById], references: [id])
   voidReason          String?
   bmcEventId          String?       @unique
+  // Durable outbox state for public funds-group thank-yous. Only eligible
+  // DONOR-owned donations are claimed; stale claims can be retried safely.
+  donationAnnouncementClaimedAt DateTime?
+  donationAnnouncedAt DateTime?
   createdById         String
   createdBy           User          @relation("TxCreatedBy", fields: [createdById], references: [id])
   createdAt           DateTime      @default(now())
@@ -254,6 +258,7 @@ model Transaction {
 
   @@index([razorpaySubscriptionId, date])
   @@index([serviceId, date])
+  @@index([donationAnnouncedAt, date])
 }
 
 // Server-owned Razorpay order state. Checkout responses are never trusted until

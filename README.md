@@ -231,7 +231,7 @@ flowchart LR
 
 **Admin → Reminders** is a separate, admin-only message queue. Reminders always target every active admin, so there is no audience selector. Each reminder can fire once or repeat on a custom minute, hour, day, week, or month interval and can be delivered in Sentinel, by Telegram DM, or through both channels. The bot process claims each due occurrence before delivery, advances repeating schedules without time drift, and completes one-time reminders after they fire.
 
-Telegram delivery falls back to `TG_GROUP_ID` when a separate donation group is not configured. Sending to the group requires the bot to be a member with permission to post.
+Funds-group delivery requires `TG_DONATION_GROUP_ID`; Sentinel deliberately does not fall back to the operational logs group. The bot must be a member of that group with permission to post.
 
 ---
 
@@ -533,7 +533,7 @@ TG_DONATION_GROUP_ID="-100xxxxxxxxxx"
 TG_DONATION_TOPIC_ID=""
 ```
 
-`TG_DONATION_GROUP_ID` is used for donation acknowledgements and admin broadcasts. Leave `TG_DONATION_TOPIC_ID` empty to post in General. If no donation group is set, Sentinel falls back to `TG_GROUP_ID` where supported.
+`TG_DONATION_GROUP_ID` is used for donation acknowledgements and admin broadcasts. Leave `TG_DONATION_TOPIC_ID` empty to post in General. Donation acknowledgements never fall back to `TG_GROUP_ID`, preventing public messages from leaking into the operational logs group.
 
 ### Payment providers
 
@@ -631,6 +631,8 @@ When replacing the BMC account, update `BMC_PAGE_URL`, `BMC_ACCOUNT_SLUG`, and `
 For one-time payments, Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. For monthly custom amounts, Sentinel creates a fixed-amount monthly Plan dynamically, creates a bounded Subscription, opens Razorpay mandate authorisation, verifies the subscription signature, and records each successful charge idempotently. If the first plan charge is collected during mandate authentication, checkout verification records it immediately instead of waiting for a webhook. `subscription.authenticated`, `subscription.charged`, and invoice-backed `payment.captured` deliveries all converge on the same finalizer.
 
 As a webhook-outage safety net, the bot reconciles recent captured Razorpay payments against subscription invoices at startup and every six hours. This recovery uses Razorpay's API as the source of truth and replays the normal transaction, audit, donor DM, admin notification and public `#monthly` thank-you flow exactly once.
+
+Every approved, non-test donation attributed to a user whose current role includes **DONOR** is announced in the configured funds group. Existing custom thank-you text is preserved and followed by one blank line and a quoted `<blockquote>#onetime</blockquote>` or `<blockquote>#monthly</blockquote>` tag. Provider-captured BMC/Razorpay donations and donations submitted by the donor are eligible; unmatched payments and transactions merely noted by an admin are never posted. A durable claim/completion marker prevents duplicate announcements, while startup and six-hour reconciliation retries recent eligible messages that failed delivery. An operator can also run `npm run donations:announce -- 7 50` (lookback days, maximum records).
 
 Configure the webhook as:
 

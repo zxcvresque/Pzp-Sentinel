@@ -16,6 +16,7 @@
     "postinstall": "prisma generate",
     "sheets:sync": "npx tsx scripts/sync-finance-sheets.ts",
     "bmc:recover": "npx tsx scripts/recover-bmc-delivery.ts",
+    "donations:announce": "npx tsx scripts/reconcile-donation-announcements.ts",
     "test": "vitest run"
   },
   "dependencies": {
