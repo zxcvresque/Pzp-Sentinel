@@ -9,6 +9,7 @@ import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 import BmcSupportCard from "@/components/BmcSupportCard";
 import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
 import PaymentMethodBadge from "@/components/PaymentMethodBadge";
+import CurrencyToggle from "@/components/CurrencyToggle";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import {
   convertCurrencyAmount,
@@ -278,17 +279,21 @@ export default function DonorDashboard() {
         />
       )}
       {paymentAccess?.bmc && (
-        <BmcSupportCard
-          displayCurrency={displayCurrency}
-          exchangeRate={usdToInr}
-          onDisplayCurrencyChange={chooseDisplayCurrency}
-        />
+        <BmcSupportCard />
       )}
       {paymentAccess && !paymentAccess.bmc && !paymentAccess.razorpay && (
         <div className="mb-6 rounded-2xl border border-[var(--border)] bg-bg-deep p-5 text-sm text-text-secondary">
           Online checkout is not enabled for this account. Contact an administrator if you need a payment link.
         </div>
       )}
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[.1em] text-text-tertiary">History amounts</div>
+          <p className="mt-1 text-xs text-text-tertiary">Display totals and donation history in your preferred currency.</p>
+        </div>
+        <CurrencyToggle value={displayCurrency} onChange={chooseDisplayCurrency} exchangeRate={usdToInr} />
+      </div>
 
       {/* Stats summary */}
       <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">

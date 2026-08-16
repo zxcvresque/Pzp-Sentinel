@@ -2,8 +2,6 @@
 
 import { useEffect, useState, type MouseEvent } from "react";
 import Image from "next/image";
-import CurrencyToggle from "@/components/CurrencyToggle";
-import type { DisplayCurrency } from "@/lib/currency-display";
 
 type BmcConfig = {
   checkoutUrl: string | null;
@@ -21,15 +19,9 @@ type TelegramLinkOpener = {
 export default function BmcSupportCard({
   adminPreview = false,
   guestToken,
-  displayCurrency,
-  exchangeRate,
-  onDisplayCurrencyChange,
 }: {
   adminPreview?: boolean;
   guestToken?: string;
-  displayCurrency?: DisplayCurrency;
-  exchangeRate?: number | null;
-  onDisplayCurrencyChange?: (currency: DisplayCurrency) => void;
 }) {
   const [config, setConfig] = useState<BmcConfig | null>(null);
   const [intent, setIntent] = useState<{ code: string; expiresAt: string; checkoutUrl: string } | null>(null);
@@ -37,8 +29,6 @@ export default function BmcSupportCard({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
-  const [localCurrency, setLocalCurrency] = useState<DisplayCurrency>("USD");
-  const [localExchangeRate, setLocalExchangeRate] = useState<number | null>(null);
 
   useEffect(() => {
     const url = guestToken ? `/api/bmc/config?token=${encodeURIComponent(guestToken)}` : "/api/bmc/config";
@@ -47,30 +37,6 @@ export default function BmcSupportCard({
       .then(setConfig)
       .catch(() => setConfig(null));
   }, [guestToken]);
-
-  useEffect(() => {
-    if (displayCurrency || adminPreview) return;
-    const saved = window.localStorage.getItem("sentinel_donor_display_currency");
-    fetch("/api/exchange-rate", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => {
-        if (typeof data?.rate === "number") setLocalExchangeRate(data.rate);
-        const detected: DisplayCurrency = data?.suggestedCurrency === "INR" ? "INR" : "USD";
-        setLocalCurrency(saved === "INR" || saved === "USD" ? saved : detected);
-      })
-      .catch(() => setLocalCurrency(saved === "INR" ? "INR" : "USD"));
-  }, [adminPreview, displayCurrency]);
-
-  const selectedCurrency = displayCurrency || localCurrency;
-  const selectedRate = exchangeRate ?? localExchangeRate;
-
-  function chooseCurrency(currency: DisplayCurrency) {
-    if (onDisplayCurrencyChange) onDisplayCurrencyChange(currency);
-    else {
-      setLocalCurrency(currency);
-      window.localStorage.setItem("sentinel_donor_display_currency", currency);
-    }
-  }
 
   function openCheckout(event: MouseEvent<HTMLAnchorElement>) {
     const webApp = window.Telegram?.WebApp as unknown as TelegramLinkOpener | undefined;
@@ -130,30 +96,18 @@ export default function BmcSupportCard({
               Support Piratezparty with a contribution, membership, commission, or wishlist payment.
             </p>
             {!adminPreview && !guestToken && (
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-xl border border-amber/20 bg-black/15 p-1" aria-label="Donation frequency">
-                  {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
-                    <button
-                      key={frequency}
-                      type="button"
-                      onClick={() => { setDonationFrequency(frequency); setIntent(null); setError(""); }}
-                      className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-amber text-bg-void" : "text-text-secondary hover:text-text-primary"}`}
-                    >
-                      {frequency === "MONTHLY" ? "Monthly" : "One time"}
-                    </button>
-                  ))}
-                </div>
-                <CurrencyToggle value={selectedCurrency} onChange={chooseCurrency} exchangeRate={selectedRate} />
+              <div className="mt-4 inline-flex rounded-xl border border-amber/20 bg-black/15 p-1" aria-label="Donation frequency">
+                {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    onClick={() => { setDonationFrequency(frequency); setIntent(null); setError(""); }}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-amber text-bg-void" : "text-text-secondary hover:text-text-primary"}`}
+                  >
+                    {frequency === "MONTHLY" ? "Monthly" : "One time"}
+                  </button>
+                ))}
               </div>
-            )}
-            {!adminPreview && guestToken && (
-              <div className="mt-4"><CurrencyToggle value={selectedCurrency} onChange={chooseCurrency} exchangeRate={selectedRate} /></div>
-            )}
-            {!adminPreview && (
-              <p className="mt-2 text-[11px] leading-5 text-text-tertiary">
-                Displaying {selectedCurrency}. India defaults to INR; other locations default to USD.
-                {" "}BMC confirms the actual charge currency on its checkout page when Localized Pricing is enabled.
-              </p>
             )}
             <div className="mt-3 flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">
               <span className={`h-1.5 w-1.5 rounded-full ${config.configured ? "bg-mint" : "bg-amber"}`} />
