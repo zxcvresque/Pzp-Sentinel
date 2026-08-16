@@ -221,6 +221,9 @@ model Transaction {
   // Sentinel RazorpayOrder. Unique so webhook retries cannot duplicate income.
   providerPaymentId   String?       @unique
   razorpaySubscriptionId String?
+  // Encrypted provider metadata (payer email/name/note/payment context). Never
+  // expose this ciphertext through general transaction APIs.
+  providerDetailsEncrypted String?
   fromUserId          String?
   fromUser            User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
   description         String
@@ -363,6 +366,7 @@ model RazorpayWebhookEvent {
   eventType String
   resourceId String?
   payload   Json?
+  encryptedPayload String?
   // PROCESSED default keeps historical receipt rows from appearing as false
   // reconciliation failures; new webhook ingestion writes RECEIVED explicitly.
   status    String   @default("PROCESSED")
@@ -390,7 +394,10 @@ model BmcWebhookEvent {
   currency          Currency?
   status            String       @default("PROCESSING")
   attributionStatus String       @default("PENDING")
-  payload           Json
+  // New deliveries are encrypted at rest. payload remains nullable only for
+  // compatibility with historical rows written before field encryption.
+  payload           Json?
+  encryptedPayload  String?
   transactionId     String?
   transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   processedAt       DateTime?
@@ -428,6 +435,7 @@ model BmcSupporterLink {
   accountSlug    String
   supporterId    String
   supporterEmail String?
+  supporterDetailsEncrypted String?
   userId         String
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   donationFrequency DonationFrequency @default(ONE_TIME)

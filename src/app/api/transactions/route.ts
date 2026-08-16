@@ -59,7 +59,8 @@ export async function GET(req: NextRequest) {
     prisma.transaction.count({ where }),
   ]);
 
-  return NextResponse.json({ transactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  const safeTransactions = transactions.map(({ providerDetailsEncrypted: _providerDetailsEncrypted, ...transaction }) => transaction);
+  return NextResponse.json({ transactions: safeTransactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });
 }
 
 export async function POST(req: NextRequest) {

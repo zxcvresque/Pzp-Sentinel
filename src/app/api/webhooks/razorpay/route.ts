@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   finalizeCapturedDonation,
+  finalizeMonthlyPaymentByReference,
   finalizeMonthlySubscriptionCharge,
   handleRazorpaySubscriptionLifecycle,
   RazorpayError,
@@ -9,15 +10,18 @@ import {
 } from "@/lib/razorpay";
 import {
   normalizeRazorpaySubscriptionEvent,
+  shouldFinalizeSubscriptionPayment,
   type RazorpaySubscriptionWebhookEntity,
 } from "@/lib/razorpay-subscription-events";
+import { encryptSecret } from "@/lib/secret-crypto";
+import { Prisma } from "@/generated/prisma/client";
 
 export const runtime = "nodejs";
 
 type WebhookPayload = {
   event?: string;
   payload?: {
-    payment?: { entity?: { id?: string; order_id?: string } };
+    payment?: { entity?: { id?: string; order_id?: string; invoice_id?: string | null } };
     order?: { entity?: { id?: string } };
     subscription?: { entity?: RazorpaySubscriptionWebhookEntity };
   };
@@ -40,6 +44,7 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(rawBody) as WebhookPayload;
     const event = body.event || "unknown";
     const paymentId = body.payload?.payment?.entity?.id;
+    const invoiceId = body.payload?.payment?.entity?.invoice_id;
     const orderId = body.payload?.order?.entity?.id || body.payload?.payment?.entity?.order_id;
     const subscription = body.payload?.subscription?.entity;
     const subscriptionEvent = normalizeRazorpaySubscriptionEvent(event, subscription);
@@ -48,18 +53,34 @@ export async function POST(request: NextRequest) {
     if (eventId) {
       await prisma.razorpayWebhookEvent.upsert({
         where: { eventId },
-        update: { eventType: event, resourceId, payload: body as never, status: "RECEIVED" },
-        create: { eventId, eventType: event, resourceId, payload: body as never, status: "RECEIVED" },
+        update: {
+          eventType: event,
+          resourceId,
+          payload: Prisma.JsonNull,
+          encryptedPayload: encryptSecret(rawBody),
+          status: "RECEIVED",
+        },
+        create: {
+          eventId,
+          eventType: event,
+          resourceId,
+          payload: Prisma.JsonNull,
+          encryptedPayload: encryptSecret(rawBody),
+          status: "RECEIVED",
+        },
       });
     }
 
-    if (event === "subscription.charged" && subscriptionEvent && paymentId) {
+    if (subscriptionEvent && shouldFinalizeSubscriptionPayment(subscriptionEvent, paymentId)) {
       await finalizeMonthlySubscriptionCharge({
         subscriptionId: subscriptionEvent.subscriptionId,
-        paymentId,
+        paymentId: paymentId!,
         status: subscriptionEvent.status,
         paidCount: subscriptionEvent.paidCount,
       });
+      if (event !== "subscription.charged") {
+        await handleRazorpaySubscriptionLifecycle(subscriptionEvent);
+      }
     } else if ((event === "payment.captured" || event === "order.paid") && orderId && paymentId) {
       // Subscription invoice payments also emit payment events, but their order
       // IDs are not Sentinel one-time orders. The subscription.charged event is
@@ -71,7 +92,8 @@ export async function POST(request: NextRequest) {
       if (storedOrder) {
         await finalizeCapturedDonation({ orderId, paymentId, actorName: "Razorpay webhook" });
       } else {
-        processingStatus = "UNMATCHED";
+        const recovered = await finalizeMonthlyPaymentByReference({ paymentId, invoiceId });
+        if (!recovered.matched) processingStatus = "UNMATCHED";
       }
     } else if (subscriptionEvent) {
       await handleRazorpaySubscriptionLifecycle(subscriptionEvent);

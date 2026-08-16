@@ -10,6 +10,8 @@ import { bmcAccountSlug } from "@/lib/bmc-attribution";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archive";
 import { serviceReminderRepeat } from "@/lib/service-templates";
+import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
+import { parseBmcWebhook } from "@/lib/bmc-webhook";
 
 export async function PATCH(
   req: NextRequest,
@@ -94,7 +96,7 @@ export async function PATCH(
   const bmcReceipt = isBmcReconciliation
     ? await prisma.bmcWebhookEvent.findFirst({
         where: { transactionId: transaction.id },
-        select: { id: true, supporterId: true, supporterEmail: true },
+        select: { id: true, supporterId: true, supporterEmail: true, encryptedPayload: true },
       })
     : null;
   if (bmcReceipt?.supporterId) {
@@ -199,6 +201,18 @@ export async function PATCH(
 
   if (isBmcReconciliation && updated.fromUserId) {
     if (bmcReceipt?.supporterId) {
+      let supporterName: string | null = null;
+      let supporterEmail = bmcReceipt.supporterEmail;
+      if (bmcReceipt.encryptedPayload) {
+        try {
+          const normalized = parseBmcWebhook(decryptSecret(bmcReceipt.encryptedPayload));
+          supporterName = normalized.supporterName;
+          supporterEmail = normalized.supporterEmail;
+        } catch {
+          // Historical malformed payload: retain only the legacy email below.
+        }
+      }
+      const supporterDetailsEncrypted = encryptSecret(JSON.stringify({ supporterName, supporterEmail }));
       await prisma.bmcSupporterLink.upsert({
         where: {
           accountSlug_supporterId: {
@@ -207,14 +221,16 @@ export async function PATCH(
           },
         },
         update: {
-          supporterEmail: bmcReceipt.supporterEmail,
+          supporterEmail: null,
+          supporterDetailsEncrypted,
           lastSeenAt: new Date(),
           donationFrequency: updated.donationFrequency,
         },
         create: {
           accountSlug: bmcAccountSlug(),
           supporterId: bmcReceipt.supporterId,
-          supporterEmail: bmcReceipt.supporterEmail,
+          supporterEmail: null,
+          supporterDetailsEncrypted,
           userId: updated.fromUserId,
           donationFrequency: updated.donationFrequency,
         },

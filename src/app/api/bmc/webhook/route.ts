@@ -15,6 +15,7 @@ import {
   isBmcCancellationEvent,
   shouldPromptBmcDonor,
 } from "@/lib/bmc-subscription-feedback";
+import { encryptSecret } from "@/lib/secret-crypto";
 
 const CREATED_EVENTS = new Set([
   "donation.created",
@@ -56,11 +57,20 @@ function eventLabel(type: string) {
 }
 
 function transactionDescription(event: NormalizedBmcEvent) {
-  const attributionCode = extractBmcAttributionCode(event.note);
-  const publicNote = attributionCode ? event.note?.replace(attributionCode, "").trim() : event.note;
-  const note = publicNote ? ` — “${publicNote}”` : "";
   const item = event.itemLabel ? ` · ${event.itemLabel}` : "";
-  return `BMC ${eventLabel(event.type)}: ${event.supporterName}${item}${note}`;
+  return `BMC ${eventLabel(event.type)}${item}`;
+}
+
+function encryptedBmcDetails(event: NormalizedBmcEvent) {
+  return encryptSecret(JSON.stringify({
+    supporterName: event.supporterName,
+    supporterEmail: event.supporterEmail,
+    supporterId: event.supporterId,
+    note: event.note,
+    itemLabel: event.itemLabel,
+    providerEventId: event.providerEventId,
+    resourceId: event.resourceId,
+  }));
 }
 
 async function findTransaction(event: NormalizedBmcEvent) {
@@ -102,18 +112,23 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
 
     let intent = null;
     if (!knownLink && code) {
-      const now = new Date();
       intent = await db.bmcCheckoutIntent.findFirst({
         where: {
           codeHash: hashBmcAttributionCode(code),
           consumedAt: null,
-          expiresAt: { gt: now },
+          createdAt: { lte: event.occurredAt },
+          expiresAt: { gte: event.occurredAt },
         },
       });
       if (intent) {
         const claimed = await db.bmcCheckoutIntent.updateMany({
-          where: { id: intent.id, consumedAt: null, expiresAt: { gt: now } },
-          data: { consumedAt: now },
+          where: {
+            id: intent.id,
+            consumedAt: null,
+            createdAt: { lte: event.occurredAt },
+            expiresAt: { gte: event.occurredAt },
+          },
+          data: { consumedAt: new Date() },
         });
         if (claimed.count !== 1) intent = null;
       }
@@ -131,6 +146,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         direction: "IN",
         type: "DONATION",
         donationFrequency,
+        providerDetailsEncrypted: encryptedBmcDetails(event),
         fromUserId,
         description: transactionDescription(event),
         status: "APPROVED",
@@ -146,7 +162,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
       await db.bmcSupporterLink.update({
         where: { id: knownLink.id },
         data: {
-          supporterEmail: event.supporterEmail || knownLink.supporterEmail,
+          supporterEmail: null,
+          supporterDetailsEncrypted: encryptedBmcDetails(event),
           lastSeenAt: new Date(),
           donationFrequency,
         },
@@ -156,7 +173,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         data: {
           accountSlug,
           supporterId: event.supporterId,
-          supporterEmail: event.supporterEmail,
+          supporterEmail: null,
+          supporterDetailsEncrypted: encryptedBmcDetails(event),
           userId: intent.userId,
           donationFrequency,
         },
@@ -375,8 +393,10 @@ export async function POST(request: NextRequest) {
           attempt: event.attempt,
           status: "PROCESSING",
           supporterId: event.supporterId,
-          supporterEmail: event.supporterEmail,
-          payload: event.data as Prisma.InputJsonValue,
+          supporterName: null,
+          supporterEmail: null,
+          payload: Prisma.JsonNull,
+          encryptedPayload: encryptSecret(rawBody),
         },
       })
     : await prisma.bmcWebhookEvent.create({
@@ -387,12 +407,13 @@ export async function POST(request: NextRequest) {
           liveMode: event.liveMode,
           attempt: event.attempt,
           resourceId: event.resourceId,
-          supporterName: event.supporterName,
+          supporterName: null,
           supporterId: event.supporterId,
-          supporterEmail: event.supporterEmail,
+          supporterEmail: null,
           amount: event.amount > 0 ? new Prisma.Decimal(event.amount) : undefined,
           currency: event.currency,
-          payload: event.data as Prisma.InputJsonValue,
+          payload: Prisma.JsonNull,
+          encryptedPayload: encryptSecret(rawBody),
         },
       });
 
@@ -432,7 +453,7 @@ export async function POST(request: NextRequest) {
       entityId: receipt.id,
       transactionId: transactionId || undefined,
       userName: "Buy Me a Coffee",
-      details: `${event.type} · ${event.supporterName}${event.amount ? ` · ${symbol(event)}${event.amount.toFixed(2)}` : ""}${event.liveMode ? "" : " · TEST"}`,
+      details: `${event.type}${event.amount ? ` · ${symbol(event)}${event.amount.toFixed(2)}` : ""}${event.liveMode ? "" : " · TEST"}`,
     });
 
     return NextResponse.json({ status: status.toLowerCase(), event: event.type, transactionId });
@@ -440,7 +461,11 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Internal error";
     await prisma.bmcWebhookEvent.update({
       where: { id: receipt.id },
-      data: { status: "FAILED", payload: { ...event.data, sentinel_error: message } as Prisma.InputJsonValue },
+      data: {
+        status: "FAILED",
+        payload: Prisma.JsonNull,
+        encryptedPayload: encryptSecret(JSON.stringify({ ...event.data, sentinel_error: message })),
+      },
     }).catch(() => undefined);
     console.error(`[bmc] ${event.type} processing failed:`, error);
     return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });

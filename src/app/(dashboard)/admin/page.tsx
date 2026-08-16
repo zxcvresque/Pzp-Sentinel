@@ -42,6 +42,9 @@ interface Stats {
 
 interface BmcStats {
   webhookConfigured: boolean;
+  webhookVerified: boolean;
+  lastWebhookAt: string | null;
+  lastWebhookStatus: string | null;
   legacySyncAvailable: boolean;
   checkoutUrl: string | null;
   totalSupporters: number;
@@ -158,22 +161,27 @@ export default function AdminDashboard() {
   async function handleBmcSync() {
     setBmcSyncing(true);
     setBmcResult(null);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 90_000);
     try {
-      const res = await fetch("/api/bmc/sync", { method: "POST" });
+      const res = await fetch("/api/bmc/sync", { method: "POST", signal: controller.signal });
       const data = await res.json();
       if (!res.ok) {
         setBmcResult(`Error: ${data.error || "Sync failed"}`);
         return;
       }
       setBmcResult(
-        `Synced ${data.synced} new, skipped ${data.skipped} existing` +
+        `Synced ${data.synced} new (${data.monthlySynced || 0} monthly), skipped ${data.skipped} existing` +
         (data.errors?.length ? ` (${data.errors.length} errors)` : ""),
       );
       // Refresh dashboard data
       load();
-    } catch {
-      setBmcResult("Network error during sync");
+    } catch (error) {
+      setBmcResult(error instanceof DOMException && error.name === "AbortError"
+        ? "Error: BMC sync timed out after 90 seconds"
+        : "Error: Network error during sync");
     } finally {
+      window.clearTimeout(timeout);
       setBmcSyncing(false);
     }
   }
@@ -574,9 +582,14 @@ export default function AdminDashboard() {
             Buy Me a Coffee
           </h2>
           <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.1em] ${bmcStats?.webhookConfigured ? "border-mint/20 bg-mint/8 text-mint" : "border-amber/20 bg-amber/8 text-amber"}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${bmcStats?.webhookConfigured ? "bg-mint" : "bg-amber"}`} />
-            {bmcStats?.webhookConfigured ? "Webhook ready" : "Not configured"}
+          <span
+            title={bmcStats?.lastWebhookAt
+              ? `Last delivery: ${new Date(bmcStats.lastWebhookAt).toLocaleString()} · ${bmcStats.lastWebhookStatus}`
+              : bmcStats?.webhookConfigured ? "Secret configured, but Sentinel has never received a valid delivery" : "Webhook secret is missing"}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.1em] ${bmcStats?.webhookVerified ? "border-mint/20 bg-mint/8 text-mint" : "border-amber/20 bg-amber/8 text-amber"}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${bmcStats?.webhookVerified ? "bg-mint" : "bg-amber"}`} />
+            {bmcStats?.webhookVerified ? "Webhook verified" : bmcStats?.webhookConfigured ? "Webhook unverified" : "Not configured"}
           </span>
           {bmcStats?.legacySyncAvailable && <button
             onClick={handleBmcSync}

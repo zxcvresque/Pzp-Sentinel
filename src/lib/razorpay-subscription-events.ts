@@ -81,6 +81,14 @@ export function subscriptionAlertPolicy(action: string): SubscriptionAlertPolicy
   }
 }
 
+export function shouldFinalizeSubscriptionPayment(
+  event: NormalizedRazorpaySubscriptionEvent | null,
+  paymentId?: string,
+) {
+  if (!event || !paymentId) return false;
+  return event.action === "charged" || (event.action === "authenticated" && (event.paidCount ?? 0) > 0);
+}
+
 export function feedbackChoiceTransition(step: "wanted" | "cancelled", answer: boolean) {
   if (step === "wanted" && !answer) {
     return {

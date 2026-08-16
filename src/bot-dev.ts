@@ -19,6 +19,7 @@ import { nextReminderFire } from "./lib/admin-reminders";
 import { broadcastAudienceRoles } from "./lib/broadcast-audience";
 import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "./lib/broadcast-format";
 import { serviceReminderRepeat } from "./lib/service-templates";
+import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -142,6 +143,17 @@ async function notifyAdminsFromBot(
 
 // ── Admin reminders and repeating broadcasts ─────────────────────────────────
 const ADMIN_MESSAGE_CHECK_INTERVAL = 60 * 1000;
+const PROVIDER_RECONCILIATION_INTERVAL = 6 * 60 * 60 * 1000;
+
+async function reconcileProviderPayments() {
+  try {
+    const result = await reconcileRecentRazorpaySubscriptionPayments();
+    console.log(`[razorpay-reconcile] checked=${result.checked}, recovered=${result.recovered}, skipped=${result.skipped}, errors=${result.errors.length}`);
+    if (result.errors.length) console.warn("[razorpay-reconcile]", result.errors.slice(0, 5));
+  } catch (error) {
+    console.error("[razorpay-reconcile] Failed:", error);
+  }
+}
 
 async function checkAdminReminders() {
   try {
@@ -1151,6 +1163,11 @@ async function checkSubscriptionRenewals() {
         setInterval(checkScheduledBroadcasts, ADMIN_MESSAGE_CHECK_INTERVAL);
       }, 40_000);
       console.log("[admin-messages] Scheduled — first check in 40s, then every minute");
+      setTimeout(() => {
+        reconcileProviderPayments();
+        setInterval(reconcileProviderPayments, PROVIDER_RECONCILIATION_INTERVAL);
+      }, 45_000);
+      console.log("[provider-reconcile] Razorpay safety sync starts in 45s, then every 6h");
       setTimeout(backfillServiceOperations, 55_000);
       console.log("[service-backfill] Existing service links/reminders will be checked in 55s");
       console.log("[sub-renewal] Scheduled — first check in 30s, then every 24h");

@@ -597,8 +597,8 @@ flowchart LR
 Sentinel uses BMC in three ways:
 
 1. **Hosted checkout:** the configured creator page opens in the system browser. Telegram Mini Apps use Telegram's external-link API so BMC does not run inside and slow the webview.
-2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror.
-3. **Optional legacy sync:** `POST /api/bmc/sync` is available only when `BMC_TOKEN` is configured.
+2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, understands the current `subscription_*` recurring fields, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror.
+3. **Optional legacy sync:** `POST /api/bmc/sync` is available only when `BMC_TOKEN` is configured. Supporters, extras and subscriptions are reconciled independently; missing pagination metadata is treated as a single page so a broken legacy endpoint cannot leave the dashboard stuck on **Syncing**.
 
 Configure the BMC webhook as:
 
@@ -608,6 +608,8 @@ https://sentinel.piratezparty.com/api/bmc/webhook
 
 Enable the payment, refund, extra-purchase, recurring donation, membership, commission, and wishlist event types available to the account. Retries remain idempotent because Sentinel stores a unique event key. Test deliveries are retained for verification but excluded from live treasury totals.
 
+The dashboard distinguishes **Webhook unverified** (a secret exists but no valid signed delivery has reached Sentinel) from **Webhook verified**. After changing the endpoint or secret, send a dashboard test. To recover a real missed payment, use BMC's **Event deliveries → Resend** action; Sentinel never creates a provider transaction merely from manually supplied payment details.
+
 Before opening BMC, an authenticated donor chooses **One time** or **Monthly** and receives a single-use Sentinel code to paste into BMC's support note. A valid first webhook binds BMC's signed `supporter_id` to that donor. Future payments—including monthly autopay updates—then remain attributed without another code. If the first note omitted the code, an admin can assign the unmatched BMC transaction to a donor in Transactions; that reconciliation creates the same trusted supporter link for later payments.
 
 When BMC reports `recurring_donation.cancelled` or `membership.cancelled`, Sentinel privately alerts admins. A linked donor also receives the same private two-step Telegram questionnaire used for Razorpay cancellations; their reason is retained and sent privately to every active admin. BMC does not expose separate pending/halted renewal events, so the questionnaire distinguishes a deliberate cancellation from an eventual cancellation caused by failed renewals. Unidentified supporters remain admin-only and are never messaged or posted publicly.
@@ -616,7 +618,9 @@ When replacing the BMC account, update `BMC_PAGE_URL`, `BMC_ACCOUNT_SLUG`, and `
 
 ### Razorpay
 
-For one-time payments, Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. For monthly custom amounts, Sentinel creates a fixed-amount monthly Plan dynamically, creates a bounded Subscription, opens Razorpay mandate authorisation, verifies the subscription signature, and records each successful `subscription.charged` payment idempotently.
+For one-time payments, Sentinel creates orders server-side, verifies the checkout HMAC against the stored order, fetches the payment from Razorpay, and records a transaction only after the provider reports a captured payment. For monthly custom amounts, Sentinel creates a fixed-amount monthly Plan dynamically, creates a bounded Subscription, opens Razorpay mandate authorisation, verifies the subscription signature, and records each successful charge idempotently. If the first plan charge is collected during mandate authentication, checkout verification records it immediately instead of waiting for a webhook. `subscription.authenticated`, `subscription.charged`, and invoice-backed `payment.captured` deliveries all converge on the same finalizer.
+
+As a webhook-outage safety net, the bot reconciles recent captured Razorpay payments against subscription invoices at startup and every six hours. This recovery uses Razorpay's API as the source of truth and replays the normal transaction, audit, donor DM, admin notification and public `#monthly` thank-you flow exactly once.
 
 Configure the webhook as:
 
@@ -714,6 +718,7 @@ sudo systemctl daemon-reload
 - **Financial retention:** voiding records `voidedAt`, `voidedBy`, and `voidReason`; it does not delete the transaction or its audit relation.
 - **Mutation evidence:** transaction create/edit/review/void events are written to PostgreSQL and mirrored to configured Telegram/GitHub log destinations.
 - **Provider verification:** Razorpay HMAC/payment verification and BMC webhook signature verification happen on the server.
+- **Encrypted provider details:** New Razorpay and BMC webhook bodies plus payer name/email/contact/note metadata are encrypted at rest with `CREDENTIAL_ENC_KEY`. BMC checkout codes remain one-way hashed for matching; general transaction APIs never return provider-detail ciphertext. Admins can use a transaction's **Provider** action to decrypt these details on demand, and every reveal is audited.
 - **Upload handling:** proof and key uploads are constrained and routed through authenticated endpoints. Transaction attachments accept any file type up to 20 MB each, are stored beneath the persistent git-ignored `./data/transaction-attachments` directory, require an authorized session to download, and are copied to `TG_TOPIC_ATTACHMENTS` as durable Telegram documents when the transaction is created or explicitly saved. Telegram file/message IDs and retryable archive errors are retained in each attachment's metadata. Existing historical files are not migrated automatically.
 - **Operational visibility:** bulk actions return partial failures rather than implying that every selected record succeeded.
 

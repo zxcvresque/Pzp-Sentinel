@@ -82,4 +82,34 @@ describe("Buy Me a Coffee webhook", () => {
     expect(first).toEqual(retry);
     expect(first).not.toEqual(nextMonth);
   });
+
+  it("normalizes BMC recurring subscription fields into a paid monthly event", () => {
+    const event = parseBmcWebhook(JSON.stringify({
+      event_id: 991,
+      type: "recurring_donation.started",
+      live_mode: true,
+      created: 1786838400,
+      attempt: 1,
+      data: {
+        subscription_id: 12345,
+        transaction_id: "sub_provider_123",
+        subscription_coffee_price: "6.000",
+        subscription_coffee_num: 1,
+        subscription_currency: "USD",
+        subscription_message: "PZP-BMC-ABCD-1234-EFGH-5678",
+        subscription_created_on: "2026-08-16T00:00:00Z",
+        payer_name: "Monthly Donor",
+        payer_email: "donor@example.com",
+      },
+    }));
+
+    expect(event.resourceId).toBe("sub_provider_123");
+    expect(event.supporterId).toBe("12345");
+    expect(event.supporterName).toBe("Monthly Donor");
+    expect(event.supporterEmail).toBe("donor@example.com");
+    expect(event.amount).toBe(6);
+    expect(event.currency).toBe("USD");
+    expect(event.note).toBe("PZP-BMC-ABCD-1234-EFGH-5678");
+    expect(event.occurredAt.toISOString()).toBe("2026-08-16T00:00:00.000Z");
+  });
 });

@@ -166,7 +166,9 @@ export default function RazorpayDonationCard({
             setMessage({
               type: "success",
               text: monthly
-                ? "Monthly autopay authorised. Razorpay will charge this amount each month and Sentinel will track each successful charge automatically."
+                ? verified.paymentRecorded
+                  ? "Monthly autopay authorised. Your first payment was received, recorded and notified; future successful charges will be tracked automatically."
+                  : "Monthly autopay authorised. Razorpay will charge this amount each month and Sentinel will track each successful charge automatically."
                 : order.testMode
                   ? "Test payment verified and tracked. It is excluded from real finance totals."
                   : "Payment received and tracked automatically. Thank you!",

@@ -88,6 +88,34 @@ function ActionDialog({ open, action, count, loading, onClose, onConfirm }: {
   );
 }
 
+function ProviderDetailsDialog({ open, loading, method, details, error, onClose }: {
+  open: boolean;
+  loading: boolean;
+  method: string;
+  details: unknown;
+  error: string;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-text-primary">Encrypted provider details</h2>
+            <p className="mt-1 text-xs text-text-tertiary">{method} · reveal audited · never returned to donors</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-xs text-text-secondary hover:bg-[var(--bg-hover)]">Close</button>
+        </div>
+        {loading ? <p className="mt-5 text-sm text-text-secondary">Decrypting…</p>
+          : error ? <p className="mt-5 rounded-xl border border-coral/20 bg-coral/8 p-3 text-sm text-coral">{error}</p>
+            : <pre className="mt-5 max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-[var(--border)] bg-bg-deep p-4 text-xs leading-relaxed text-text-secondary">{JSON.stringify(details, null, 2)}</pre>}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
@@ -114,6 +142,7 @@ export default function TransactionsPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewedEditConfirm, setReviewedEditConfirm] = useState(false);
   const [pendingReviewedSubmit, setPendingReviewedSubmit] = useState(false);
+  const [providerDetails, setProviderDetails] = useState<{ open: boolean; loading: boolean; method: string; details: unknown; error: string }>({ open: false, loading: false, method: "", details: null, error: "" });
   const [form, setForm] = useState({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] as string[] });
 
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
@@ -157,6 +186,18 @@ export default function TransactionsPage() {
     setShowCreate(false); setEditingId(tx.id);
     setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", serviceAction: tx.linkedService ? "LINK" : "NONE", serviceId: tx.linkedService?.id || "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [...tx.attachments] });
     setTimeout(() => document.getElementById(`editor-${tx.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
+  }
+
+  async function revealProviderDetails(tx: Transaction) {
+    setProviderDetails({ open: true, loading: true, method: tx.method, details: null, error: "" });
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}/provider-details`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not reveal provider details");
+      setProviderDetails({ open: true, loading: false, method: data.method, details: data.details, error: "" });
+    } catch (error) {
+      setProviderDetails({ open: true, loading: false, method: tx.method, details: null, error: error instanceof Error ? error.message : "Could not reveal provider details" });
+    }
   }
 
   async function submitForm(confirmReviewedEdit = false) {
@@ -311,12 +352,20 @@ export default function TransactionsPage() {
           <td className={`p-0 text-sm font-semibold lg:table-cell lg:p-4 lg:text-right ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="mr-2 font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></td>
           <td className="p-0 lg:table-cell lg:p-4 lg:text-center"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</td>
           <td className="p-0 text-xs text-text-secondary lg:table-cell lg:p-4 lg:text-right">{formatDate(tx.date)}</td>
-          <td className={`${selectionMode ? "col-span-2" : ""} p-0 lg:table-cell lg:p-4`}><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
+          <td className={`${selectionMode ? "col-span-2" : ""} p-0 lg:table-cell lg:p-4`}><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{(tx.method === "BMC" || tx.method === "RAZORPAY") && <button onClick={() => void revealProviderDetails(tx)} className="pill text-amber">Provider</button>}{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
         </tr>{editingId === tx.id && <tr className="block border-b border-[var(--border)] lg:table-row"><td colSpan={selectionMode ? 6 : 5} className="block p-0 lg:table-cell">{editor()}</td></tr>}</Fragment>)}
       </tbody></table></div>}
     </div>
 
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-text-tertiary">Page {page} of {totalPages} · {total.toLocaleString()} results</div><div className="flex items-center gap-2"><select value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }} className="rounded-lg border border-[var(--border)] bg-bg-deep px-2 py-2 text-xs"><option value="10">10/page</option><option value="25">25/page</option><option value="50">50/page</option><option value="100">100/page</option></select><button disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)} className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs disabled:opacity-30">Previous</button><button disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)} className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs disabled:opacity-30">Next</button></div></div>
+    <ProviderDetailsDialog
+      open={providerDetails.open}
+      loading={providerDetails.loading}
+      method={providerDetails.method}
+      details={providerDetails.details}
+      error={providerDetails.error}
+      onClose={() => setProviderDetails((current) => ({ ...current, open: false }))}
+    />
     <PageTour pageKey="admin-transactions" />
   </div>;
 }

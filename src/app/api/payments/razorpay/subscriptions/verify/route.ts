@@ -17,13 +17,18 @@ export async function POST(request: NextRequest) {
     if (!/^sub_[A-Za-z0-9]+$/.test(subscriptionId) || !/^pay_[A-Za-z0-9]+$/.test(paymentId) || !/^[a-f0-9]{64}$/i.test(signature)) {
       return NextResponse.json({ error: "Invalid subscription response" }, { status: 400 });
     }
-    const subscription = await verifyMonthlySubscriptionCheckout({
+    const result = await verifyMonthlySubscriptionCheckout({
       subscriptionId,
       paymentId,
       signature,
       expectedUserId: user.id,
     });
-    return NextResponse.json({ subscription, message: "Monthly autopay authorised" });
+    return NextResponse.json({
+      ...result,
+      message: result.paymentRecorded
+        ? "Monthly autopay authorised and first payment recorded"
+        : "Monthly autopay authorised",
+    });
   } catch (error) {
     const status = error instanceof RazorpayError ? error.status : 500;
     const message = error instanceof Error ? error.message : "Subscription verification failed";

@@ -10,6 +10,7 @@ import { verifyCheckoutHmac, verifySubscriptionHmac, verifyWebhookHmac } from "@
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "@/lib/invite-token";
 import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
+import { encryptSecret } from "@/lib/secret-crypto";
 import {
   razorpayFeedbackKeyboard,
   subscriptionAlertPolicy,
@@ -35,11 +36,15 @@ type RazorpayPaymentResponse = {
   status: string;
   captured: boolean;
   order_id: string;
+  invoice_id?: string | null;
   method?: string;
   vpa?: string;
   wallet?: string;
   bank?: string;
   card?: { network?: string; type?: string; issuer?: string };
+  email?: string;
+  contact?: string;
+  notes?: Record<string, unknown> | string[];
   created_at?: number;
 };
 
@@ -52,6 +57,15 @@ type RazorpaySubscriptionResponse = {
   paid_count?: number;
   total_count: number;
   short_url?: string;
+};
+
+type RazorpayInvoiceResponse = {
+  id: string;
+  subscription_id?: string | null;
+};
+
+type RazorpayPaymentCollection = {
+  items?: RazorpayPaymentResponse[];
 };
 
 function razorpayPaymentDetail(payment: RazorpayPaymentResponse): string | null {
@@ -71,6 +85,22 @@ function razorpayPaymentDetail(payment: RazorpayPaymentResponse): string | null 
   if (method === "card") return `card:${payment.card?.network?.trim().toLowerCase() || "card"}`;
   if (method === "netbanking") return `netbanking:${payment.bank?.trim().toLowerCase() || "bank"}`;
   return method;
+}
+
+function encryptedRazorpayPaymentDetails(payment: RazorpayPaymentResponse) {
+  return encryptSecret(JSON.stringify({
+    paymentId: payment.id,
+    orderId: payment.order_id,
+    invoiceId: payment.invoice_id,
+    email: payment.email,
+    contact: payment.contact,
+    method: payment.method,
+    vpa: payment.vpa,
+    wallet: payment.wallet,
+    bank: payment.bank,
+    card: payment.card,
+    notes: payment.notes,
+  }));
 }
 
 export class RazorpayError extends Error {
@@ -601,7 +631,7 @@ export async function verifyMonthlySubscriptionCheckout(params: {
   if (remote.id !== stored.razorpaySubscriptionId || remote.plan_id !== stored.razorpayPlanId) {
     throw new RazorpayError("Subscription details do not match Sentinel records", 400);
   }
-  return prisma.razorpaySubscription.update({
+  const subscription = await prisma.razorpaySubscription.update({
     where: { id: stored.id },
     data: {
       authorizationPaymentId: params.paymentId,
@@ -609,6 +639,121 @@ export async function verifyMonthlySubscriptionCheckout(params: {
       paidCount: remote.paid_count ?? stored.paidCount,
     },
   });
+
+  // Razorpay can collect the first full plan charge during mandate
+  // authentication. That payment is returned directly to Checkout, so record
+  // it immediately instead of depending on a later webhook delivery.
+  const charge = (remote.paid_count ?? 0) > 0
+    ? await finalizeMonthlySubscriptionCharge({
+        subscriptionId: stored.razorpaySubscriptionId,
+        paymentId: params.paymentId,
+        status: remote.status,
+        paidCount: remote.paid_count,
+      })
+    : null;
+
+  return {
+    subscription,
+    transaction: charge?.transaction ?? null,
+    paymentRecorded: Boolean(charge),
+    duplicate: charge?.duplicate ?? false,
+  };
+}
+
+/**
+ * Recover a subscription payment delivered only as payment.captured/order.paid.
+ * Subscription payments reference a Razorpay invoice rather than a Sentinel
+ * one-time order; the invoice is the authoritative subscription mapping.
+ */
+export async function finalizeMonthlyPaymentByReference(params: {
+  paymentId: string;
+  invoiceId?: string | null;
+}) {
+  const payment = await fetchPayment(params.paymentId);
+  const invoiceId = params.invoiceId || payment.invoice_id;
+  if (!invoiceId) {
+    const known = await prisma.razorpaySubscription.findFirst({
+      where: { authorizationPaymentId: params.paymentId },
+      select: { razorpaySubscriptionId: true, status: true, paidCount: true },
+    });
+    if (!known) return { matched: false as const };
+    const result = await finalizeMonthlySubscriptionCharge({
+      subscriptionId: known.razorpaySubscriptionId,
+      paymentId: params.paymentId,
+      status: known.status,
+      paidCount: known.paidCount,
+    });
+    return { matched: true as const, ...result };
+  }
+
+  const invoice = await razorpayRequest<RazorpayInvoiceResponse>(
+    `/invoices/${encodeURIComponent(invoiceId)}`,
+  );
+  if (invoice.id !== invoiceId || !invoice.subscription_id) {
+    return { matched: false as const };
+  }
+  const stored = await prisma.razorpaySubscription.findUnique({
+    where: { razorpaySubscriptionId: invoice.subscription_id },
+    select: { razorpaySubscriptionId: true },
+  });
+  if (!stored) return { matched: false as const };
+  const result = await finalizeMonthlySubscriptionCharge({
+    subscriptionId: stored.razorpaySubscriptionId,
+    paymentId: params.paymentId,
+  });
+  return { matched: true as const, ...result };
+}
+
+/**
+ * Safety net for webhook outages. Razorpay remains the source of truth: recent
+ * captured payments are fetched from its API, invoice-mapped to subscriptions,
+ * and passed through the same idempotent finalizer as live webhooks.
+ */
+export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays = 35) {
+  const since = Math.floor((Date.now() - Math.max(1, lookbackDays) * 86_400_000) / 1000);
+  const collection = await razorpayRequest<RazorpayPaymentCollection>(
+    `/payments?from=${since}&count=100&skip=0`,
+  );
+  const payments = (collection.items || []).filter((payment) => payment.status === "captured" && payment.captured);
+  let recovered = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  // Checkout may have stored the authorisation payment before a webhook was
+  // delivered. Include those references even if the payments page is delayed.
+  const initial = await prisma.razorpaySubscription.findMany({
+    where: { paidCount: { gt: 0 }, authorizationPaymentId: { not: null } },
+    select: { authorizationPaymentId: true },
+  });
+  const byId = new Map(payments.map((payment) => [payment.id, payment]));
+  for (const subscription of initial) {
+    const paymentId = subscription.authorizationPaymentId;
+    if (paymentId && !byId.has(paymentId)) {
+      byId.set(paymentId, { id: paymentId } as RazorpayPaymentResponse);
+    }
+  }
+
+  for (const payment of byId.values()) {
+    try {
+      const existing = await prisma.transaction.findUnique({
+        where: { providerPaymentId: payment.id },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped++;
+        continue;
+      }
+      const result = await finalizeMonthlyPaymentByReference({
+        paymentId: payment.id,
+        invoiceId: payment.invoice_id,
+      });
+      if (result.matched && !result.duplicate) recovered++;
+      else skipped++;
+    } catch (error) {
+      errors.push(`${payment.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { checked: byId.size, recovered, skipped, errors };
 }
 
 export async function finalizeCapturedDonation(params: {
@@ -668,6 +813,7 @@ export async function finalizeCapturedDonation(params: {
           currency: stored.currency,
           method: "RAZORPAY",
           paymentMethodDetail: razorpayPaymentDetail(payment),
+          providerDetailsEncrypted: encryptedRazorpayPaymentDetails(payment),
           direction: "IN",
           type: "DONATION",
           donationFrequency: stored.donationFrequency,
@@ -821,6 +967,7 @@ export async function finalizeMonthlySubscriptionCharge(params: {
           currency: stored.currency,
           method: "RAZORPAY",
           paymentMethodDetail: razorpayPaymentDetail(payment),
+          providerDetailsEncrypted: encryptedRazorpayPaymentDetails(payment),
           direction: "IN",
           type: "DONATION",
           donationFrequency: "MONTHLY",
@@ -913,6 +1060,11 @@ export async function finalizeMonthlySubscriptionCharge(params: {
     message: `${stored.user.name} paid ${symbolAmount} by monthly autopay.`,
     entityId: transaction.id,
     actionUrl: "/admin/transactions",
+    telegramMessage: formatTgMessage(
+      stored.testMode ? "Razorpay Test Subscription Charged" : "Razorpay Monthly Donation Captured",
+      `${escapeTelegramHtml(stored.user.name)} paid ${symbolAmount} by monthly autopay.`,
+      payment.id,
+    ),
   }).catch(() => {});
   scheduleFinanceAutomation({
     action: stored.testMode ? "RAZORPAY_TEST_CAPTURED" : "RAZORPAY_CAPTURED",

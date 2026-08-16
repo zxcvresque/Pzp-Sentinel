@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   feedbackChoiceTransition,
   normalizeRazorpaySubscriptionEvent,
+  shouldFinalizeSubscriptionPayment,
   subscriptionAlertPolicy,
 } from "./razorpay-subscription-events";
 
@@ -35,6 +36,24 @@ describe("Razorpay subscription lifecycle events", () => {
     expect(subscriptionAlertPolicy("cancelled")).toEqual({ donor: true, admins: true, priority: "HIGH" });
     expect(subscriptionAlertPolicy("halted")).toEqual({ donor: true, admins: true, priority: "HIGH" });
     expect(subscriptionAlertPolicy("authenticated")).toEqual({ donor: false, admins: false, priority: "NORMAL" });
+  });
+
+  it("records a charged event and a paid authentication event as money", () => {
+    const charged = normalizeRazorpaySubscriptionEvent("subscription.charged", {
+      id: "sub_1",
+      paid_count: 2,
+    });
+    const paidAuthentication = normalizeRazorpaySubscriptionEvent("subscription.authenticated", {
+      id: "sub_2",
+      paid_count: 1,
+    });
+    const mandateOnly = normalizeRazorpaySubscriptionEvent("subscription.authenticated", {
+      id: "sub_3",
+      paid_count: 0,
+    });
+    expect(shouldFinalizeSubscriptionPayment(charged, "pay_1")).toBe(true);
+    expect(shouldFinalizeSubscriptionPayment(paidAuthentication, "pay_2")).toBe(true);
+    expect(shouldFinalizeSubscriptionPayment(mandateOnly, "pay_3")).toBe(false);
   });
 
   it("rejects non-subscription payloads and accepts nullable provider fields", () => {

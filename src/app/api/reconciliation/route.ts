@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { finalizeCapturedDonation } from "@/lib/razorpay";
 import { logAudit } from "@/lib/audit";
+import { decryptSecret } from "@/lib/secret-crypto";
+import { parseBmcWebhook } from "@/lib/bmc-webhook";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -19,7 +21,17 @@ export async function GET() {
     prisma.transaction.findMany({
       where: { method: "BMC", fromUserId: null, voidedAt: null },
       orderBy: { date: "desc" },
-      include: { bmcWebhookEvents: { select: { supporterName: true, supporterEmail: true, supporterId: true, attributionStatus: true } } },
+      include: {
+        bmcWebhookEvents: {
+          select: {
+            supporterName: true,
+            supporterEmail: true,
+            supporterId: true,
+            attributionStatus: true,
+            encryptedPayload: true,
+          },
+        },
+      },
     }),
     prisma.razorpayOrder.findMany({
       where: { status: "PAID", transactionId: null },
@@ -30,6 +42,7 @@ export async function GET() {
       where: { status: { not: "PROCESSED" } },
       orderBy: { createdAt: "desc" },
       take: 100,
+      select: { id: true, eventId: true, eventType: true, resourceId: true, status: true, createdAt: true },
     }),
     prisma.transaction.findMany({
       where: { createdAt: { gte: since }, status: "APPROVED", voidedAt: null },
@@ -59,7 +72,21 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ unmatchedBmc, unmatchedRazorpayOrders, pendingRazorpayEvents, possibleDuplicates });
+  const safeUnmatchedBmc = unmatchedBmc.map((transaction) => ({
+    ...transaction,
+    providerDetailsEncrypted: undefined,
+    bmcWebhookEvents: transaction.bmcWebhookEvents.map(({ encryptedPayload, ...event }) => {
+      if (!encryptedPayload) return event;
+      try {
+        const normalized = parseBmcWebhook(decryptSecret(encryptedPayload));
+        return { ...event, supporterName: normalized.supporterName, supporterEmail: normalized.supporterEmail };
+      } catch {
+        return event;
+      }
+    }),
+  }));
+
+  return NextResponse.json({ unmatchedBmc: safeUnmatchedBmc, unmatchedRazorpayOrders, pendingRazorpayEvents, possibleDuplicates });
 }
 
 export async function POST(req: NextRequest) {

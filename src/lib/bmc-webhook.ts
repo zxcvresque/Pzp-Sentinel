@@ -82,7 +82,8 @@ function eventResource(type: string, data: Record<string, unknown>): string {
   if (type.startsWith("membership.")) return text(data.id) || text(data.membership_id) || text(data.psp_id) || "unknown";
   if (type.startsWith("recurring_donation.")) {
     return text(data.transaction_id) || text(data.payment_id) || text(data.purchase_id)
-      || text(data.id) || text(data.support_id) || text(data.psp_id) || "unknown";
+      || text(data.id) || text(data.support_id) || text(data.subscription_id)
+      || text(data.psp_id) || "unknown";
   }
   return text(data.id) || "unknown";
 }
@@ -131,24 +132,39 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
   const createdAt = dateValue(parsed.created, new Date());
   const resourceId = eventResource(type, data);
   const supporterName = text(data.supporter_name) || text(data.payer_name) || "Anonymous";
-  const supporterId = text(data.supporter_id);
-  const supporterEmail = text(data.supporter_email)?.toLowerCase() || null;
-  const coffeeCount = Math.max(1, numberValue(data.coffee_count, data.support_coffees, 1));
-  const amount = numberValue(
+  const supporterId = text(data.supporter_id) || text(data.subscription_id);
+  const supporterEmail = (text(data.supporter_email) || text(data.payer_email))?.toLowerCase() || null;
+  const coffeeCount = Math.max(1, numberValue(
+    data.coffee_count,
+    data.support_coffees,
+    data.subscription_coffee_num,
+    1,
+  ));
+  let amount = numberValue(
     data.amount,
     data.total_amount_charged,
     data.extra_price,
     data.commission_order_price,
     data.wishlist_payment_price,
     data.membership_price,
-    numberValue(data.coffee_price, data.support_coffee_price) * coffeeCount,
   );
-  const rawCurrency = (text(data.currency) || text(data.support_currency) || "USD").toUpperCase();
+  if (amount <= 0) amount = numberValue(data.subscription_coffee_price) * coffeeCount;
+  if (amount <= 0) amount = numberValue(data.coffee_price, data.support_coffee_price) * coffeeCount;
+  const rawCurrency = (
+    text(data.currency)
+    || text(data.support_currency)
+    || text(data.subscription_currency)
+    || "USD"
+  ).toUpperCase();
   const currency: BmcCurrency = rawCurrency === "INR" ? "INR" : "USD";
-  const note = text(data.support_note) || text(data.extra_note) || text(data.supporter_feedback);
+  const note = text(data.support_note)
+    || text(data.extra_note)
+    || text(data.supporter_feedback)
+    || text(data.subscription_message);
   const occurredAt = dateValue(
     data.created_at ?? data.started_at ?? data.support_created_on ?? data.extra_created_on
-      ?? data.commission_order_created_on ?? data.wishlist_payment_created_on,
+      ?? data.commission_order_created_on ?? data.wishlist_payment_created_on
+      ?? data.subscription_current_period_start ?? data.subscription_created_on,
     createdAt,
   );
   const digest = createHash("sha256").update(rawBody).digest("hex").slice(0, 24);
