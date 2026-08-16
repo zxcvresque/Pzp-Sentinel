@@ -17,6 +17,7 @@ import {
   subscriptionAlertPolicy,
   type NormalizedRazorpaySubscriptionEvent,
 } from "@/lib/razorpay-subscription-events";
+import { razorpaySubscriptionExpireBy } from "@/lib/razorpay-checkout";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -357,27 +358,6 @@ export async function createMonthlyDonationSubscription(params: {
   }
 
   const config = credentials();
-  const reusable = await prisma.razorpaySubscription.findFirst({
-    where: {
-      userId: user.id,
-      amount,
-      status: "CREATED",
-      createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  if (reusable) {
-    return {
-      id: reusable.razorpaySubscriptionId,
-      amount: reusable.amount,
-      currency: reusable.currency,
-      description: reusable.description,
-      keyId: config.keyId,
-      testMode: config.testMode,
-      prefill: { name: user.name },
-    };
-  }
-
   const note = typeof params.description === "string" ? params.description.trim().slice(0, 120) : "";
   const description = note || "Monthly donation to Piratezparty";
   // Plans describe only amount + cadence, so donors choosing the same amount
@@ -411,6 +391,7 @@ export async function createMonthlyDonationSubscription(params: {
       total_count: totalCount,
       quantity: 1,
       customer_notify: true,
+      expire_by: razorpaySubscriptionExpireBy(),
       notes: { sentinel_user_id: user.id, sentinel_frequency: "monthly" },
     }),
   });

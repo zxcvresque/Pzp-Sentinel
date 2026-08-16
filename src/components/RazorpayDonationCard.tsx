@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { RAZORPAY_CHECKOUT_TIMEOUT_SECONDS } from "@/lib/razorpay-checkout";
 
 type CheckoutSuccess = {
   razorpay_payment_id: string;
@@ -147,7 +148,12 @@ export default function RazorpayDonationCard({
           confirm_close: true,
           ondismiss: () => {
             setBusy(false);
-            setMessage({ type: "info", text: "Checkout closed. No donation was recorded." });
+            setMessage({
+              type: "info",
+              text: monthly
+                ? "Checkout closed or expired. Start monthly autopay again to generate a fresh mandate and QR."
+                : "Checkout closed. No donation was recorded.",
+            });
           },
         },
         handler: async (response: CheckoutSuccess) => {
@@ -181,8 +187,10 @@ export default function RazorpayDonationCard({
           }
         },
       };
-      if (monthly) checkoutOptions.subscription_id = order.id;
-      else {
+      if (monthly) {
+        checkoutOptions.subscription_id = order.id;
+        checkoutOptions.timeout = RAZORPAY_CHECKOUT_TIMEOUT_SECONDS;
+      } else {
         checkoutOptions.amount = order.amount;
         checkoutOptions.order_id = order.id;
       }
