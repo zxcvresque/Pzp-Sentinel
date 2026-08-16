@@ -92,7 +92,7 @@ export const donorTourSteps: TourStep[] = [
   {
     target: "[data-tour='notifications']",
     title: "Donation Updates",
-    body: "When your donations are approved or receipts are ready, you'll get notified here.",
+    body: "When your donations are approved or need attention, you'll get notified here.",
     placement: "bottom",
   },
   {

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
+import { notificationDestination } from "@/lib/notification-destination";
 
 interface TopBarProps {
   name: string;
@@ -38,27 +39,6 @@ function timeAgo(date: string): string {
   if (days < 30) return `${days}d`;
   const months = Math.floor(days / 30);
   return `${months}mo`;
-}
-
-function getNotificationHref(notif: Notification, roles: string[]): string | null {
-  const isAdmin = roles.includes("ADMIN");
-  switch (notif.type) {
-    case "TX_PENDING":
-    case "TX_APPROVED":
-    case "TX_REJECTED":
-      return isAdmin ? "/admin/transactions" : "/donor/receipts";
-    case "TASK_ASSIGNED":
-      return "/dev/tasks";
-    case "CREDENTIAL_ASSIGNED":
-    case "CREDENTIAL_REVIEWED":
-      return isAdmin ? "/admin/credentials" : "/dev/credentials";
-    case "USER_REGISTERED":
-      return "/admin/users";
-    case "ROLE_ASSIGNED":
-      return "/profile";
-    default:
-      return null;
-  }
 }
 
 export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarProps) {
@@ -302,7 +282,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     key={notif.id}
                     onClick={() => {
                       if (!notif.read) markRead([notif.id]);
-                      const href = getNotificationHref(notif, roles);
+                      const href = notificationDestination({ type: notif.type, roles });
                       if (href) {
                         setNotifOpen(false);
                         router.push(href);

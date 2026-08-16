@@ -165,7 +165,6 @@ export default function DashboardLayout({
     "/dev/vps": "Dev / VPS Stats",
     "/dev/credentials": "Dev / Credentials",
     "/donor": "Donor / Overview",
-    "/donor/receipts": "Donor / Receipts",
     "/profile": "Settings / General",
   };
   const breadcrumb = breadcrumbMap[pathname] || pathname.split("/").filter(Boolean).join(" / ");
