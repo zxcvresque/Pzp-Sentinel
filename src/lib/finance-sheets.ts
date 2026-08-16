@@ -179,7 +179,9 @@ function basicChart(
             domains: [{ domain: { sourceRange: { sources: [grid(sourceSheetId, 1, rowCount, 0, 1)] } } }],
             series: seriesColumns.map((column, index) => ({
               series: { sourceRange: { sources: [grid(sourceSheetId, 1, rowCount, column, column + 1)] } },
-              targetAxis: "LEFT_AXIS",
+              // Google Sheets requires horizontal BAR values on the bottom
+              // axis; COLUMN and LINE values use the left axis.
+              targetAxis: chartType === "BAR" ? "BOTTOM_AXIS" : "LEFT_AXIS",
               color: color(["#b9dfe5", "#efc7d5", "#cfc8e8", "#f6d1b8"][index % 4]),
             })),
           },

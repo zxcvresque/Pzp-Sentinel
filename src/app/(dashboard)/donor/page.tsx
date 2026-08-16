@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
@@ -9,6 +10,11 @@ import BmcSupportCard from "@/components/BmcSupportCard";
 import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
 import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import {
+  convertCurrencyAmount,
+  formatCurrencyAmount,
+  type DisplayCurrency,
+} from "@/lib/currency-display";
 
 interface Transaction {
   id: string;
@@ -39,8 +45,11 @@ export default function DonorDashboard() {
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
+  const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>("USD");
+  const [usdToInr, setUsdToInr] = useState<number | null>(null);
+
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("INR");
+  const [formCurrency, setFormCurrency] = useState<DisplayCurrency>("USD");
   const [method, setMethod] = useState("UPI");
   const [reference, setReference] = useState("");
   const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
@@ -83,14 +92,45 @@ export default function DonorDashboard() {
       .finally(() => setLoading(false));
   }, [refreshDashboard]);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem("sentinel_donor_display_currency");
+    fetch("/api/exchange-rate", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (typeof data?.rate === "number") setUsdToInr(data.rate);
+        const detected = data?.suggestedCurrency === "INR" ? "INR" : "USD";
+        const selected: DisplayCurrency = saved === "INR" || saved === "USD" ? saved : detected;
+        setDisplayCurrency(selected);
+        setFormCurrency(selected);
+      })
+      .catch(() => {
+        const fallback: DisplayCurrency = saved === "INR" || saved === "USD"
+          ? saved
+          : Intl.DateTimeFormat().resolvedOptions().timeZone === "Asia/Calcutta"
+            || Intl.DateTimeFormat().resolvedOptions().timeZone === "Asia/Kolkata"
+            ? "INR"
+            : "USD";
+        setDisplayCurrency(fallback);
+        setFormCurrency(fallback);
+      });
+  }, []);
+
   // Background refresh on focus / visibility regain + every 30s while visible.
   useAutoRefresh(refreshDashboard, 30000);
 
   const approved = transactions.filter((t) => t.status === "APPROVED" && !t.isTest);
-  const totalContributed = approved.reduce(
-    (sum, t) => sum + parseFloat(t.amount),
-    0
-  );
+  const contributionNeedsRate = approved.some((transaction) => transaction.currency !== displayCurrency);
+  const totalContributed = contributionNeedsRate && !usdToInr
+    ? null
+    : approved.reduce(
+        (sum, transaction) => sum + convertCurrencyAmount(
+          Number(transaction.amount),
+          transaction.currency,
+          displayCurrency,
+          usdToInr,
+        ),
+        0,
+      );
   const pendingCount = transactions.filter(
     (t) => t.status === "PENDING"
   ).length;
@@ -101,8 +141,10 @@ export default function DonorDashboard() {
       ? transactions
       : transactions.filter((t) => t.status === statusFilter);
 
-  function currencySymbol(cur: string) {
-    return cur === "USD" ? "$" : "₹";
+  function chooseDisplayCurrency(next: DisplayCurrency) {
+    setDisplayCurrency(next);
+    setFormCurrency(next);
+    window.localStorage.setItem("sentinel_donor_display_currency", next);
   }
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -154,7 +196,7 @@ export default function DonorDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
-          currency,
+          currency: formCurrency,
           method,
           direction: "IN",
           type: "DONATION",
@@ -235,7 +277,13 @@ export default function DonorDashboard() {
             : current)}
         />
       )}
-      {paymentAccess?.bmc && <BmcSupportCard />}
+      {paymentAccess?.bmc && (
+        <BmcSupportCard
+          displayCurrency={displayCurrency}
+          exchangeRate={usdToInr}
+          onDisplayCurrencyChange={chooseDisplayCurrency}
+        />
+      )}
       {paymentAccess && !paymentAccess.bmc && !paymentAccess.razorpay && (
         <div className="mb-6 rounded-2xl border border-[var(--border)] bg-bg-deep p-5 text-sm text-text-secondary">
           Online checkout is not enabled for this account. Contact an administrator if you need a payment link.
@@ -249,8 +297,7 @@ export default function DonorDashboard() {
             Total Contributed
           </div>
           <div className="text-xl font-bold text-mint">
-            {currencySymbol("INR")}
-            {totalContributed.toLocaleString("en-IN")}
+            {totalContributed == null ? "Loading rate…" : formatCurrencyAmount(totalContributed, displayCurrency)}
           </div>
         </div>
         <div className="stat-card" style={{ "--accent": "var(--amber)" } as React.CSSProperties}>
@@ -319,12 +366,12 @@ export default function DonorDashboard() {
                   Currency
                 </label>
                 <Dropdown
-                  value={currency}
+                  value={formCurrency}
                   options={[
                     { value: "INR", label: "INR (₹)" },
                     { value: "USD", label: "USD ($)" },
                   ]}
-                  onChange={setCurrency}
+                  onChange={(value) => setFormCurrency(value as DisplayCurrency)}
                 />
               </div>
               {/* Method */}
@@ -370,7 +417,7 @@ export default function DonorDashboard() {
               <div className="flex flex-wrap gap-3 mb-3">
                 {previews.map((src, i) => (
                   <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)] group">
-                    <img src={src} alt="" className="w-full h-full object-cover" />
+                    <Image src={src} alt="" fill unoptimized className="object-cover" />
                     <button
                       type="button"
                       onClick={() => removeFile(i)}
@@ -470,15 +517,15 @@ export default function DonorDashboard() {
                 <div className="text-text-tertiary text-xs mt-1">
                   <span className="mr-2">{new Date(tx.date).toLocaleDateString()}</span>
                   <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
-                  {tx.currency !== "INR" && (
-                    <span className="ml-1">&middot; {tx.currency}</span>
-                  )}
+                  <span className="ml-1">&middot; paid in {tx.currency}</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0 sm:ml-3">
                 <span className="text-mint font-semibold">
-                  {currencySymbol(tx.currency)}
-                  {parseFloat(tx.amount).toLocaleString()}
+                  {formatCurrencyAmount(
+                    convertCurrencyAmount(Number(tx.amount), tx.currency, displayCurrency, usdToInr),
+                    displayCurrency,
+                  )}
                   {tx.attachments && tx.attachments.length > 0 && (
                     <span className="text-text-tertiary text-[10px] ml-1 font-normal">
                       📎 {tx.attachments.length}

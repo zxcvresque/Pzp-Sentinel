@@ -1,6 +1,12 @@
 import { createHmac } from "crypto";
 import { describe, expect, it } from "vitest";
-import { bmcTransactionKeys, parseBmcWebhook, verifyBmcSignature } from "./bmc-webhook";
+import {
+  bmcRecoverySignature,
+  bmcTransactionKeys,
+  parseBmcWebhook,
+  verifyBmcRecoverySignature,
+  verifyBmcSignature,
+} from "./bmc-webhook";
 
 describe("Buy Me a Coffee webhook", () => {
   it("verifies the current x-signature-sha256 HMAC in constant-time format", () => {
@@ -12,6 +18,16 @@ describe("Buy Me a Coffee webhook", () => {
     expect(verifyBmcSignature(body, `sha256=${signature}`, secret)).toBe(true);
     expect(verifyBmcSignature(`${body} `, signature, secret)).toBe(false);
     expect(verifyBmcSignature(body, "bad", secret)).toBe(false);
+  });
+
+  it("keeps operator recovery signatures separate from provider signatures", () => {
+    const body = JSON.stringify({ event_id: 1234, type: "donation.created", data: {} });
+    const secret = "webhook-signing-secret";
+    const recoverySignature = bmcRecoverySignature(body, secret);
+
+    expect(verifyBmcRecoverySignature(body, recoverySignature, secret)).toBe(true);
+    expect(verifyBmcSignature(body, recoverySignature, secret)).toBe(false);
+    expect(verifyBmcRecoverySignature(`${body} `, recoverySignature, secret)).toBe(false);
   });
 
   it("normalizes the current donation envelope and marks dashboard tests", () => {
@@ -75,12 +91,49 @@ describe("Buy Me a Coffee webhook", () => {
     expect(legacy.amount).toBe(5);
   });
 
-  it("uses each recurring update event as an idempotent monthly charge key", () => {
-    const first = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-1");
-    const retry = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-1");
-    const nextMonth = bmcTransactionKeys("recurring_donation.updated", "subscription-1", "evt-2");
-    expect(first).toEqual(retry);
-    expect(first).not.toEqual(nextMonth);
+  it("deduplicates BMC started/updated deliveries for one billing period", () => {
+    const baseData = {
+      id: 123,
+      amount: 6,
+      object: "recurring_donation",
+      psp_id: "sub_provider_123",
+      status: "active",
+      currency: "USD",
+      started_at: 1786839390,
+      current_period_start: 1786839387,
+      supporter_id: 456,
+      supporter_name: "Monthly Donor",
+      supporter_email: "donor@example.test",
+      support_note: "PZP-BMC-TEST-CODE",
+    };
+    const started = parseBmcWebhook(JSON.stringify({
+      event_id: 1001,
+      type: "recurring_donation.started",
+      live_mode: true,
+      created: 1786839411,
+      data: baseData,
+    }));
+    const updated = parseBmcWebhook(JSON.stringify({
+      event_id: 1002,
+      type: "recurring_donation.updated",
+      live_mode: true,
+      created: 1786839411,
+      data: baseData,
+    }));
+    const nextMonth = parseBmcWebhook(JSON.stringify({
+      event_id: 1003,
+      type: "recurring_donation.updated",
+      live_mode: true,
+      created: 1789517787,
+      data: { ...baseData, current_period_start: 1789517787 },
+    }));
+
+    expect(started.resourceId).toBe("sub_provider_123_period_1786839387");
+    expect(started.eventKey).not.toBe(updated.eventKey);
+    expect(bmcTransactionKeys(started.type, started.resourceId))
+      .toEqual(bmcTransactionKeys(updated.type, updated.resourceId));
+    expect(bmcTransactionKeys(started.type, started.resourceId))
+      .not.toEqual(bmcTransactionKeys(nextMonth.type, nextMonth.resourceId));
   });
 
   it("normalizes BMC recurring subscription fields into a paid monthly event", () => {

@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
 import TransactionAttribution from "@/components/TransactionAttribution";
+import CurrencyToggle from "@/components/CurrencyToggle";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import {
+  convertCurrencyAmount,
+  formatCurrencyAmount,
+  type DisplayCurrency,
+} from "@/lib/currency-display";
 
 interface Transaction {
   id: string;
@@ -82,6 +88,7 @@ export default function AdminDashboard() {
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
   const [currencyLoading, setCurrencyLoading] = useState(false);
   const [bmcStats, setBmcStats] = useState<BmcStats | null>(null);
+  const [bmcCurrency, setBmcCurrency] = useState<DisplayCurrency>("USD");
   const [bmcSyncing, setBmcSyncing] = useState(false);
   const [bmcResult, setBmcResult] = useState<string | null>(null);
 
@@ -138,6 +145,18 @@ export default function AdminDashboard() {
 
   const sym = currency === "INR" ? "₹" : "$";
   const locale = currency === "INR" ? "en-IN" : "en-US";
+  const bmcCurrencyEntries = Object.entries(bmcStats?.totalsByCurrency || {});
+  const bmcNeedsRate = bmcCurrencyEntries.some(([sourceCurrency]) => sourceCurrency !== bmcCurrency);
+  const bmcTotal = bmcNeedsRate && !exchangeRate
+    ? null
+    : bmcCurrencyEntries.reduce(
+        (sum, [sourceCurrency, amount]) => sum + convertCurrencyAmount(amount, sourceCurrency, bmcCurrency, exchangeRate),
+        0,
+      );
+
+  function chooseBmcCurrency(next: DisplayCurrency) {
+    setBmcCurrency(next);
+  }
 
   async function handleApprove(id: string) {
     await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
@@ -581,7 +600,8 @@ export default function AdminDashboard() {
           <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary">
             Buy Me a Coffee
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+          <CurrencyToggle value={bmcCurrency} onChange={chooseBmcCurrency} exchangeRate={exchangeRate} />
           <span
             title={bmcStats?.lastWebhookAt
               ? `Last delivery: ${new Date(bmcStats.lastWebhookAt).toLocaleString()} · ${bmcStats.lastWebhookStatus}`
@@ -652,10 +672,7 @@ export default function AdminDashboard() {
                 Total Earned
               </div>
               <div className="text-2xl font-extrabold text-mint">
-                ${(bmcStats?.totalsByCurrency?.USD ?? bmcStats?.totalEarned ?? 0).toLocaleString("en-US")}
-                {(bmcStats?.totalsByCurrency?.INR ?? 0) > 0 && (
-                  <span className="ml-2 text-sm text-text-secondary">+ ₹{bmcStats?.totalsByCurrency.INR.toLocaleString("en-IN")}</span>
-                )}
+                {bmcTotal == null ? "Loading rate…" : formatCurrencyAmount(bmcTotal, bmcCurrency)}
               </div>
             </div>
             <div>
@@ -707,7 +724,10 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                       <div className="text-mint font-semibold text-sm ml-3 shrink-0">
-                        +{tx.currency === "INR" ? "₹" : "$"}{parseFloat(tx.amount).toLocaleString(tx.currency === "INR" ? "en-IN" : "en-US")}
+                        +{formatCurrencyAmount(
+                          convertCurrencyAmount(Number(tx.amount), tx.currency, bmcCurrency, exchangeRate),
+                          bmcCurrency,
+                        )}
                       </div>
                     </div>
                   ))}

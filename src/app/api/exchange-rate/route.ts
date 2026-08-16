@@ -1,10 +1,21 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { currencyForCountry } from "@/lib/currency-display";
 
 // In-memory cache: { rate, updatedAt, fetchedAt }
 let cached: { rate: number; updatedAt: string; fetchedAt: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-export async function GET() {
+function locationPayload(request: NextRequest) {
+  const country = request.headers.get("cf-ipcountry")
+    || request.headers.get("x-vercel-ip-country")
+    || request.headers.get("x-country-code");
+  return {
+    country: country?.toUpperCase() || null,
+    suggestedCurrency: currencyForCountry(country),
+  };
+}
+
+export async function GET(request: NextRequest) {
   const now = Date.now();
 
   // Return cached value if fresh
@@ -12,6 +23,7 @@ export async function GET() {
     return NextResponse.json({
       rate: cached.rate,
       updatedAt: cached.updatedAt,
+      ...locationPayload(request),
     });
   }
 
@@ -27,6 +39,7 @@ export async function GET() {
           rate: cached.rate,
           updatedAt: cached.updatedAt,
           stale: true,
+          ...locationPayload(request),
         });
       }
       return NextResponse.json(
@@ -44,6 +57,7 @@ export async function GET() {
           rate: cached.rate,
           updatedAt: cached.updatedAt,
           stale: true,
+          ...locationPayload(request),
         });
       }
       return NextResponse.json(
@@ -61,6 +75,7 @@ export async function GET() {
     return NextResponse.json({
       rate: cached.rate,
       updatedAt: cached.updatedAt,
+      ...locationPayload(request),
     });
   } catch {
     if (cached) {
@@ -68,6 +83,7 @@ export async function GET() {
         rate: cached.rate,
         updatedAt: cached.updatedAt,
         stale: true,
+        ...locationPayload(request),
       });
     }
     return NextResponse.json(

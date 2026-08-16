@@ -81,9 +81,16 @@ function eventResource(type: string, data: Record<string, unknown>): string {
   }
   if (type.startsWith("membership.")) return text(data.id) || text(data.membership_id) || text(data.psp_id) || "unknown";
   if (type.startsWith("recurring_donation.")) {
+    // BMC sends both recurring_donation.started and recurring_donation.updated
+    // for the same charge. Event IDs differ, but the provider subscription and
+    // billing-period start are stable across both deliveries. Use that pair as
+    // the financial resource identity so the two lifecycle events cannot create
+    // two ledger entries, while the next month's period still gets a new key.
+    const subscriptionId = text(data.psp_id) || text(data.subscription_id);
+    const periodStart = text(data.current_period_start) || text(data.subscription_current_period_start);
+    if (subscriptionId && periodStart) return `${subscriptionId}_period_${periodStart}`;
     return text(data.transaction_id) || text(data.payment_id) || text(data.purchase_id)
-      || text(data.id) || text(data.support_id) || text(data.subscription_id)
-      || text(data.psp_id) || "unknown";
+      || subscriptionId || text(data.id) || text(data.support_id) || "unknown";
   }
   return text(data.id) || "unknown";
 }
@@ -116,6 +123,24 @@ export function verifyBmcSignature(rawBody: string, signature: string, secret: s
   const suppliedBuffer = Buffer.from(supplied, "hex");
   const expectedBuffer = Buffer.from(expected, "hex");
   return suppliedBuffer.length === expectedBuffer.length && timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
+
+// Used only by the operator recovery CLI for a provider delivery that is
+// visible in BMC's delivery log but was rejected by the edge before reaching
+// this application. Domain separation prevents a recovery signature from
+// being accepted as a provider webhook signature (or vice versa).
+export function bmcRecoverySignature(rawBody: string, secret: string): string {
+  return createHmac("sha256", secret)
+    .update("sentinel-bmc-failed-delivery-recovery\n")
+    .update(rawBody)
+    .digest("hex");
+}
+
+export function verifyBmcRecoverySignature(rawBody: string, signature: string, secret: string): boolean {
+  const supplied = signature.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(supplied)) return false;
+  const expected = bmcRecoverySignature(rawBody, secret);
+  return timingSafeEqual(Buffer.from(supplied, "hex"), Buffer.from(expected, "hex"));
 }
 
 export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
@@ -192,7 +217,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
   };
 }
 
-export function bmcTransactionKeys(type: string, resourceId: string, providerEventId?: string | null): string[] {
+export function bmcTransactionKeys(type: string, resourceId: string): string[] {
   const slug = bmcAccountSlug();
   const kind = type.startsWith("extra_purchase.") ? "extra"
     : type.startsWith("commission_order.") ? "commission"
@@ -200,8 +225,5 @@ export function bmcTransactionKeys(type: string, resourceId: string, providerEve
         : type.startsWith("membership.") ? "membership"
           : type.startsWith("recurring_donation.") ? "monthly"
             : "support";
-  const stableResource = type === "recurring_donation.updated" && providerEventId
-    ? `event_${providerEventId}`
-    : resourceId;
-  return [`bmc_${kind}_${slug}_${stableResource}`, `bmc_${kind}_${stableResource}`];
+  return [`bmc_${kind}_${slug}_${resourceId}`, `bmc_${kind}_${resourceId}`];
 }

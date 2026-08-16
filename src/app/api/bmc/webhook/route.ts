@@ -4,7 +4,13 @@ import { Prisma } from "@/generated/prisma/client";
 import { logAudit } from "@/lib/audit";
 import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
-import { bmcTransactionKeys, parseBmcWebhook, verifyBmcSignature, type NormalizedBmcEvent } from "@/lib/bmc-webhook";
+import {
+  bmcTransactionKeys,
+  parseBmcWebhook,
+  verifyBmcRecoverySignature,
+  verifyBmcSignature,
+  type NormalizedBmcEvent,
+} from "@/lib/bmc-webhook";
 import { bmcAccountSlug, extractBmcAttributionCode, hashBmcAttributionCode } from "@/lib/bmc-attribution";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
 import { logTransaction, postDonationThanks } from "@/lib/telegram-log";
@@ -74,7 +80,7 @@ function encryptedBmcDetails(event: NormalizedBmcEvent) {
 }
 
 async function findTransaction(event: NormalizedBmcEvent) {
-  const keys = bmcTransactionKeys(event.type, event.resourceId, event.providerEventId);
+  const keys = bmcTransactionKeys(event.type, event.resourceId);
   return prisma.transaction.findFirst({
     where: { bmcEventId: { in: keys } },
     include: { fromUser: true },
@@ -86,7 +92,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     throw new Error(`${event.type} has no positive payment amount`);
   }
 
-  const keys = bmcTransactionKeys(event.type, event.resourceId, event.providerEventId);
+  const keys = bmcTransactionKeys(event.type, event.resourceId);
   const [eventId] = keys;
   const accountSlug = bmcAccountSlug();
   const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
@@ -363,7 +369,11 @@ export async function POST(request: NextRequest) {
   const signature = request.headers.get("x-signature-sha256")
     || request.headers.get("x-bmc-signature")
     || "";
-  if (!verifyBmcSignature(rawBody, signature, secret)) {
+  const providerSignatureValid = verifyBmcSignature(rawBody, signature, secret);
+  const recoverySignature = request.headers.get("x-sentinel-bmc-recovery-sha256") || "";
+  const operatorRecovery = !providerSignatureValid
+    && verifyBmcRecoverySignature(rawBody, recoverySignature, secret);
+  if (!providerSignatureValid && !operatorRecovery) {
     console.warn("[bmc] rejected webhook with invalid signature");
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -391,11 +401,11 @@ export async function POST(request: NextRequest) {
         where: { id: existingDelivery.id },
         data: {
           attempt: event.attempt,
-          status: "PROCESSING",
+          status: operatorRecovery ? "RECOVERY_PROCESSING" : "PROCESSING",
           supporterId: event.supporterId,
           supporterName: null,
           supporterEmail: null,
-          payload: Prisma.JsonNull,
+          payload: Prisma.DbNull,
           encryptedPayload: encryptSecret(rawBody),
         },
       })
@@ -412,8 +422,9 @@ export async function POST(request: NextRequest) {
           supporterEmail: null,
           amount: event.amount > 0 ? new Prisma.Decimal(event.amount) : undefined,
           currency: event.currency,
-          payload: Prisma.JsonNull,
+          payload: Prisma.DbNull,
           encryptedPayload: encryptSecret(rawBody),
+          status: operatorRecovery ? "RECOVERY_PROCESSING" : "PROCESSING",
         },
       });
 
@@ -442,28 +453,34 @@ export async function POST(request: NextRequest) {
       status = "UNHANDLED";
     }
 
+    const storedStatus = operatorRecovery ? `RECOVERED_${status}` : status;
     await prisma.bmcWebhookEvent.update({
       where: { id: receipt.id },
-      data: { status, attributionStatus, transactionId, processedAt: new Date() },
+      data: { status: storedStatus, attributionStatus, transactionId, processedAt: new Date() },
     });
     await logAudit({
       userId: admin.id,
-      action: `BMC_${status}`,
+      action: operatorRecovery ? `BMC_FAILED_DELIVERY_${status}` : `BMC_${status}`,
       entityType: "BmcWebhookEvent",
       entityId: receipt.id,
       transactionId: transactionId || undefined,
-      userName: "Buy Me a Coffee",
-      details: `${event.type}${event.amount ? ` · ${symbol(event)}${event.amount.toFixed(2)}` : ""}${event.liveMode ? "" : " · TEST"}`,
+      userName: operatorRecovery ? "Sentinel operator recovery" : "Buy Me a Coffee",
+      details: `${event.type}${event.amount ? ` · ${symbol(event)}${event.amount.toFixed(2)}` : ""}${event.liveMode ? "" : " · TEST"}${operatorRecovery ? " · recovered from BMC failed-delivery log; provider signature unavailable because Cloudflare rejected the original request" : ""}`,
     });
 
-    return NextResponse.json({ status: status.toLowerCase(), event: event.type, transactionId });
+    return NextResponse.json({
+      status: storedStatus.toLowerCase(),
+      event: event.type,
+      transactionId,
+      verification: operatorRecovery ? "operator_recovery" : "provider_signature",
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     await prisma.bmcWebhookEvent.update({
       where: { id: receipt.id },
       data: {
-        status: "FAILED",
-        payload: Prisma.JsonNull,
+        status: operatorRecovery ? "RECOVERED_FAILED" : "FAILED",
+        payload: Prisma.DbNull,
         encryptedPayload: encryptSecret(JSON.stringify({ ...event.data, sentinel_error: message })),
       },
     }).catch(() => undefined);

@@ -44,6 +44,7 @@ export async function GET() {
         },
       }),
       prisma.bmcWebhookEvent.findFirst({
+        where: { NOT: { status: { startsWith: "RECOVERED_" } } },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true, status: true, liveMode: true },
       }),
@@ -93,11 +94,14 @@ export async function GET() {
         amount: transaction.amount.toString(),
         date: transaction.date.toISOString(),
       })),
-      recentEvents: safeEvents.slice(0, 10).map(({ encryptedPayload: _encryptedPayload, ...event }) => ({
-        ...event,
-        amount: event.amount?.toString() || null,
-        createdAt: event.createdAt.toISOString(),
-      })),
+      recentEvents: safeEvents.slice(0, 10).map(({ encryptedPayload, ...event }) => {
+        void encryptedPayload;
+        return {
+          ...event,
+          amount: event.amount?.toString() || null,
+          createdAt: event.createdAt.toISOString(),
+        };
+      }),
     });
   } catch (error) {
     console.error("[bmc] stats failed:", error);

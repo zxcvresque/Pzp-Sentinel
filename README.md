@@ -597,7 +597,7 @@ flowchart LR
 Sentinel uses BMC in three ways:
 
 1. **Hosted checkout:** the configured creator page opens in the system browser. Telegram Mini Apps use Telegram's external-link API so BMC does not run inside and slow the webview.
-2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, understands the current `subscription_*` recurring fields, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror.
+2. **Signed live updates:** `POST /api/bmc/webhook` verifies `x-signature-sha256`, understands both current BMC recurring fields (`psp_id`, `current_period_start`) and legacy `subscription_*` fields, stores the delivery, creates or updates its transaction, writes audit/Telegram logs, and refreshes the Sheets mirror. BMC's paired `recurring_donation.started` and `recurring_donation.updated` events share one subscription-period key, so they create one transaction and the next billing period creates the next transaction.
 3. **Optional legacy sync:** `POST /api/bmc/sync` is available only when `BMC_TOKEN` is configured. Supporters, extras and subscriptions are reconciled independently; missing pagination metadata is treated as a single page so a broken legacy endpoint cannot leave the dashboard stuck on **Syncing**.
 
 Configure the BMC webhook as:
@@ -608,9 +608,19 @@ https://sentinel.piratezparty.com/api/bmc/webhook
 
 Enable the payment, refund, extra-purchase, recurring donation, membership, commission, and wishlist event types available to the account. Retries remain idempotent because Sentinel stores a unique event key. Test deliveries are retained for verification but excluded from live treasury totals.
 
-The dashboard distinguishes **Webhook unverified** (a secret exists but no valid signed delivery has reached Sentinel) from **Webhook verified**. After changing the endpoint or secret, send a dashboard test. To recover a real missed payment, use BMC's **Event deliveries → Resend** action; Sentinel never creates a provider transaction merely from manually supplied payment details.
+The dashboard distinguishes **Webhook unverified** (a secret exists but no valid signed delivery has reached Sentinel) from **Webhook verified**. After changing the endpoint or secret, send a dashboard test. A resend, when BMC exposes one for the delivery, repeats that historical signed HTTP request; a later autopayment does not recreate an earlier missed charge. Some BMC dashboards expose the request/response but no resend control. In that case an operator may export the exact failed delivery request JSON and run `npm run bmc:recover -- --file /secure/path/bmc-failed-delivery.json` on the VPS. This uses the normal idempotent transaction and notification pipeline, encrypts the payload and provider identity at rest, and audits it explicitly as a failed-delivery recovery—not as a provider-signature-verified webhook. Do not use manually reconstructed payment details.
+
+Cloudflare must never issue an interactive challenge to provider webhooks. Create a WAF custom **Skip** rule restricted to POST requests for these exact paths:
+
+```text
+(http.host eq "sentinel.piratezparty.com" and http.request.method eq "POST" and http.request.uri.path in {"/api/bmc/webhook" "/api/webhooks/razorpay"})
+```
+
+Skip managed challenge/security products that can intercept the request (Managed WAF rules, Super Bot Fight Mode/Bot protections, Browser Integrity Check and Security Level as available on the plan). Keep every other path protected: Sentinel authenticates these two endpoints with the provider HMAC secrets. If the account's Bot Fight Mode cannot be skipped, disable it for the hostname or use a dedicated DNS-only webhook hostname behind Nginx. **Send test event** only verifies the route; it does not backfill a real payment.
 
 Before opening BMC, an authenticated donor chooses **One time** or **Monthly** and receives a single-use Sentinel code to paste into BMC's support note. A valid first webhook binds BMC's signed `supporter_id` to that donor. Future payments—including monthly autopay updates—then remain attributed without another code. If the first note omitted the code, an admin can assign the unmatched BMC transaction to a donor in Transactions; that reconciliation creates the same trusted supporter link for later payments.
+
+Donor-facing totals and BMC guidance include a USD/INR display toggle backed by the live exchange-rate endpoint. USD is the safe default; requests carrying Cloudflare's `CF-IPCountry: IN` default to INR, and an explicit donor choice is remembered in that browser. Mixed-currency donation totals and history rows are normalized before display instead of adding unlike currencies. This Sentinel toggle controls display only: to let BMC charge Indian supporters in INR and other supporters in their local currency, keep the BMC account's base currency in USD and enable **Settings → Localized Pricing** in Buy Me a Coffee; BMC confirms the actual currency on its own checkout page.
 
 When BMC reports `recurring_donation.cancelled` or `membership.cancelled`, Sentinel privately alerts admins. A linked donor also receives the same private two-step Telegram questionnaire used for Razorpay cancellations; their reason is retained and sent privately to every active admin. BMC does not expose separate pending/halted renewal events, so the questionnaire distinguishes a deliberate cancellation from an eventual cancellation caused by failed renewals. Unidentified supporters remain admin-only and are never messaged or posted publicly.
 
