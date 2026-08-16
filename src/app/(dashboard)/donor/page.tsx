@@ -287,8 +287,8 @@ export default function DonorDashboard() {
         </div>
       )}
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
+      <div className="mb-4 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <div className="font-mono text-[10px] uppercase tracking-[.1em] text-text-tertiary">History amounts</div>
           <p className="mt-1 text-xs text-text-tertiary">Display totals and donation history in your preferred currency.</p>
         </div>
@@ -296,7 +296,7 @@ export default function DonorDashboard() {
       </div>
 
       {/* Stats summary */}
-      <div data-tour="donor-stats" className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      <div data-tour="donor-stats" className="grid min-w-0 grid-cols-1 gap-3 mb-6 sm:grid-cols-3">
         <div className="stat-card" style={{ "--accent": "var(--mint)" } as React.CSSProperties}>
           <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-1">
             Total Contributed

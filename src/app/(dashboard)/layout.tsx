@@ -196,7 +196,7 @@ export default function DashboardLayout({
         activeRole={activeRole}
         onRoleSwitch={handleRoleSwitch}
       />
-      <div className="flex-1 flex flex-col overflow-x-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
         <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)]" style={{ background: "rgba(17,17,22,0.6)", backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)" }}>
           <div data-tour="breadcrumb" className="flex items-center gap-1.5">
             {breadcrumb.split(" / ").map((seg, i, arr) => (
@@ -225,8 +225,8 @@ export default function DashboardLayout({
             roles={user.roles}
           />
         </header>
-        <main className="flex-1 p-6 md:p-8 pb-24 md:pb-8">
-          <div key={pathname} className="page-transition">
+        <main className="min-w-0 flex-1 p-6 pb-24 md:p-8 md:pb-8">
+          <div key={pathname} className="page-transition min-w-0">
             {children}
           </div>
         </main>

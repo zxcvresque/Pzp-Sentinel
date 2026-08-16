@@ -292,14 +292,14 @@ export default function RazorpayDonationCard({
           </div>
           <div className="mt-3 rounded-2xl border border-[var(--border)] bg-black/15 p-3">
             <p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Popular payment methods</p>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5 min-[430px]:grid-cols-2">
               {PAYMENT_METHODS.map((method) => (
-                <span key={method.file} className="flex min-h-12 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-13 sm:px-2.5">
+                <span key={method.file} className="flex min-h-12 min-w-0 items-center gap-2 rounded-xl border border-white/[.09] bg-white/[.035] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,.025)] sm:min-h-13 sm:px-2.5">
                   <PaymentLogo file={method.file} alt={method.alt} wordmark={method.wordmark} />
-                  <span className={`min-w-0 font-medium leading-tight text-text-secondary ${method.compactLabel ? "text-[9px] sm:text-[10px]" : "text-[10px] sm:text-[11px]"}`}>{method.label}</span>
+                  <span className={`min-w-0 break-words font-medium leading-tight text-text-secondary ${method.compactLabel ? "text-[9px] sm:text-[10px]" : "text-[10px] sm:text-[11px]"}`}>{method.label}</span>
                 </span>
               ))}
-              <span className="col-span-2 flex min-h-10 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[10px] font-semibold text-lime">and more…</span>
+              <span className="flex min-h-10 items-center justify-center rounded-xl border border-lime/20 bg-lime/[.07] px-3 text-[10px] font-semibold text-lime min-[430px]:col-span-2">and more…</span>
             </div>
           </div>
           <div className="mt-4 border-t border-[var(--border)] pt-4 text-[11px] leading-5 text-text-tertiary">
