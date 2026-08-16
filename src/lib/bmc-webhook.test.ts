@@ -59,6 +59,7 @@ describe("Buy Me a Coffee webhook", () => {
     expect(event.amount).toBe(15);
     expect(event.currency).toBe("USD");
     expect(event.note).toBe("Keep building");
+    expect(event.donationFrequency).toBe("ONE_TIME");
     expect(event.liveMode).toBe(false);
     expect(event.eventKey).toMatch(/^test:1:donation\.created:/);
   });
@@ -129,6 +130,7 @@ describe("Buy Me a Coffee webhook", () => {
     }));
 
     expect(started.resourceId).toBe("sub_provider_123_period_1786839387");
+    expect(started.donationFrequency).toBe("MONTHLY");
     expect(started.eventKey).not.toBe(updated.eventKey);
     expect(bmcTransactionKeys(started.type, started.resourceId))
       .toEqual(bmcTransactionKeys(updated.type, updated.resourceId));
@@ -163,6 +165,25 @@ describe("Buy Me a Coffee webhook", () => {
     expect(event.amount).toBe(6);
     expect(event.currency).toBe("USD");
     expect(event.note).toBe("PZP-BMC-ABCD-1234-EFGH-5678");
+    expect(event.donationFrequency).toBe("MONTHLY");
     expect(event.occurredAt.toISOString()).toBe("2026-08-16T00:00:00.000Z");
+  });
+
+  it("recognizes monthly autopay from BMC object and duration fields", () => {
+    const event = parseBmcWebhook(JSON.stringify({
+      event_id: 992,
+      type: "donation.created",
+      live_mode: true,
+      data: {
+        id: 123,
+        object: "recurring_donation",
+        duration_type: "month",
+        psp_id: "sub_provider_992",
+        amount: 6,
+        currency: "USD",
+      },
+    }));
+
+    expect(event.donationFrequency).toBe("MONTHLY");
   });
 });

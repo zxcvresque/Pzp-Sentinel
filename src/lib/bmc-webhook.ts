@@ -23,6 +23,7 @@ export interface NormalizedBmcEvent extends BmcEnvelope {
   itemLabel: string | null;
   occurredAt: Date;
   eventKey: string;
+  donationFrequency: "ONE_TIME" | "MONTHLY";
 }
 
 const EVENT_ALIASES: Record<string, string> = {
@@ -114,6 +115,21 @@ function itemLabel(type: string, data: Record<string, unknown>): string | null {
   if (type.startsWith("membership.")) return text(data.membership_level_name) || "Membership";
   if (type.startsWith("recurring_donation.")) return "Monthly support";
   return null;
+}
+
+function donationFrequency(type: string, data: Record<string, unknown>): "ONE_TIME" | "MONTHLY" {
+  const object = text(data.object)?.toLowerCase();
+  const duration = text(data.duration_type)?.toLowerCase();
+  const recurringObject = object === "recurring_donation" || object === "membership";
+  const monthlyProviderRecord = duration === "month" && Boolean(
+    text(data.psp_id) || text(data.subscription_id) || text(data.membership_id),
+  );
+  return type.startsWith("recurring_donation.")
+    || type.startsWith("membership.")
+    || recurringObject
+    || monthlyProviderRecord
+    ? "MONTHLY"
+    : "ONE_TIME";
 }
 
 export function verifyBmcSignature(rawBody: string, signature: string, secret: string): boolean {
@@ -214,6 +230,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     itemLabel: itemLabel(type, data),
     occurredAt,
     eventKey,
+    donationFrequency: donationFrequency(type, data),
   };
 }
 

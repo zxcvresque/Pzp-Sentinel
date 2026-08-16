@@ -142,9 +142,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     }
 
     const fromUserId = knownLink?.userId || intent?.userId || null;
-    const donationFrequency = event.type.startsWith("recurring_donation.") || event.type.startsWith("membership.")
-      ? "MONTHLY"
-      : "ONE_TIME";
+    const donationFrequency = event.donationFrequency;
     const transaction = await db.transaction.create({
       data: {
         amount: new Prisma.Decimal(event.amount),
@@ -210,6 +208,14 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
 
   const amount = `${symbol(event)}${event.amount.toFixed(2)}`;
   const matchedDonor = transaction.fromUser;
+  const monthly = event.donationFrequency === "MONTHLY";
+  const captureTitle = monthly ? "BMC Monthly Donation Captured" : "BMC One-Time Donation Captured";
+  const unmatchedTitle = monthly
+    ? "BMC Monthly Donation Needs Attribution"
+    : "BMC One-Time Donation Needs Attribution";
+  const paymentSummary = monthly
+    ? `${amount} paid by monthly autopay from ${escapeTelegramHtml(event.supporterName)}`
+    : `${amount} donated one time by ${escapeTelegramHtml(event.supporterName)}`;
   await notifyAdmins({
     type: "SYSTEM",
     title: result.attribution === "UNMATCHED"
@@ -222,8 +228,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     actionUrl: "/admin/transactions",
     actionLabel: result.attribution === "UNMATCHED" ? "Reconcile payment" : "View transaction",
     telegramMessage: formatTgMessage(
-      result.attribution === "UNMATCHED" ? "BMC payment needs attribution" : "BMC payment captured",
-      `${amount} from ${escapeTelegramHtml(event.supporterName)}`,
+      result.attribution === "UNMATCHED" ? unmatchedTitle : captureTitle,
+      paymentSummary,
       result.attribution === "UNMATCHED"
         ? "Open Transactions and assign the correct donor."
         : `Matched to ${escapeTelegramHtml(matchedDonor?.name || "donor")}`,
@@ -234,8 +240,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     await notify({
       userId: matchedDonor.id,
       type: "TX_APPROVED",
-      title: "BMC donation received — thank you!",
-      message: `${amount} was received through Buy Me a Coffee and added to your donation history.`,
+      title: monthly ? "BMC monthly donation received — thank you!" : "BMC one-time donation received — thank you!",
+      message: `${amount} ${monthly ? "monthly autopay payment" : "one-time donation"} was received through Buy Me a Coffee and added to your donation history.`,
       entityId: transaction.id,
       actionUrl: "/donor",
       telegramMessage: dmThanks(matchedDonor.name, event.amount, event.currency),
