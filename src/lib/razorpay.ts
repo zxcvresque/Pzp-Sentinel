@@ -413,6 +413,7 @@ export async function createMonthlyDonationSubscription(params: {
     amount: subscription.amount,
     currency: subscription.currency,
     description: subscription.description,
+    checkoutUrl: remote.short_url || null,
     keyId: config.keyId,
     testMode: config.testMode,
     prefill: { name: user.name },

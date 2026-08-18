@@ -98,6 +98,7 @@ export default function RazorpayDonationCard({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [hostedCheckoutUrl, setHostedCheckoutUrl] = useState<string | null>(null);
   const [donationFrequency, setDonationFrequency] = useState<"ONE_TIME" | "MONTHLY">("ONE_TIME");
   const presets = [251, 501, 1001, 2501];
 
@@ -108,6 +109,7 @@ export default function RazorpayDonationCard({
       return;
     }
     setBusy(true);
+    setHostedCheckoutUrl(null);
     setMessage({ type: "info", text: "Preparing secure checkout…" });
 
     try {
@@ -129,8 +131,10 @@ export default function RazorpayDonationCard({
 
       const order = (monthly ? orderData.subscription : orderData.order) as {
         id: string; amount: number; currency: string; description: string; keyId: string; testMode: boolean;
+        checkoutUrl?: string | null;
         prefill: { name: string };
       };
+      if (monthly && order.checkoutUrl) setHostedCheckoutUrl(order.checkoutUrl);
       const checkoutOptions: Record<string, unknown> = {
         key: order.keyId,
         currency: order.currency,
@@ -243,8 +247,19 @@ export default function RazorpayDonationCard({
           {donationFrequency === "MONTHLY" && !guestToken && (
             <div className="mt-2 space-y-1 text-xs leading-5 text-text-tertiary">
               <p>Razorpay will ask you to authorise a mandate, then automatically charge the chosen amount every month.</p>
-              <p>If Razorpay&apos;s Refresh QR stalls, close checkout and tap Authorise again to generate a new subscription QR.</p>
+              <p>If the embedded QR loops, close checkout and use the full Razorpay-hosted page below.</p>
             </div>
+          )}
+
+          {donationFrequency === "MONTHLY" && hostedCheckoutUrl && (
+            <a
+              href={hostedCheckoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center rounded-full border border-violet/30 bg-violet/10 px-3.5 py-2 text-xs font-semibold text-violet transition-colors hover:bg-violet/15"
+            >
+              Open full Razorpay autopay page ↗
+            </a>
           )}
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
