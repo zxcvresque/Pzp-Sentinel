@@ -17,7 +17,7 @@ import {
   subscriptionAlertPolicy,
   type NormalizedRazorpaySubscriptionEvent,
 } from "@/lib/razorpay-subscription-events";
-import { razorpaySubscriptionExpireBy } from "@/lib/razorpay-checkout";
+import { RAZORPAY_MONTHLY_TOTAL_COUNT, razorpaySubscriptionExpireBy } from "@/lib/razorpay-checkout";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -382,8 +382,7 @@ export async function createMonthlyDonationSubscription(params: {
       notes: { sentinel_frequency: "monthly", sentinel_amount_paise: String(amount) },
     }),
   })).id;
-  const configuredTotal = Number(process.env.RAZORPAY_SUBSCRIPTION_TOTAL_COUNT || 1200);
-  const totalCount = Number.isInteger(configuredTotal) ? Math.min(1200, Math.max(1, configuredTotal)) : 1200;
+  const totalCount = RAZORPAY_MONTHLY_TOTAL_COUNT;
   const remote = await razorpayRequest<RazorpaySubscriptionResponse>("/subscriptions", {
     method: "POST",
     body: JSON.stringify({
@@ -413,7 +412,6 @@ export async function createMonthlyDonationSubscription(params: {
     amount: subscription.amount,
     currency: subscription.currency,
     description: subscription.description,
-    checkoutUrl: remote.short_url || null,
     keyId: config.keyId,
     testMode: config.testMode,
     prefill: { name: user.name },

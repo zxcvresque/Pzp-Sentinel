@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { RAZORPAY_CHECKOUT_TIMEOUT_SECONDS } from "@/lib/razorpay-checkout";
 
 type CheckoutSuccess = {
   razorpay_payment_id: string;
@@ -107,12 +108,6 @@ export default function RazorpayDonationCard({
       return;
     }
     const monthly = donationFrequency === "MONTHLY" && !guestToken;
-    const hostedCheckoutWindow = monthly ? window.open("about:blank", "_blank") : null;
-    if (hostedCheckoutWindow) {
-      hostedCheckoutWindow.opener = null;
-      hostedCheckoutWindow.document.title = "Opening Razorpay autopay…";
-      hostedCheckoutWindow.document.body.textContent = "Preparing secure Razorpay autopay…";
-    }
     setBusy(true);
     setMessage({ type: "info", text: "Preparing secure checkout…" });
 
@@ -126,28 +121,15 @@ export default function RazorpayDonationCard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ amount: parsed, description: note.trim() || undefined, token: guestToken }),
         }),
-        monthly ? Promise.resolve() : loadCheckout(),
+        loadCheckout(),
       ]);
       const orderData = await orderResponse.json();
       if (!orderResponse.ok) throw new Error(orderData.error || "Could not create checkout");
 
       const order = (monthly ? orderData.subscription : orderData.order) as {
         id: string; amount: number; currency: string; description: string; keyId: string; testMode: boolean;
-        checkoutUrl?: string | null;
         prefill: { name: string };
       };
-      if (monthly) {
-        if (!order.checkoutUrl) throw new Error("Razorpay did not return a hosted autopay URL");
-        if (hostedCheckoutWindow && !hostedCheckoutWindow.closed) {
-          hostedCheckoutWindow.location.replace(order.checkoutUrl);
-        } else {
-          window.location.assign(order.checkoutUrl);
-        }
-        setBusy(false);
-        setMessage({ type: "info", text: "Razorpay autopay opened in a secure hosted page." });
-        return;
-      }
-
       if (!window.Razorpay) throw new Error("Razorpay Checkout is unavailable");
       const checkoutOptions: Record<string, unknown> = {
         key: order.keyId,
@@ -158,7 +140,7 @@ export default function RazorpayDonationCard({
         prefill: order.prefill,
         notes: {
           source: adminPreview ? "admin_donors" : "donor_dashboard",
-          donation_frequency: "one_time",
+          donation_frequency: monthly ? "monthly" : "one_time",
         },
         theme: { color: getComputedStyle(document.documentElement).getPropertyValue("--lime").trim() || "#6FD1D7" },
         retry: { enabled: true },
@@ -166,13 +148,20 @@ export default function RazorpayDonationCard({
           confirm_close: true,
           ondismiss: () => {
             setBusy(false);
-            setMessage({ type: "info", text: "Checkout closed. No donation was recorded." });
+            setMessage({
+              type: "info",
+              text: monthly
+                ? "Checkout closed or expired. Start monthly autopay again to generate a fresh mandate and QR."
+                : "Checkout closed. No donation was recorded.",
+            });
           },
         },
         handler: async (response: CheckoutSuccess) => {
           setMessage({ type: "info", text: "Verifying the captured payment…" });
           try {
-            const verifyUrl = guestToken ? "/api/payments/razorpay/guest/verify" : "/api/payments/razorpay/verify";
+            const verifyUrl = monthly
+              ? "/api/payments/razorpay/subscriptions/verify"
+              : guestToken ? "/api/payments/razorpay/guest/verify" : "/api/payments/razorpay/verify";
             const verifyResponse = await fetch(verifyUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -182,9 +171,13 @@ export default function RazorpayDonationCard({
             if (!verifyResponse.ok) throw new Error(verified.error || "Payment verification failed");
             setMessage({
               type: "success",
-              text: order.testMode
-                ? "Test payment verified and tracked. It is excluded from real finance totals."
-                : "Payment received and tracked automatically. Thank you!",
+              text: monthly
+                ? verified.paymentRecorded
+                  ? "Monthly autopay authorised. Your first payment was received, recorded and notified; future successful charges will be tracked automatically."
+                  : "Monthly autopay authorised. Razorpay will charge this amount each month and Sentinel will track each successful charge automatically."
+                : order.testMode
+                  ? "Test payment verified and tracked. It is excluded from real finance totals."
+                  : "Payment received and tracked automatically. Thank you!",
             });
             await onSuccess?.();
           } catch (error) {
@@ -194,8 +187,13 @@ export default function RazorpayDonationCard({
           }
         },
       };
-      checkoutOptions.amount = order.amount;
-      checkoutOptions.order_id = order.id;
+      if (monthly) {
+        checkoutOptions.subscription_id = order.id;
+        checkoutOptions.timeout = RAZORPAY_CHECKOUT_TIMEOUT_SECONDS;
+      } else {
+        checkoutOptions.amount = order.amount;
+        checkoutOptions.order_id = order.id;
+      }
       const checkout = new window.Razorpay(checkoutOptions);
       checkout.on("payment.failed", (response) => {
         setBusy(false);
@@ -204,7 +202,6 @@ export default function RazorpayDonationCard({
       setMessage(null);
       checkout.open();
     } catch (error) {
-      if (hostedCheckoutWindow && !hostedCheckoutWindow.closed) hostedCheckoutWindow.close();
       setBusy(false);
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Could not open checkout" });
     }
@@ -245,7 +242,7 @@ export default function RazorpayDonationCard({
           )}
           {donationFrequency === "MONTHLY" && !guestToken && (
             <p className="mt-2 text-xs leading-5 text-text-tertiary">
-              Monthly authorisation opens directly on Razorpay&apos;s secure hosted page, then future charges are tracked automatically.
+              Razorpay will ask you to authorise a five-year mandate here, then automatically charge the chosen amount every month.
             </p>
           )}
 
