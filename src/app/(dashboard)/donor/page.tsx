@@ -65,7 +65,7 @@ export default function DonorDashboard() {
   // contributed / pending / approved) are derived from `transactions`, so
   // refreshing this one endpoint refreshes the whole overview.
   const load = useCallback(async () => {
-    const res = await fetch("/api/transactions?limit=50");
+    const res = await fetch("/api/transactions?scope=mine&limit=50");
     if (!res.ok) throw new Error("Failed to load transactions");
     const data = await res.json();
     setTransactions(data.transactions || []);
@@ -204,6 +204,7 @@ export default function DonorDashboard() {
           description: desc,
           donationFrequency,
           attachments: attachmentUrls,
+          scope: "mine",
         }),
       });
 

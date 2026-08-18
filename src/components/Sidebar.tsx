@@ -179,13 +179,13 @@ const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
     { label: "Dashboard",     shortLabel: "Home",    href: "/admin",                icon: "", Icon: IconDashboardGrid },
     { label: "Transactions",  shortLabel: "Txns",    href: "/admin/transactions",   icon: "", Icon: IconTransactions },
-    { label: "Reconciliation", shortLabel: "Match",   href: "/admin/reconciliation", icon: "", Icon: IconTransactions },
     { label: "Services",      shortLabel: "Svc",     href: "/admin/services",       icon: "", Icon: IconServer },
     { label: "Donors",        shortLabel: "Donors",  href: "/admin/donors",         icon: "", Icon: IconTrophy },
     { label: "Broadcasts",    shortLabel: "Send",    href: "/admin/broadcasts",     icon: "", Icon: IconBell },
     { label: "Users",         shortLabel: "Users",   href: "/admin/users",          icon: "", Icon: IconUsers },
     { label: "Reminders",     shortLabel: "Remind",  href: "/admin/reminders",      icon: "", Icon: IconBell },
     { label: "Repos",         shortLabel: "Repos",   href: "/admin/repos",          icon: "", Icon: IconGitRepo },
+    { label: "Reconciliation", shortLabel: "Match",   href: "/admin/reconciliation", icon: "", Icon: IconTransactions },
   ],
   DONOR: [
     { label: "My Donations", shortLabel: "Donate", href: "/donor", icon: "", Icon: IconChart },

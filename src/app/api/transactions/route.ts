@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { getCurrentUser, hasRole } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logTransaction, logProofScreenshot, logProofScreenshots } from "@/lib/telegram-log";
 import { logTransaction as ghLogTransaction } from "@/lib/github-log";
@@ -12,24 +12,21 @@ import { transactionOrderFromParams, transactionPageFromParams, transactionWhere
 import { parseDonationFrequency } from "@/lib/donation-frequency";
 import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archive";
 import { serviceReminderRepeat } from "@/lib/service-templates";
+import { resolveTransactionAccess } from "@/lib/transaction-access";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const isAdmin = hasRole(user.roles, "ADMIN");
-  const isDonor = hasRole(user.roles, "DONOR");
-
-  // DEV role cannot access financial data
-  if (!isAdmin && !isDonor) {
-    return NextResponse.json({ error: "Forbidden: insufficient role for financial data" }, { status: 403 });
-  }
-
   const { searchParams } = new URL(req.url);
+  const access = resolveTransactionAccess(user.roles, searchParams.get("scope"));
+  if (!access.allowed) {
+    return NextResponse.json({ error: "Forbidden: insufficient role for this financial view" }, { status: 403 });
+  }
   const { page, limit } = transactionPageFromParams(searchParams);
   const where = transactionWhereFromParams(searchParams, {
-    donorUserId: isAdmin ? undefined : user.id,
-    forceActive: !isAdmin,
+    donorUserId: access.selfScoped ? user.id : undefined,
+    forceActive: access.selfScoped,
   });
   const orderBy = transactionOrderFromParams(searchParams);
 
@@ -42,7 +39,7 @@ export async function GET(req: NextRequest) {
         reviewedBy: true,
         voidedBy: true,
         linkedService: { select: { id: true, name: true } },
-        ...(isAdmin ? {
+        ...(access.adminLedger ? {
           bmcWebhookEvents: {
             select: {
               supporterEmail: true,
@@ -67,15 +64,11 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const isAdmin = hasRole(user.roles, "ADMIN");
-  const isDonor = hasRole(user.roles, "DONOR");
-
-  // DEV role cannot create transactions (no access to financial operations)
-  if (!isAdmin && !isDonor) {
-    return NextResponse.json({ error: "Forbidden: DEV role cannot create transactions" }, { status: 403 });
-  }
-
   const body = await req.json();
+  const access = resolveTransactionAccess(user.roles, body.scope);
+  if (!access.allowed) {
+    return NextResponse.json({ error: "Forbidden: insufficient role for this financial view" }, { status: 403 });
+  }
   const { amount, currency, method, direction, type, description, date, proofFileId, fromUserId, serviceId, createService } = body;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const donationFrequency = parseDonationFrequency(body.donationFrequency);
@@ -101,8 +94,12 @@ export async function POST(req: NextRequest) {
   }
 
   // DONOR can only create direction=IN (donations)
-  if (isDonor && !isAdmin && direction && direction !== "IN") {
+  if (access.selfScoped && direction && direction !== "IN") {
     return NextResponse.json({ error: "Forbidden: donors can only create incoming donations" }, { status: 403 });
+  }
+
+  if (access.selfScoped && fromUserId && fromUserId !== user.id) {
+    return NextResponse.json({ error: "Forbidden: Donor view can only record your own donation" }, { status: 403 });
   }
 
   // Validate IDs if provided
@@ -127,7 +124,7 @@ export async function POST(req: NextRequest) {
     serviceDraft = { name, category, frequency, nextRenewal };
   }
 
-  const txStatus = isAdmin && direction === "OUT" ? "APPROVED" : "PENDING";
+  const txStatus = access.adminLedger && direction === "OUT" ? "APPROVED" : "PENDING";
 
   const transaction = await prisma.$transaction(async (db) => {
     const service = serviceDraft ? await db.service.create({
@@ -154,10 +151,9 @@ export async function POST(req: NextRequest) {
       date: transactionDate,
       proofFileId: proofFileId || null,
       attachments,
-      // Donor-created incoming records can identify the signed-in donor.
-      // Admin-created income stays unlinked unless the admin explicitly picks
-      // a donor; otherwise the recorder would incorrectly enter leaderboards.
-      fromUserId: fromUserId || (direction === "IN" && isDonor && !isAdmin ? user.id : null),
+      // Donor view always records the signed-in person, including multi-role
+      // admins. Admin-ledger income stays unlinked unless a donor is selected.
+      fromUserId: direction === "IN" && access.selfScoped ? user.id : fromUserId || null,
       status: txStatus,
       createdById: user.id,
       serviceId: direction === "OUT" && type === "SUBSCRIPTION" ? service?.id || serviceId || null : null,

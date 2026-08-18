@@ -241,9 +241,10 @@ export default function RazorpayDonationCard({
             </div>
           )}
           {donationFrequency === "MONTHLY" && !guestToken && (
-            <p className="mt-2 text-xs leading-5 text-text-tertiary">
-              Razorpay will ask you to authorise a mandate, then automatically charge the chosen amount every month.
-            </p>
+            <div className="mt-2 space-y-1 text-xs leading-5 text-text-tertiary">
+              <p>Razorpay will ask you to authorise a mandate, then automatically charge the chosen amount every month.</p>
+              <p>If Razorpay&apos;s Refresh QR stalls, close checkout and tap Authorise again to generate a new subscription QR.</p>
+            </div>
           )}
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
