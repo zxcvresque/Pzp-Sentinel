@@ -105,6 +105,51 @@ function encryptedRazorpayPaymentDetails(payment: RazorpayPaymentResponse) {
   }));
 }
 
+function displayAmount(amount: number, currency: string) {
+  const symbol = currency === "INR" ? "₹" : "$";
+  return `${symbol}${amount.toLocaleString(currency === "INR" ? "en-IN" : "en-US")}`;
+}
+
+/**
+ * A payment row is committed before its acknowledgement is sent. If the
+ * process is interrupted in that small window, later webhook retries see the
+ * payment as a duplicate. Create the missing acknowledgement on those retries
+ * without creating a second notification for a successful prior delivery.
+ */
+async function ensureMonthlyDonationReceipt(params: {
+  userId: string;
+  userName: string;
+  transactionId: string;
+  amount: number;
+  currency: string;
+  testMode: boolean;
+}) {
+  if (params.testMode) return;
+
+  const title = "Monthly donation received — thank you!";
+  const existing = await prisma.notification.findFirst({
+    where: {
+      userId: params.userId,
+      type: "TX_APPROVED",
+      title,
+      entityId: params.transactionId,
+    },
+    select: { id: true },
+  });
+  if (existing) return;
+
+  const symbolAmount = displayAmount(params.amount, params.currency);
+  await notify({
+    userId: params.userId,
+    type: "TX_APPROVED",
+    title,
+    message: `${symbolAmount} was collected securely through Razorpay autopay.`,
+    entityId: params.transactionId,
+    actionUrl: "/donor",
+    telegramMessage: dmThanks(params.userName, params.amount, params.currency),
+  });
+}
+
 export class RazorpayError extends Error {
   constructor(message: string, public status = 500) {
     super(message);
@@ -918,7 +963,17 @@ export async function finalizeMonthlySubscriptionCharge(params: {
   if (!stored) throw new RazorpayError("Monthly subscription was not found", 404);
 
   const duplicate = await prisma.transaction.findUnique({ where: { providerPaymentId: params.paymentId } });
-  if (duplicate) return { transaction: duplicate, duplicate: true };
+  if (duplicate) {
+    await ensureMonthlyDonationReceipt({
+      userId: stored.userId,
+      userName: stored.user.name,
+      transactionId: duplicate.id,
+      amount: stored.amount / 100,
+      currency: stored.currency,
+      testMode: stored.testMode,
+    });
+    return { transaction: duplicate, duplicate: true };
+  }
 
   const payment = await fetchPayment(params.paymentId);
   if (
@@ -978,7 +1033,7 @@ export async function finalizeMonthlySubscriptionCharge(params: {
     throw error;
   }
 
-  const symbolAmount = `₹${Number(amount).toLocaleString("en-IN")}`;
+  const symbolAmount = displayAmount(Number(amount), stored.currency);
   await logAudit({
     userId: stored.userId,
     action: "RAZORPAY_SUBSCRIPTION_CHARGED",
@@ -1016,14 +1071,13 @@ export async function finalizeMonthlySubscriptionCharge(params: {
   });
 
   if (!stored.testMode) {
-    await notify({
+    await ensureMonthlyDonationReceipt({
       userId: stored.userId,
-      type: "TX_APPROVED",
-      title: "Monthly donation received — thank you!",
-      message: `${symbolAmount} was collected securely through Razorpay autopay.`,
-      entityId: transaction.id,
-      actionUrl: "/donor",
-      telegramMessage: dmThanks(stored.user.name, Number(amount), stored.currency),
+      userName: stored.user.name,
+      transactionId: transaction.id,
+      amount: Number(amount),
+      currency: stored.currency,
+      testMode: stored.testMode,
     });
     await announceDonationTransaction(transaction.id);
   }

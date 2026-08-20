@@ -142,6 +142,56 @@ async function notifyAdminsFromBot(
   }
 }
 
+const TELEGRAM_WEBHOOK_DELETE_ATTEMPTS = 5;
+
+function isTransientTelegramApiError(error: unknown) {
+  const candidate = error as {
+    error_code?: number;
+    code?: string;
+    description?: string;
+    message?: string;
+  };
+  const status = candidate.error_code;
+  const message = `${candidate.description || ""} ${candidate.message || ""}`;
+  return status === 429 || (typeof status === "number" && status >= 500)
+    || ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH"].includes(candidate.code || "")
+    || /gateway timeout|network error|fetch failed/i.test(message);
+}
+
+/**
+ * Long polling requires Telegram webhooks to be removed. Telegram can return a
+ * 504 even when it completed that deletion, so verify the state and retry
+ * transient failures instead of letting PM2 immediately restart the bot.
+ */
+async function prepareTelegramPolling() {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= TELEGRAM_WEBHOOK_DELETE_ATTEMPTS; attempt++) {
+    try {
+      await bot.api.deleteWebhook();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientTelegramApiError(error)) throw error;
+
+      try {
+        const webhook = await bot.api.getWebhookInfo();
+        if (!webhook.url) {
+          console.warn("[telegram] deleteWebhook timed out, but no webhook remains; starting polling.");
+          return;
+        }
+      } catch (statusError) {
+        if (!isTransientTelegramApiError(statusError)) throw statusError;
+      }
+
+      if (attempt === TELEGRAM_WEBHOOK_DELETE_ATTEMPTS) break;
+      const delayMs = 1_000 * 2 ** (attempt - 1);
+      console.warn(`[telegram] deleteWebhook failed (attempt ${attempt}/${TELEGRAM_WEBHOOK_DELETE_ATTEMPTS}); retrying in ${delayMs / 1_000}s.`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 // ── Admin reminders and repeating broadcasts ─────────────────────────────────
 const ADMIN_MESSAGE_CHECK_INTERVAL = 60 * 1000;
 const PROVIDER_RECONCILIATION_INTERVAL = 6 * 60 * 60 * 1000;
@@ -1138,7 +1188,7 @@ async function checkSubscriptionRenewals() {
 }
 
 (async () => {
-  await bot.api.deleteWebhook();
+  await prepareTelegramPolling();
   console.log("Sentinel bot starting in polling mode...");
   bot.start({
     onStart: () => {

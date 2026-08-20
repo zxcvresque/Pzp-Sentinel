@@ -5,6 +5,7 @@ import Image from "next/image";
 import TgUser from "@/components/TgUser";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import PageTour from "@/components/PageTour";
+import { formatCurrencyAmount, type DisplayCurrency } from "@/lib/currency-display";
 
 interface Donor {
   rank: number;
@@ -12,7 +13,7 @@ interface Donor {
   name: string;
   photoUrl?: string | null;
   telegramUser?: string | null;
-  totalAmount: number;
+  amounts: Array<{ currency: DisplayCurrency; amount: number }>;
   donationCount: number;
 }
 
@@ -254,7 +255,7 @@ export default function DonorsLeaderboard() {
                 {/* Amount */}
                 <div className="text-right shrink-0">
                   <div className="text-lg font-extrabold text-mint">
-                    ₹{donor.totalAmount.toLocaleString("en-IN")}
+                    {donor.amounts.map(({ currency, amount }) => formatCurrencyAmount(amount, currency)).join(" + ")}
                   </div>
                 </div>
               </div>
@@ -270,7 +271,17 @@ export default function DonorsLeaderboard() {
               Total ({periodLabels[period]})
             </div>
             <div className="font-mono text-sm font-semibold text-text-primary">
-              ₹{donors.reduce((s, d) => s + d.totalAmount, 0).toLocaleString("en-IN")}
+              {(["INR", "USD"] as const)
+                .map((currency) => ({
+                  currency,
+                  amount: donors.reduce(
+                    (sum, donor) => sum + (donor.amounts.find((item) => item.currency === currency)?.amount || 0),
+                    0,
+                  ),
+                }))
+                .filter(({ amount }) => amount > 0)
+                .map(({ currency, amount }) => formatCurrencyAmount(amount, currency))
+                .join(" + ")}
               <span className="text-text-tertiary text-[10px] ml-2">
                 from {donors.length} donor{donors.length !== 1 ? "s" : ""}
               </span>

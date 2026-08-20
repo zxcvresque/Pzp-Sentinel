@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
     where,
     select: {
       amount: true,
+      currency: true,
       fromUserId: true,
       createdById: true,
       bmcEventId: true,
@@ -55,6 +56,21 @@ export async function GET(request: NextRequest) {
     },
   });
 
+  // The display keeps each donation in its original currency, but ranks still
+  // need one comparable value. Use the same cached rate endpoint as treasury
+  // statistics; if it is temporarily unavailable, retain the former raw-order
+  // fallback rather than failing the leaderboard.
+  let usdToInr: number | null = null;
+  try {
+    const rateResponse = await fetch(new URL("/api/exchange-rate", request.nextUrl.origin).toString());
+    if (rateResponse.ok) {
+      const data = await rateResponse.json() as { rate?: unknown };
+      usdToInr = typeof data.rate === "number" && data.rate > 0 ? data.rate : null;
+    }
+  } catch {
+    // Currency labels remain accurate even if ranking cannot be normalized.
+  }
+
   // Aggregate by user
   const aggregated: Record<
     string,
@@ -63,7 +79,8 @@ export async function GET(request: NextRequest) {
       name: string;
       photoUrl: string | null;
       telegramUser: string | null;
-      totalAmount: number;
+      rankingAmount: number;
+      amounts: { currency: "INR" | "USD"; amount: number }[];
       donationCount: number;
     }
   > = {};
@@ -83,21 +100,30 @@ export async function GET(request: NextRequest) {
         name: tx.fromUser.name,
         photoUrl: tx.fromUser.photoUrl,
         telegramUser: tx.fromUser.telegramUser,
-        totalAmount: 0,
+        rankingAmount: 0,
+        amounts: [],
         donationCount: 0,
       };
     }
-    aggregated[uid].totalAmount += Number(tx.amount);
-    aggregated[uid].donationCount += 1;
+    const entry = aggregated[uid];
+    const amount = Number(tx.amount);
+    const currency = tx.currency as "INR" | "USD";
+    const existingAmount = entry.amounts.find((item) => item.currency === currency);
+    if (existingAmount) existingAmount.amount += amount;
+    else entry.amounts.push({ currency, amount });
+    entry.rankingAmount += currency === "USD" && usdToInr ? amount * usdToInr : amount;
+    entry.donationCount += 1;
   }
 
-  // Sort by totalAmount descending and assign rank
+  // Sort by the normalized comparison value and assign rank.
   const ranked = Object.values(aggregated)
-    .sort((a, b) => b.totalAmount - a.totalAmount)
-    .map((entry, index) => ({
+    .sort((a, b) => b.rankingAmount - a.rankingAmount)
+    .map(({ rankingAmount: _rankingAmount, ...entry }, index) => ({
       rank: index + 1,
       ...entry,
-      totalAmount: Math.round(entry.totalAmount * 100) / 100,
+      amounts: entry.amounts
+        .map((item) => ({ ...item, amount: Math.round(item.amount * 100) / 100 }))
+        .sort((a, b) => a.currency.localeCompare(b.currency)),
     }));
 
   return NextResponse.json({ leaderboard: ranked, period });
