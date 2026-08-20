@@ -346,6 +346,144 @@ export default function DonorDashboard() {
         </button>
       </div>
 
+      {/* Manual submission opens directly below its trigger. */}
+      {success && (
+        <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm animate-fade-in">
+          Manual payment submitted! Your donation is pending admin approval.
+        </div>
+      )}
+
+      {showForm && (
+        <div className="glass-card p-4 sm:p-6 mb-6 animate-scale-in">
+          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
+            Record an existing payment
+          </div>
+          <FormExample lines={["Amount: 1000 · Currency: INR · Method: UPI", "Reference: UPI transaction ID or note"]} />
+          <form onSubmit={handleSubmit}>
+            <div className="mb-4">
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Donation frequency</span>
+              <div className="inline-flex rounded-xl border border-[var(--border)] bg-bg-deep p-1">
+                {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
+                  <button
+                    key={frequency}
+                    type="button"
+                    onClick={() => setDonationFrequency(frequency)}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-lime text-bg-void" : "text-text-secondary"}`}
+                  >
+                    {frequency === "MONTHLY" ? "Monthly" : "One time"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Amount
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) setAmount(e.target.value); }}
+                  placeholder="0"
+                  required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Currency
+                </label>
+                <Dropdown
+                  value={formCurrency}
+                  options={[
+                    { value: "INR", label: "INR (₹)" },
+                    { value: "USD", label: "USD ($)" },
+                  ]}
+                  onChange={(value) => setFormCurrency(value as DisplayCurrency)}
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  Method
+                </label>
+                <Dropdown
+                  value={method}
+                  options={[
+                    { value: "UPI", label: "UPI" },
+                    { value: "BMC", label: "Buy Me a Coffee" },
+                    { value: "BANK", label: "Bank Transfer" },
+                    { value: "OTHER", label: "Other" },
+                  ]}
+                  onChange={setMethod}
+                />
+              </div>
+            </div>
+
+            <div className="mb-5">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                Reference / Proof Note
+              </label>
+              <input
+                type="text"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="UPI transaction ID, receipt number, or any reference"
+                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
+              />
+              <p className="text-text-tertiary text-[11px] mt-1.5">
+                Add a payment reference to help admins verify your donation
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+                Proof Screenshots <span className="normal-case tracking-normal">(optional, max 20MB each)</span>
+              </div>
+              <div className="flex flex-wrap gap-3 mb-3">
+                {previews.map((src, i) => (
+                  <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)] group">
+                    <Image src={src} alt="" fill unoptimized className="object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                    >
+                      <span className="text-white text-lg">&times;</span>
+                    </button>
+                  </div>
+                ))}
+                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] hover:border-[var(--border-hover)] cursor-pointer flex flex-col items-center justify-center transition-colors">
+                  <span className="text-text-tertiary text-xl">+</span>
+                  <span className="text-text-tertiary text-[8px] uppercase tracking-wider">Photo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFiles}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {formError && (
+              <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
+                {formError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting || uploading || !amount}
+              className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
+            >
+              {uploading ? "Uploading..." : submitting ? "Submitting..." : "Submit Donation"}
+            </button>
+          </form>
+        </div>
+      )}
+
       {paymentAccess?.razorpay && (
         <RazorpayDonationCard onSuccess={async () => {
           await Promise.all([load(), loadPaymentAccess()]);
@@ -399,150 +537,6 @@ export default function DonorDashboard() {
           <div className="text-xl font-bold text-mint">{approvedCount}</div>
         </div>
       </div>
-
-      {/* Success banner */}
-      {success && (
-        <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm animate-fade-in">
-          Manual payment submitted! Your donation is pending admin approval.
-        </div>
-      )}
-
-      {/* Submission form */}
-      {showForm && (
-        <div className="glass-card p-4 sm:p-6 mb-6 animate-scale-in">
-          <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-5">
-            Record an existing payment
-          </div>
-          <FormExample lines={["Amount: 1000 · Currency: INR · Method: UPI", "Reference: UPI transaction ID or note"]} />
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Donation frequency</span>
-              <div className="inline-flex rounded-xl border border-[var(--border)] bg-bg-deep p-1">
-                {(["ONE_TIME", "MONTHLY"] as const).map((frequency) => (
-                  <button
-                    key={frequency}
-                    type="button"
-                    onClick={() => setDonationFrequency(frequency)}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${donationFrequency === frequency ? "bg-lime text-bg-void" : "text-text-secondary"}`}
-                  >
-                    {frequency === "MONTHLY" ? "Monthly" : "One time"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              {/* Amount */}
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Amount
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={amount}
-                  onChange={(e) => { if (/^\d*\.?\d*$/.test(e.target.value)) setAmount(e.target.value); }}
-                  placeholder="0"
-                  required
-                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
-                />
-              </div>
-              {/* Currency */}
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Currency
-                </label>
-                <Dropdown
-                  value={formCurrency}
-                  options={[
-                    { value: "INR", label: "INR (₹)" },
-                    { value: "USD", label: "USD ($)" },
-                  ]}
-                  onChange={(value) => setFormCurrency(value as DisplayCurrency)}
-                />
-              </div>
-              {/* Method */}
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  Method
-                </label>
-                <Dropdown
-                  value={method}
-                  options={[
-                    { value: "UPI", label: "UPI" },
-                    { value: "BMC", label: "Buy Me a Coffee" },
-                    { value: "BANK", label: "Bank Transfer" },
-                    { value: "OTHER", label: "Other" },
-                  ]}
-                  onChange={setMethod}
-                />
-              </div>
-            </div>
-
-            {/* Reference / proof note */}
-            <div className="mb-5">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                Reference / Proof Note
-              </label>
-              <input
-                type="text"
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-                placeholder="UPI transaction ID, receipt number, or any reference"
-                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-[var(--border-active)] transition-colors"
-              />
-              <p className="text-text-tertiary text-[11px] mt-1.5">
-                Add a payment reference to help admins verify your donation
-              </p>
-            </div>
-
-            {/* Proof screenshots */}
-            <div className="mb-5">
-              <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
-                Proof Screenshots <span className="normal-case tracking-normal">(optional, max 20MB each)</span>
-              </div>
-              <div className="flex flex-wrap gap-3 mb-3">
-                {previews.map((src, i) => (
-                  <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-[var(--border)] group">
-                    <Image src={src} alt="" fill unoptimized className="object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeFile(i)}
-                      className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                    >
-                      <span className="text-white text-lg">&times;</span>
-                    </button>
-                  </div>
-                ))}
-                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] hover:border-[var(--border-hover)] cursor-pointer flex flex-col items-center justify-center transition-colors">
-                  <span className="text-text-tertiary text-xl">+</span>
-                  <span className="text-text-tertiary text-[8px] uppercase tracking-wider">Photo</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFiles}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-
-            {formError && (
-              <div className="mb-4 p-3 rounded-lg bg-coral/8 border border-coral/20 text-coral text-sm">
-                {formError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting || uploading || !amount}
-              className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
-            >
-              {uploading ? "Uploading..." : submitting ? "Submitting..." : "Submit Donation"}
-            </button>
-          </form>
-        </div>
-      )}
 
       {/* Filter tabs */}
       {donationCount > 0 && (
