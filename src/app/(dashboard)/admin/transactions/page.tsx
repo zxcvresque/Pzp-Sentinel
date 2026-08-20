@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import RazorpayMark from "@/components/RazorpayMark";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
@@ -331,9 +332,7 @@ export default function TransactionsPage() {
         onClick={() => updateFilter("method", "RAZORPAY")}
         className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${filters.method === "RAZORPAY" ? "border-sky-400/40 bg-sky-400/10 text-sky-300" : "border-[var(--border)] text-text-secondary hover:bg-[var(--bg-hover)]"}`}
       >
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white shadow-sm">
-          <Image src="/Payment Apps Icons/razorpay-logo-notext.png" alt="" width={20} height={20} className="h-5 w-5 object-contain" />
-        </span>
+        <RazorpayMark size="sm" />
         Only
       </button>
       <button

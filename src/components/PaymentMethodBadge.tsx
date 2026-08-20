@@ -1,4 +1,5 @@
 import Image from "next/image";
+import RazorpayMark from "@/components/RazorpayMark";
 
 const ASSET_ROOT = "/Payment%20Apps%20Icons";
 const UPI_ICON = { src: `${ASSET_ROOT}/500px-UPI-Logo.webp`, alt: "UPI" };
@@ -61,7 +62,7 @@ export default function PaymentMethodBadge({
   if (normalizedMethod === "RAZORPAY") {
     return (
       <span title={label ? `Razorpay · ${label}` : "Razorpay"} className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/20 bg-sky-400/[.06] px-2 py-1 text-[10px] font-semibold text-sky-300">
-        <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={18} height={18} className="h-[18px] w-[18px] object-contain" />
+        <RazorpayMark size="xs" />
         {detailIcon ? (
           <Image
             src={detailIcon.src}

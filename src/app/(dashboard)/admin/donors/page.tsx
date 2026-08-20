@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import RazorpayMark from "@/components/RazorpayMark";
 import TgUser from "@/components/TgUser";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import PageTour from "@/components/PageTour";
@@ -185,8 +186,7 @@ export default function DonorsLeaderboard() {
                     <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.razorpayAccess ? "border-lime/40 bg-lime/10 text-text-primary shadow-[0_0_18px_var(--lime-glow)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.razorpayAccess} disabled={savingAccess === razorpayKey}
                         onChange={(event) => void toggleAccess(donor, "RAZORPAY", event.target.checked)} className="sr-only" aria-label={`Allow Razorpay for ${donor.name}`} />
-                      <Image src="/Payment%20Apps%20Icons/razorpay-logo-notext.png" alt="" width={22} height={22}
-                        className={`h-[22px] w-[22px] object-contain transition-opacity ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
+                      <RazorpayMark size="sm" className={`transition-opacity ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
                       <span className="hidden text-xs sm:inline">Allow Razorpay</span>
                     </label>
                   </div>

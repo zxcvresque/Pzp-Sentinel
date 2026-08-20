@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import RazorpayMark from "@/components/RazorpayMark";
 import { RAZORPAY_CHECKOUT_TIMEOUT_SECONDS } from "@/lib/razorpay-checkout";
 
 type CheckoutSuccess = {
@@ -215,9 +216,7 @@ export default function RazorpayDonationCard({
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-lime/20 bg-lime/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-lime">Secure checkout</span>
-            <span className="grid h-8 w-8 place-items-center rounded-lg border border-[#3395ff]/25 bg-[#3395ff]/10 shadow-[0_5px_20px_rgba(51,149,255,.12)]">
-              <Image src={`${PAYMENT_ICON_ROOT}/razorpay-logo-notext.png`} alt="Razorpay checkout" width={21} height={21} className="h-[21px] w-[21px] object-contain" priority />
-            </span>
+            <RazorpayMark size="md" className="ring-[#3395ff]/25 shadow-[0_5px_20px_rgba(51,149,255,.12)]" />
           </div>
           <h2 className="max-w-xl text-xl font-extrabold leading-tight sm:text-2xl">
             Make a <span className="font-display text-lime">donation</span> securely

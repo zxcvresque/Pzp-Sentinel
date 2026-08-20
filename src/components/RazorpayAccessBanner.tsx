@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import RazorpayMark from "@/components/RazorpayMark";
 
 const ASSET_ROOT = "/Payment%20Apps%20Icons";
 const METHODS = [
@@ -44,9 +45,7 @@ export default function RazorpayAccessBanner({
       <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-sky-400/10">
-              <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={22} height={22} className="h-[22px] w-[22px] object-contain" />
-            </span>
+            <RazorpayMark size="md" />
             <h2 className="text-base font-bold text-text-primary">UPI &amp; Bank Methods are not enabled for your account yet</h2>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-text-secondary">
