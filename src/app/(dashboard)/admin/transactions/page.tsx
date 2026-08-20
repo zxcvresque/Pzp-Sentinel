@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
@@ -299,7 +300,7 @@ export default function TransactionsPage() {
 
   const allVisibleSelected = transactions.length > 0 && transactions.every((tx) => selected.has(tx.id));
   return <div>
-    <style>{`.input{width:100%;border:1px solid var(--border);border-radius:.5rem;background:var(--bg-deep);padding:.75rem 1rem;color:var(--text-primary);outline:none}.input:focus{border-color:rgba(190,242,100,.3)}.pill{border-radius:999px;background:rgba(255,255,255,.04);padding:.3rem .75rem;font-size:.75rem;font-weight:600;transition:background .15s}.pill:hover{background:rgba(255,255,255,.08)}`}</style>
+    <style>{`.input{width:100%;border:1px solid var(--border);border-radius:.5rem;background:var(--bg-deep);padding:.75rem 1rem;color:var(--text-primary);outline:none}.input:focus{border-color:rgba(190,242,100,.3)}.pill{white-space:nowrap;border-radius:999px;background:rgba(255,255,255,.04);padding:.3rem .75rem;font-size:.75rem;font-weight:600;transition:background .15s}.pill:hover{background:rgba(255,255,255,.08)}`}</style>
     <ConfirmDialog open={reviewedEditConfirm} onClose={() => { setReviewedEditConfirm(false); setPendingReviewedSubmit(false); }} onConfirm={() => { setReviewedEditConfirm(false); if (pendingReviewedSubmit) void submitForm(true); }} title="Edit a reviewed transaction?" message="This can change historical balances. The before/after values will remain in the audit and Telegram logs." confirmLabel="Save reviewed edit" variant="default" loading={saving} />
     <ActionDialog open={Boolean(action)} action={action?.kind || "APPROVE"} count={action?.ids.length || 0} loading={actionLoading} onClose={() => setAction(null)} onConfirm={runAction} />
 
@@ -307,6 +308,40 @@ export default function TransactionsPage() {
     {feedback && <div role="status" className={`mb-4 rounded-xl border p-4 text-sm ${feedback.tone === "success" ? "border-mint/20 bg-mint/8 text-mint" : "border-coral/20 bg-coral/8 text-coral"}`}>{feedback.text}</div>}
     {error && <div className="mb-4 rounded-xl border border-coral/20 bg-coral/8 p-4 text-sm text-coral">{error} <button className="underline" onClick={() => void load()}>Retry</button></div>}
     {showCreate && editor()}
+
+    <div className="mb-3 flex flex-wrap items-center gap-2" aria-label="Quick provider view">
+      <span className="mr-1 font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">Quick view</span>
+      <button
+        type="button"
+        aria-pressed={filters.method === "ALL"}
+        onClick={() => updateFilter("method", "ALL")}
+        className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors ${filters.method === "ALL" ? "border-lime/35 bg-lime/10 text-lime" : "border-[var(--border)] text-text-secondary hover:bg-[var(--bg-hover)]"}`}
+      >
+        All providers
+      </button>
+      <button
+        type="button"
+        aria-pressed={filters.method === "RAZORPAY"}
+        onClick={() => updateFilter("method", "RAZORPAY")}
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${filters.method === "RAZORPAY" ? "border-sky-400/40 bg-sky-400/10 text-sky-300" : "border-[var(--border)] text-text-secondary hover:bg-[var(--bg-hover)]"}`}
+      >
+        <span className="inline-flex h-6 w-[62px] items-center justify-center rounded-md bg-white px-1.5 shadow-sm">
+          <Image src="/Payment Apps Icons/razorpay-icon.svg" alt="" width={52} height={15} className="h-auto w-[52px]" />
+        </span>
+        Razorpay only
+      </button>
+      <button
+        type="button"
+        aria-pressed={filters.method === "BMC"}
+        onClick={() => updateFilter("method", "BMC")}
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${filters.method === "BMC" ? "border-amber/40 bg-amber/10 text-amber" : "border-[var(--border)] text-text-secondary hover:bg-[var(--bg-hover)]"}`}
+      >
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[#ffdd00]">
+          <Image src="/Payment Apps Icons/bmc-logo-no-background.png" alt="" width={12} height={17} className="h-[17px] w-auto" />
+        </span>
+        BMC only
+      </button>
+    </div>
 
     <section className="card mb-4 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -359,12 +394,12 @@ export default function TransactionsPage() {
     </div>
 
     <div className="card overflow-hidden">
-      {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div className="overflow-visible lg:overflow-x-auto"><table className="block w-full lg:table"><thead className="hidden lg:table-header-group"><tr className="border-b border-[var(--border)]">{selectionMode && <th className="w-10 p-4" />}<Th>Description</Th><Th right>Amount</Th><Th>Status</Th><Th>Date</Th><Th>Actions</Th></tr></thead><tbody className="block lg:table-row-group">
-        {transactions.map((tx) => <Fragment key={tx.id}><tr className={`grid ${selectionMode ? "grid-cols-[auto_1fr]" : "grid-cols-1"} gap-x-3 gap-y-4 border-b border-[var(--border)] p-4 lg:table-row lg:p-0 ${tx.voidedAt ? "opacity-60" : ""}`}>
-          {selectionMode && <td className="row-span-4 p-0 lg:table-cell lg:p-4"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></td>}
-          <td className="p-0 lg:table-cell lg:p-4">
-            <div className="text-sm font-medium text-text-primary">{tx.description}</div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
+      {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div className="overflow-visible lg:overflow-x-auto"><table className="block w-full lg:table lg:min-w-[1240px] lg:table-fixed"><colgroup className="hidden lg:table-column-group">{selectionMode && <col className="w-12" />}<col /><col className="w-[145px]" /><col className="w-[150px]" /><col className="w-[190px]" /><col className="w-[360px]" /></colgroup><thead className="hidden lg:table-header-group"><tr className="border-b border-[var(--border)]">{selectionMode && <th className="w-12 p-4" />}<Th>Description</Th><Th right>Amount</Th><Th right>Status</Th><Th right>Date</Th><Th right>Actions</Th></tr></thead><tbody className="block lg:table-row-group">
+        {transactions.map((tx) => <Fragment key={tx.id}><tr className={`grid ${selectionMode ? "grid-cols-[auto_1fr]" : "grid-cols-1"} gap-x-3 gap-y-4 border-b border-[var(--border)] p-4 lg:h-[136px] lg:table-row lg:p-0 ${tx.voidedAt ? "opacity-60" : ""}`}>
+          {selectionMode && <td className="row-span-4 p-0 align-middle lg:table-cell lg:p-4"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></td>}
+          <td className="p-0 align-middle lg:table-cell lg:px-4 lg:py-5">
+            <div className="text-sm font-medium text-text-primary lg:line-clamp-2">{tx.description}</div>
+            <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
               <span>{tx.type}</span>
               {tx.linkedService && <><span>·</span><a href={`/admin/services/${tx.linkedService.id}`} className="text-lime hover:underline">Service: {tx.linkedService.name}</a></>}
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
@@ -376,10 +411,10 @@ export default function TransactionsPage() {
             </div>
             {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
           </td>
-          <td className={`p-0 text-sm font-semibold lg:table-cell lg:p-4 lg:text-right ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="mr-2 font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></td>
-          <td className="p-0 lg:table-cell lg:p-4 lg:text-center"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</td>
-          <td className="p-0 text-xs text-text-secondary lg:table-cell lg:p-4 lg:text-right">{formatDate(tx.date)}</td>
-          <td className={`${selectionMode ? "col-span-2" : ""} p-0 lg:table-cell lg:p-4`}><div className="flex flex-wrap gap-1 lg:justify-center">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{(tx.method === "BMC" || tx.method === "RAZORPAY") && <button onClick={() => void revealProviderDetails(tx)} className="pill text-amber">Provider</button>}{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
+          <td className={`p-0 align-middle text-sm font-semibold lg:table-cell lg:p-4 lg:text-right lg:whitespace-nowrap ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="mr-2 font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></td>
+          <td className="p-0 align-middle lg:table-cell lg:p-4 lg:text-right lg:whitespace-nowrap"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</td>
+          <td className="p-0 align-middle text-xs text-text-secondary lg:table-cell lg:p-4 lg:text-right lg:whitespace-nowrap">{formatDate(tx.date)}</td>
+          <td className={`${selectionMode ? "col-span-2" : ""} p-0 align-middle lg:table-cell lg:p-4`}><div className="flex flex-wrap gap-1 lg:flex-nowrap lg:justify-end">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{(tx.method === "BMC" || tx.method === "RAZORPAY") && <button onClick={() => void revealProviderDetails(tx)} className="pill text-amber">Provider</button>}{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></td>
         </tr>{editingId === tx.id && <tr className="block border-b border-[var(--border)] lg:table-row"><td colSpan={selectionMode ? 6 : 5} className="block p-0 lg:table-cell">{editor()}</td></tr>}</Fragment>)}
       </tbody></table></div>}
     </div>

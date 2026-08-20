@@ -44,7 +44,9 @@ export default function RazorpayAccessBanner({
       <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={34} height={24} className="h-6 w-8 object-contain" />
+            <span className="inline-flex h-7 items-center rounded-md bg-white px-1.5 shadow-[0_2px_8px_rgba(0,0,0,.22)]">
+              <Image src={`${ASSET_ROOT}/razorpay-icon.svg`} alt="Razorpay" width={68} height={15} className="h-[15px] w-[68px] object-contain" />
+            </span>
             <h2 className="text-base font-bold text-text-primary">UPI &amp; Bank Methods are not enabled for your account yet</h2>
           </div>
           <p className="max-w-2xl text-sm leading-6 text-text-secondary">

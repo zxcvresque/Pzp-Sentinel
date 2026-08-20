@@ -5,6 +5,7 @@ import Image from "next/image";
 import TgUser from "@/components/TgUser";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
 import PageTour from "@/components/PageTour";
+import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 import { formatCurrencyAmount, type DisplayCurrency } from "@/lib/currency-display";
 
 interface Donor {
@@ -14,6 +15,8 @@ interface Donor {
   photoUrl?: string | null;
   telegramUser?: string | null;
   amounts: Array<{ currency: DisplayCurrency; amount: number }>;
+  contributions: Array<{ method: string; currency: DisplayCurrency; amount: number }>;
+  totalInr: number | null;
   donationCount: number;
 }
 
@@ -180,8 +183,10 @@ export default function DonorsLeaderboard() {
                     <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.razorpayAccess ? "border-lime/40 bg-lime/10 text-text-primary shadow-[0_0_18px_var(--lime-glow)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.razorpayAccess} disabled={savingAccess === razorpayKey}
                         onChange={(event) => void toggleAccess(donor, "RAZORPAY", event.target.checked)} className="sr-only" aria-label={`Allow Razorpay for ${donor.name}`} />
-                      <Image src="/Payment%20Apps%20Icons/razorpay-logo-notext.png" alt="" width={32} height={24}
-                        className={`h-6 w-8 object-contain transition-opacity ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
+                      <span className={`inline-flex h-6 items-center rounded bg-white px-0.5 transition-opacity sm:h-7 sm:px-1 ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`}>
+                        <Image src="/Payment%20Apps%20Icons/razorpay-icon.svg" alt="" width={54} height={12}
+                          className="h-2 w-8 object-contain sm:h-3 sm:w-[54px]" />
+                      </span>
                       <span className="hidden text-xs sm:inline">Allow Razorpay</span>
                     </label>
                   </div>
@@ -231,6 +236,8 @@ export default function DonorsLeaderboard() {
         <div className="space-y-2">
           {donors.map((donor) => {
             const rd = rankDisplay(donor.rank);
+            const providers = new Set(donor.contributions.map((item) => item.method));
+            const hasBmcAndRazorpay = providers.has("BMC") && providers.has("RAZORPAY");
             return (
               <div
                 key={donor.userId}
@@ -253,10 +260,21 @@ export default function DonorsLeaderboard() {
                 </div>
 
                 {/* Amount */}
-                <div className="text-right shrink-0">
-                  <div className="text-lg font-extrabold text-mint">
-                    {donor.amounts.map(({ currency, amount }) => formatCurrencyAmount(amount, currency)).join(" + ")}
+                <div className="max-w-[62%] shrink-0 text-right sm:max-w-none">
+                  <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-base font-extrabold text-mint sm:text-lg">
+                    {donor.contributions.map(({ method, currency, amount }, index) => (
+                      <span key={`${method}:${currency}`} className="inline-flex items-center gap-1.5">
+                        {index > 0 && <span className="text-text-tertiary">+</span>}
+                        <PaymentMethodBadge method={method} compact />
+                        <span>{formatCurrencyAmount(amount, currency)}</span>
+                      </span>
+                    ))}
                   </div>
+                  {hasBmcAndRazorpay && donor.totalInr !== null && (
+                    <div className="mt-1 font-mono text-[10px] font-medium text-text-tertiary">
+                      ≈ {formatCurrencyAmount(donor.totalInr, "INR")} total
+                    </div>
+                  )}
                 </div>
               </div>
             );

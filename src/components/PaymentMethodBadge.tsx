@@ -59,7 +59,9 @@ export default function PaymentMethodBadge({
   if (normalizedMethod === "RAZORPAY") {
     return (
       <span title={label ? `Razorpay · ${label}` : "Razorpay"} className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/20 bg-sky-400/[.06] px-2 py-1 text-[10px] font-semibold text-sky-300">
-        <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={24} height={18} className="h-4 w-5 object-contain" />
+        <span className="inline-flex h-5 items-center rounded bg-white px-1 shadow-[0_1px_5px_rgba(0,0,0,.2)]">
+          <Image src={`${ASSET_ROOT}/razorpay-icon.svg`} alt="Razorpay" width={54} height={12} className="h-3 w-[54px] object-contain" />
+        </span>
         {detailIcon ? (
           <Image
             src={detailIcon.src}

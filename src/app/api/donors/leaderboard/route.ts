@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     select: {
       amount: true,
       currency: true,
+      method: true,
       fromUserId: true,
       createdById: true,
       bmcEventId: true,
@@ -81,6 +82,8 @@ export async function GET(request: NextRequest) {
       telegramUser: string | null;
       rankingAmount: number;
       amounts: { currency: "INR" | "USD"; amount: number }[];
+      contributions: { method: string; currency: "INR" | "USD"; amount: number }[];
+      hasUsd: boolean;
       donationCount: number;
     }
   > = {};
@@ -102,6 +105,8 @@ export async function GET(request: NextRequest) {
         telegramUser: tx.fromUser.telegramUser,
         rankingAmount: 0,
         amounts: [],
+        contributions: [],
+        hasUsd: false,
         donationCount: 0,
       };
     }
@@ -111,6 +116,12 @@ export async function GET(request: NextRequest) {
     const existingAmount = entry.amounts.find((item) => item.currency === currency);
     if (existingAmount) existingAmount.amount += amount;
     else entry.amounts.push({ currency, amount });
+    const existingContribution = entry.contributions.find(
+      (item) => item.method === tx.method && item.currency === currency,
+    );
+    if (existingContribution) existingContribution.amount += amount;
+    else entry.contributions.push({ method: tx.method, currency, amount });
+    if (currency === "USD") entry.hasUsd = true;
     entry.rankingAmount += currency === "USD" && usdToInr ? amount * usdToInr : amount;
     entry.donationCount += 1;
   }
@@ -118,13 +129,21 @@ export async function GET(request: NextRequest) {
   // Sort by the normalized comparison value and assign rank.
   const ranked = Object.values(aggregated)
     .sort((a, b) => b.rankingAmount - a.rankingAmount)
-    .map(({ rankingAmount: _rankingAmount, ...entry }, index) => ({
+    .map(({ rankingAmount, hasUsd, ...entry }, index) => ({
       rank: index + 1,
       ...entry,
+      totalInr: !hasUsd || usdToInr ? Math.round(rankingAmount * 100) / 100 : null,
       amounts: entry.amounts
         .map((item) => ({ ...item, amount: Math.round(item.amount * 100) / 100 }))
         .sort((a, b) => a.currency.localeCompare(b.currency)),
+      contributions: entry.contributions
+        .map((item) => ({ ...item, amount: Math.round(item.amount * 100) / 100 }))
+        .sort((a, b) => {
+          const providerOrder: Record<string, number> = { BMC: 0, RAZORPAY: 1 };
+          return (providerOrder[a.method] ?? 9) - (providerOrder[b.method] ?? 9)
+            || a.currency.localeCompare(b.currency);
+        }),
     }));
 
-  return NextResponse.json({ leaderboard: ranked, period });
+  return NextResponse.json({ leaderboard: ranked, period, exchangeRate: usdToInr });
 }
