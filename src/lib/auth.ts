@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { prisma } from "./db";
 import type { Role } from "@/generated/prisma/enums";
@@ -21,7 +22,8 @@ export async function signToken(
   // expiry — used to re-mint a token while preserving its original expiry.
   expiration: string | number = "24h",
 ): Promise<string> {
-  const { exp: _exp, ...claims } = payload;
+  const claims: Partial<JwtPayload> = { ...payload };
+  delete claims.exp;
   return new SignJWT(claims as unknown as Record<string, unknown>)
     .setProtectedHeader({ alg: "HS256" })
     .setExpirationTime(expiration)
@@ -54,7 +56,19 @@ export async function getCurrentUser() {
 }
 
 export function generateOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100000, 1_000_000).toString();
+}
+
+export function hashOtp(telegramId: string, otp: string): string {
+  return createHmac("sha256", process.env.JWT_SECRET!)
+    .update(`${telegramId}:${otp}`)
+    .digest("hex");
+}
+
+export function verifyOtpHash(telegramId: string, otp: string, expected: string): boolean {
+  const actual = Buffer.from(hashOtp(telegramId, otp), "hex");
+  const stored = Buffer.from(expected, "hex");
+  return actual.length === stored.length && timingSafeEqual(actual, stored);
 }
 
 export function hasRole(userRoles: Role[], required: Role): boolean {

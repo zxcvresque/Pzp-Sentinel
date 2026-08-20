@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import TgUser from "@/components/TgUser";
 import OneTimeDonationLinks from "@/components/OneTimeDonationLinks";
@@ -48,9 +48,25 @@ export default function DonorsLeaderboard() {
   const [savingAccess, setSavingAccess] = useState("");
   const [accessMessage, setAccessMessage] = useState("");
 
+  const fetchLeaderboard = useCallback(async (p: Period) => {
+    setPeriodLoading(true);
+    try {
+      const res = await fetch(`/api/donors/leaderboard?period=${p}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setDonors(data.leaderboard || []);
+    } catch {
+      setDonors([]);
+    } finally {
+      setLoading(false);
+      setPeriodLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchLeaderboard(period);
-  }, [period]);
+    const timer = window.setTimeout(() => { void fetchLeaderboard(period); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [period, fetchLeaderboard]);
 
   useEffect(() => {
     fetch("/api/donors/access", { cache: "no-store" })
@@ -83,21 +99,6 @@ export default function DonorsLeaderboard() {
       setAccessMessage(error instanceof Error ? error.message : "Could not update payment access");
     } finally {
       setSavingAccess("");
-    }
-  }
-
-  async function fetchLeaderboard(p: Period) {
-    setPeriodLoading(true);
-    try {
-      const res = await fetch(`/api/donors/leaderboard?period=${p}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setDonors(data.leaderboard || []);
-    } catch {
-      setDonors([]);
-    } finally {
-      setLoading(false);
-      setPeriodLoading(false);
     }
   }
 
@@ -176,17 +177,16 @@ export default function DonorsLeaderboard() {
                     <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.bmcAccess ? "border-amber/40 bg-amber/12 text-text-primary shadow-[0_0_18px_rgba(251,191,36,.08)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.bmcAccess} disabled={savingAccess === bmcKey}
                         onChange={(event) => void toggleAccess(donor, "BMC", event.target.checked)} className="sr-only" aria-label={`Allow Buy Me a Coffee for ${donor.name}`} />
-                      <Image src="/Payment%20Apps%20Icons/bmc-logo-no-background.png" alt="" width={18} height={26}
-                        className={`h-6 w-auto object-contain transition-opacity ${donor.bmcAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
+                      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md bg-white p-1 shadow-sm transition-opacity ${donor.bmcAccess ? "opacity-100" : "opacity-35 grayscale"}`}>
+                        <Image src="/Payment%20Apps%20Icons/bmc-logo-no-background.png" alt="" width={13} height={19} className="h-[19px] w-auto object-contain" />
+                      </span>
                       <span className="hidden text-xs sm:inline">Allow BMC</span>
                     </label>
                     <label className={`grid h-11 w-11 cursor-pointer place-items-center rounded-xl border transition-all sm:flex sm:w-auto sm:gap-2 sm:px-3 ${donor.razorpayAccess ? "border-lime/40 bg-lime/10 text-text-primary shadow-[0_0_18px_var(--lime-glow)]" : "border-white/10 bg-white/[.025] text-text-tertiary"}`}>
                       <input type="checkbox" checked={donor.razorpayAccess} disabled={savingAccess === razorpayKey}
                         onChange={(event) => void toggleAccess(donor, "RAZORPAY", event.target.checked)} className="sr-only" aria-label={`Allow Razorpay for ${donor.name}`} />
-                      <span className={`inline-flex h-6 items-center rounded bg-white px-0.5 transition-opacity sm:h-7 sm:px-1 ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`}>
-                        <Image src="/Payment%20Apps%20Icons/razorpay-icon.svg" alt="" width={54} height={12}
-                          className="h-2 w-8 object-contain sm:h-3 sm:w-[54px]" />
-                      </span>
+                      <Image src="/Payment%20Apps%20Icons/razorpay-logo-notext.png" alt="" width={22} height={22}
+                        className={`h-[22px] w-[22px] object-contain transition-opacity ${donor.razorpayAccess ? "opacity-100" : "opacity-35 grayscale"}`} />
                       <span className="hidden text-xs sm:inline">Allow Razorpay</span>
                     </label>
                   </div>

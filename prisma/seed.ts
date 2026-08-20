@@ -54,13 +54,7 @@ async function main() {
     { name: "Docs",     color: "#34d399" },
   ];
 
-  for (const t of tagData) {
-    await prisma.tag.upsert({
-      where: { name: t.name },
-      update: { color: t.color },
-      create: t,
-    });
-  }
+  await prisma.tag.createMany({ data: tagData });
   console.log(`Tags: ${tagData.map((t) => t.name).join(", ")}`);
 
   console.log("\nClean slate ready.");

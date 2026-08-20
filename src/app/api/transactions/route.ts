@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   });
   const orderBy = transactionOrderFromParams(searchParams);
 
-  const [transactions, total] = await Promise.all([
+  const [transactions, total, summaryRows] = await Promise.all([
     prisma.transaction.findMany({
       where,
       include: {
@@ -54,10 +54,16 @@ export async function GET(req: NextRequest) {
       take: limit,
     }),
     prisma.transaction.count({ where }),
+    access.selfScoped ? prisma.transaction.groupBy({
+      by: ["status", "currency"],
+      where: { fromUserId: user.id, voidedAt: null, isTest: false },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }) : Promise.resolve([]),
   ]);
 
-  const safeTransactions = transactions.map(({ providerDetailsEncrypted: _providerDetailsEncrypted, ...transaction }) => transaction);
-  return NextResponse.json({ transactions: safeTransactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  const safeTransactions = transactions.map((transaction) => ({ ...transaction, providerDetailsEncrypted: undefined }));
+  return NextResponse.json({ transactions: safeTransactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)), summary: summaryRows });
 }
 
 export async function POST(req: NextRequest) {
@@ -91,6 +97,12 @@ export async function POST(req: NextRequest) {
   const transactionDate = date ? new Date(date) : new Date();
   if (Number.isNaN(transactionDate.getTime())) {
     return NextResponse.json({ error: "Invalid transaction date" }, { status: 400 });
+  }
+  if (!['INR', 'USD'].includes(currency || 'INR')) return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
+  if (!['IN', 'OUT'].includes(direction || 'IN')) return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
+  if (!['DONATION', 'EXPENSE', 'SUBSCRIPTION', 'OTHER'].includes(type || (direction === 'IN' ? 'DONATION' : 'EXPENSE'))) return NextResponse.json({ error: "Invalid transaction type" }, { status: 400 });
+  if (!['UPI', 'BANK', 'OTHER'].includes(method || 'OTHER')) {
+    return NextResponse.json({ error: "BMC and Razorpay records can only be created by a verified provider checkout or webhook" }, { status: 400 });
   }
 
   // DONOR can only create direction=IN (donations)
@@ -155,6 +167,8 @@ export async function POST(req: NextRequest) {
       // admins. Admin-ledger income stays unlinked unless a donor is selected.
       fromUserId: direction === "IN" && access.selfScoped ? user.id : fromUserId || null,
       status: txStatus,
+      providerVerified: false,
+      providerState: "MANUAL",
       createdById: user.id,
       serviceId: direction === "OUT" && type === "SUBSCRIPTION" ? service?.id || serviceId || null : null,
     }, include: { fromUser: true, createdBy: true, linkedService: { select: { id: true, name: true } } } });
@@ -186,6 +200,7 @@ export async function POST(req: NextRequest) {
     after: transaction,
     userName: user.name,
     details: `${transaction.direction} ${transaction.currency} ${transaction.amount}`,
+    request: req,
   });
 
   logTransaction({

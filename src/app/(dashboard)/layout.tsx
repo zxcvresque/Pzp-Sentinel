@@ -131,9 +131,11 @@ export default function DashboardLayout({
       return;
     }
     if (isGated && user.roles.includes(roleFromPath)) {
-      setActiveRole(roleFromPath);
+      const timer = window.setTimeout(() => setActiveRole(roleFromPath), 0);
+      return () => window.clearTimeout(timer);
     } else if (!isGated) {
-      setActiveRole((current) => user.roles.includes(current) ? current : user.roles[0]);
+      const timer = window.setTimeout(() => setActiveRole((current) => user.roles.includes(current) ? current : user.roles[0]), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [pathname, user, router]);
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { CSSProperties, FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
@@ -20,6 +20,8 @@ interface Server {
   username: string;
   sshPort: number;
   password?: string;
+  hasPassword?: boolean;
+  hasSshKeyFile?: boolean;
   sshKeyFileUrl?: string | null;
   sshKeyFileName?: string | null;
   accessPublicKeys?: string | null;
@@ -49,6 +51,10 @@ interface Server {
     month: MetricSummary;
   };
   lastSeen: string;
+  processHealth?: Array<{ name?: string; pm2_env?: { status?: string } }> | null;
+  releaseVersion?: string | null;
+  projects?: Array<{ id: string; name: string }>;
+  maintainers?: Array<{ id: string; name: string }>;
 }
 
 interface Subscription {
@@ -378,6 +384,8 @@ function ApprovedServerCard({
   onRefundRequest: (server: Server) => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [revealedPassword, setRevealedPassword] = useState("");
+  const [revealedKeyUrl, setRevealedKeyUrl] = useState("");
   const [copiedPw, setCopiedPw] = useState(false);
   const [copiedSsh, setCopiedSsh] = useState(false);
   const [copiedSshPass, setCopiedSshPass] = useState(false);
@@ -399,14 +407,18 @@ function ApprovedServerCard({
   const sshWithKey = server.sshKeyFileName
     ? `ssh -i ${shellQuote(server.sshKeyFileName)} ${sshPortFlag(sshPort)}${sshTarget(sshUser, server.ip)}`
     : sshBase;
-  const sshPass = server.password
-    ? `sshpass -p ${shellQuote(server.password)} ${sshBase}`
-    : sshBase;
   const publicKeys = parsePublicKeys(server.accessPublicKeys);
   const keysCommand = publicKeys.length > 0 ? authorizedKeysCommand(sshUser, publicKeys) : "";
   const load = loadStatus(server.loadAvg);
 
   const specEntries = Object.entries(server.specs ?? {});
+
+  async function revealSecret(field: "PASSWORD" | "PRIVATE_KEY", purpose: "REVEAL" | "COPY" = "REVEAL") {
+    const response = await fetch(`/api/vps/${server.id}/reveal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field, purpose }) });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error || "Could not reveal secret");
+    return String(data.value || "");
+  }
 
   return (
     <div className="card p-4 sm:p-5 flex flex-col gap-3">
@@ -454,6 +466,12 @@ function ApprovedServerCard({
                 ))}
               </div>
             )}
+            {(server.projects?.length || server.maintainers?.length) ? (
+              <div className="mt-1 text-[10px] text-[var(--text-tertiary)]">
+                {server.projects?.map((project) => project.name).join(", ") || "Unassigned project"}
+                {server.maintainers?.length ? ` · ${server.maintainers.map((maintainer) => maintainer.name).join(", ")}` : ""}
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -496,6 +514,19 @@ function ApprovedServerCard({
           </button>
         </div>
       </div>
+
+      {(server.releaseVersion || server.processHealth?.length) && (
+        <div className="rounded-lg px-3 py-2" style={{ background: "var(--bg-deep)" }}>
+          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Deployment &amp; processes</span>
+          {server.releaseVersion && <div className="mt-1 font-mono text-[11px] text-[var(--text-secondary)]">Release {server.releaseVersion}</div>}
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {(server.processHealth || []).map((process, index) => {
+              const status = process.pm2_env?.status || "unknown";
+              return <Pill key={`${process.name || "process"}-${index}`} color={status === "online" ? "var(--mint)" : "var(--coral)"} bg={status === "online" ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)"}>{process.name || "process"}: {status}</Pill>;
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Connection: IP (full width) + Username / SSH Port */}
       <div className="grid grid-cols-2 gap-2">
@@ -631,7 +662,7 @@ function ApprovedServerCard({
       )}
 
       {/* Password (admin only, show/copy) */}
-      {server.password && (
+      {server.hasPassword && (
         <div
           className="rounded-lg px-3 py-2"
           style={{ background: "var(--bg-deep)" }}
@@ -641,11 +672,16 @@ function ApprovedServerCard({
           </span>
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm text-[var(--text-primary)] flex-1 break-all">
-              {showPassword ? server.password : "••••••••••••"}
+              {showPassword ? revealedPassword : "••••••••••••"}
             </span>
             <button
               type="button"
-              onClick={() => setShowPassword((v) => !v)}
+              onClick={async () => {
+                if (showPassword) return setShowPassword(false);
+                const value = revealedPassword || await revealSecret("PASSWORD");
+                setRevealedPassword(value);
+                setShowPassword(true);
+              }}
               className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors shrink-0"
               style={{
                 color: "var(--text-secondary)",
@@ -656,8 +692,10 @@ function ApprovedServerCard({
             </button>
             <button
               type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(server.password!);
+              onClick={async () => {
+                const value = await revealSecret("PASSWORD", "COPY");
+                await navigator.clipboard.writeText(value);
+                setRevealedPassword(value);
                 setCopiedPw(true);
                 setTimeout(() => setCopiedPw(false), 2000);
               }}
@@ -699,23 +737,29 @@ function ApprovedServerCard({
           >
             {copiedSsh ? "Copied SSH" : "Copy SSH"}
           </button>
-          {server.sshKeyFileUrl && (
-            <a
-              href={server.sshKeyFileUrl}
+          {server.hasSshKeyFile && !revealedKeyUrl && (
+            <button
+              type="button"
+              onClick={async () => setRevealedKeyUrl(await revealSecret("PRIVATE_KEY"))}
               className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors"
               style={{
                 color: "var(--text-secondary)",
                 background: "var(--bg-card)",
               }}
             >
-              Download key
-            </a>
+              Reveal key link
+            </button>
           )}
-          {server.password && (
+          {revealedKeyUrl && (
+            <a href={revealedKeyUrl} className="font-mono text-[10px] uppercase px-2 py-1 rounded transition-colors" style={{ color: "var(--text-secondary)", background: "var(--bg-card)" }}>Download key</a>
+          )}
+          {server.hasPassword && (
             <button
               type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(sshPass);
+              onClick={async () => {
+                const password = revealedPassword || await revealSecret("PASSWORD", "COPY");
+                setRevealedPassword(password);
+                await navigator.clipboard.writeText(`sshpass -p ${shellQuote(password)} ${sshBase}`);
                 setCopiedSshPass(true);
                 setTimeout(() => setCopiedSshPass(false), 2000);
               }}
@@ -1163,19 +1207,25 @@ function ServerForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [devs, setDevs] = useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [shareWith, setShareWith] = useState<string[]>([]);
+  const [projectIds, setProjectIds] = useState<string[]>(initial?.projects?.map((project) => project.id) ?? []);
+  const [maintainerIds, setMaintainerIds] = useState<string[]>(initial?.maintainers?.map((maintainer) => maintainer.id) ?? []);
 
   useEffect(() => {
-    if (!open || isEdit) return;
-    fetch("/api/users")
-      .then((r) => (r.ok ? r.json() : { users: [] }))
-      .then((d) =>
+    if (!open) return;
+    Promise.all([
+      fetch("/api/users").then((r) => (r.ok ? r.json() : { users: [] })),
+      fetch("/api/projects").then((r) => (r.ok ? r.json() : { projects: [] })),
+    ])
+      .then(([d, projectData]) => {
         setDevs(
           (d.users || [])
             .filter((u: { roles: string[] }) => u.roles.includes("DEV"))
             .map((u: { id: string; name: string }) => ({ id: u.id, name: u.name })),
-        ),
-      )
+        );
+        setProjects((projectData.projects || []).map((project: { id: string; name: string }) => ({ id: project.id, name: project.name })));
+      })
       .catch(() => {});
   }, [open]);
 
@@ -1264,6 +1314,8 @@ function ServerForm({
           notes: notes.trim(),
           planLink: planLink.trim(),
           duration,
+          projectIds,
+          maintainerIds,
           ...(isEdit ? {} : { shareWith }),
         }),
       });
@@ -1292,6 +1344,8 @@ function ServerForm({
       setTagsInput("");
       setNotes("");
       setShareWith([]);
+      setProjectIds([]);
+      setMaintainerIds([]);
       setPlanLink("");
       setDurationMode("NONE");
       setPrice("");
@@ -1646,6 +1700,23 @@ function ServerForm({
             )}
           </div>
 
+          <div className="space-y-3">
+            <span className={sectionClass}>Ownership &amp; responsibility</span>
+            <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">Link the machine to its community projects and the developers responsible for incidents and deployments.</p>
+            <div>
+              <span className={labelClass}>Projects</span>
+              <div className="flex flex-wrap gap-2">
+                {projects.map((project) => <button key={project.id} type="button" onClick={() => setProjectIds((current) => current.includes(project.id) ? current.filter((id) => id !== project.id) : [...current, project.id])} className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border" style={projectIds.includes(project.id) ? { color: "var(--bg-deep)", background: "var(--lime)", borderColor: "var(--lime)" } : { color: "var(--text-secondary)", borderColor: "var(--border)" }}>{project.name}</button>)}
+              </div>
+            </div>
+            <div>
+              <span className={labelClass}>Responsible maintainers</span>
+              <div className="flex flex-wrap gap-2">
+                {devs.map((dev) => <button key={dev.id} type="button" onClick={() => setMaintainerIds((current) => current.includes(dev.id) ? current.filter((id) => id !== dev.id) : [...current, dev.id])} className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border" style={maintainerIds.includes(dev.id) ? { color: "var(--bg-deep)", background: "var(--violet)", borderColor: "var(--violet)" } : { color: "var(--text-secondary)", borderColor: "var(--border)" }}>{dev.name}</button>)}
+              </div>
+            </div>
+          </div>
+
           {!isEdit && (
           <div className="space-y-3">
             <span className={sectionClass}>Share credentials (optional)</span>
@@ -1852,7 +1923,8 @@ export default function AdminVpsPage() {
 
   /* Initial fetch on mount (skeleton shows until this resolves) */
   useEffect(() => {
-    fetchServers();
+    const timer = window.setTimeout(() => { void fetchServers(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchServers]);
 
   /* Background refresh: on focus/visibility + every 20s while visible (agent heartbeats) */
@@ -1883,8 +1955,8 @@ export default function AdminVpsPage() {
       if (!res.ok) throw new Error("Approve failed");
       const data = await res.json();
       const server = servers.find((s) => s.id === id);
-      if (data.token) {
-        setTokenDisplay({ name: server?.name || "Server", token: data.token });
+      if (data.server?.token) {
+        setTokenDisplay({ name: server?.name || data.server.name || "Server", token: data.server.token });
       }
       fetchServers();
     } catch {

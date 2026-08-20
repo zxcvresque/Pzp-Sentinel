@@ -7,6 +7,7 @@ import {
   parseReminderFrequency,
   parseReminderRepeatUnit,
 } from "@/lib/admin-reminders";
+import { logAudit } from "@/lib/audit";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -18,7 +19,7 @@ export async function GET() {
   const reminders = await prisma.reminder.findMany({
     where: { active: true },
     orderBy: { nextFire: "asc" },
-    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, owner: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, acknowledgedBy: { select: { id: true, name: true } } },
   });
 
   return NextResponse.json({ reminders });
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
   const channel = parseReminderChannel(body?.channel ?? "BOTH");
   const repeatEvery = Number(body?.repeatEvery);
   const repeatUnit = parseReminderRepeatUnit(body?.repeatUnit);
+  const ownerId = typeof body?.ownerId === "string" && body.ownerId ? body.ownerId : user.id;
+  const escalationAt = body?.escalationAt ? new Date(body.escalationAt) : null;
 
   if (!message || Number.isNaN(nextFire.getTime())) {
     return NextResponse.json(
@@ -48,6 +51,8 @@ export async function POST(req: NextRequest) {
   if (!frequency || !channel) {
     return NextResponse.json({ error: "Invalid frequency or delivery channel" }, { status: 400 });
   }
+  if (escalationAt && Number.isNaN(escalationAt.getTime())) return NextResponse.json({ error: "Invalid escalation time" }, { status: 400 });
+  if (!await prisma.user.findFirst({ where: { id: ownerId, roles: { has: "ADMIN" }, status: "ACTIVE" }, select: { id: true } })) return NextResponse.json({ error: "Reminder owner must be an active admin" }, { status: 400 });
   if (frequency === "CUSTOM" && (
     !Number.isInteger(repeatEvery) || repeatEvery < 1 || repeatEvery > 10_000 || !repeatUnit
   )) {
@@ -67,9 +72,13 @@ export async function POST(req: NextRequest) {
       channel,
       recipientRoles: ["ADMIN"],
       createdById: user.id,
+      ownerId,
+      escalationAt,
     },
-    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, owner: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });
+
+  await logAudit({ userId: user.id, action: "REMINDER_CREATE", entityType: "Reminder", entityId: reminder.id, after: reminder, userName: user.name, request: req });
 
   // GitHub immutable log
   logReminderAction({

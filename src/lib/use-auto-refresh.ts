@@ -19,7 +19,9 @@ export function useAutoRefresh(
   // Keep the latest callback in a ref so we don't re-subscribe (and reset the
   // interval) every render when `refresh` is a new closure.
   const saved = useRef(refresh);
-  saved.current = refresh;
+  useEffect(() => {
+    saved.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
     const run = () => {

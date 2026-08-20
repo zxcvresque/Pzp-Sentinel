@@ -50,7 +50,9 @@ export default function PaymentMethodBadge({
   if (normalizedMethod === "BMC") {
     return (
       <span title="Buy Me a Coffee" className="inline-flex items-center gap-1.5 rounded-full border border-amber/20 bg-amber/[.06] px-2 py-1 text-[10px] font-semibold text-amber">
-        <Image src={`${ASSET_ROOT}/bmc-logo-no-background.png`} alt="Buy Me a Coffee" width={12} height={18} className="h-4 w-auto object-contain" />
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white p-0.5 shadow-sm">
+          <Image src={`${ASSET_ROOT}/bmc-logo-no-background.png`} alt="Buy Me a Coffee" width={11} height={16} className="h-4 w-auto object-contain" />
+        </span>
         {!compact && <span>BMC</span>}
       </span>
     );
@@ -59,9 +61,7 @@ export default function PaymentMethodBadge({
   if (normalizedMethod === "RAZORPAY") {
     return (
       <span title={label ? `Razorpay · ${label}` : "Razorpay"} className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/20 bg-sky-400/[.06] px-2 py-1 text-[10px] font-semibold text-sky-300">
-        <span className="inline-flex h-5 items-center rounded bg-white px-1 shadow-[0_1px_5px_rgba(0,0,0,.2)]">
-          <Image src={`${ASSET_ROOT}/razorpay-icon.svg`} alt="Razorpay" width={54} height={12} className="h-3 w-[54px] object-contain" />
-        </span>
+        <Image src={`${ASSET_ROOT}/razorpay-logo-notext.png`} alt="Razorpay" width={18} height={18} className="h-[18px] w-[18px] object-contain" />
         {detailIcon ? (
           <Image
             src={detailIcon.src}

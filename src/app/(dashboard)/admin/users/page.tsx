@@ -16,6 +16,7 @@ interface User {
   roles: string[];
   status: string;
   chatId: string | null;
+  githubUsername?: string | null;
   createdAt: string;
 }
 
@@ -23,6 +24,7 @@ interface EditState {
   roles: string[];
   name: string;
   telegramUser: string;
+  githubUsername: string;
 }
 
 export default function UsersPage() {
@@ -32,7 +34,7 @@ export default function UsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState>({ roles: [], name: "", telegramUser: "" });
+  const [editState, setEditState] = useState<EditState>({ roles: [], name: "", telegramUser: "", githubUsername: "" });
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Delete confirmation
@@ -43,6 +45,7 @@ export default function UsersPage() {
   const [name, setName] = useState("");
   const [telegramId, setTelegramId] = useState("");
   const [telegramUser, setTelegramUser] = useState("");
+  const [githubUsername, setGithubUsername] = useState("");
   const [roles, setRoles] = useState<string[]>(["DONOR"]);
 
   useEffect(() => {
@@ -76,6 +79,7 @@ export default function UsersPage() {
     setName(u.name);
     setTelegramId(u.telegramId);
     setTelegramUser(u.telegramUser);
+    setGithubUsername(u.githubUsername || "");
     setRoles(["DONOR"]);
     setShowForm(true);
   }
@@ -99,6 +103,7 @@ export default function UsersPage() {
           roles,
           name: name || existingNoRole.name,
           telegramUser: telegramUser || existingNoRole.telegramUser,
+          githubUsername,
         }),
       });
       if (res.ok) {
@@ -110,6 +115,7 @@ export default function UsersPage() {
         setName("");
         setTelegramId("");
         setTelegramUser("");
+        setGithubUsername("");
         setRoles(["DONOR"]);
       } else {
         const data = await res.json();
@@ -122,7 +128,7 @@ export default function UsersPage() {
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, telegramId, telegramUser, roles }),
+      body: JSON.stringify({ name, telegramId, telegramUser, githubUsername, roles }),
     });
 
     if (res.ok) {
@@ -132,6 +138,7 @@ export default function UsersPage() {
       setName("");
       setTelegramId("");
       setTelegramUser("");
+      setGithubUsername("");
       setRoles(["DONOR"]);
     } else {
       const data = await res.json();
@@ -146,6 +153,7 @@ export default function UsersPage() {
       roles: [...u.roles],
       name: u.name,
       telegramUser: u.telegramUser,
+      githubUsername: u.githubUsername || "",
     });
   }
 
@@ -158,6 +166,7 @@ export default function UsersPage() {
         roles: editState.roles,
         name: editState.name,
         telegramUser: editState.telegramUser,
+        githubUsername: editState.githubUsername,
       }),
     });
     if (res.ok) {
@@ -165,7 +174,7 @@ export default function UsersPage() {
       setUsers((prev) =>
         prev.map((u) =>
           u.id === id
-            ? { ...u, roles: data.user.roles, name: data.user.name, telegramUser: data.user.telegramUser }
+            ? { ...u, roles: data.user.roles, name: data.user.name, telegramUser: data.user.telegramUser, githubUsername: data.user.githubUsername }
             : u
         )
       );
@@ -238,6 +247,7 @@ export default function UsersPage() {
     const isEditing = editingId === u.id;
     const isToggling = togglingId === u.id;
     const isInactive = u.status === "INACTIVE";
+    const isProtectedAdmin = u.roles.includes("ADMIN");
 
     return (
       <tr
@@ -268,11 +278,19 @@ export default function UsersPage() {
                 className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
               />
               <div className="text-text-tertiary text-xs mt-1">{u.telegramId}</div>
+              <input
+                type="text"
+                value={editState.githubUsername}
+                onChange={(e) => setEditState((s) => ({ ...s, githubUsername: e.target.value }))}
+                placeholder="GitHub username"
+                className="mt-2 w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-lime/30"
+              />
             </div>
           ) : (
             <div>
               <div>@{u.telegramUser || "—"}</div>
               <div className="text-text-tertiary text-xs">{u.telegramId}</div>
+              {u.githubUsername && <div className="mt-1 text-xs text-violet">GitHub @{u.githubUsername}</div>}
             </div>
           )}
         </td>
@@ -285,6 +303,7 @@ export default function UsersPage() {
                   <button
                     key={role}
                     onClick={() => toggleEditRole(role)}
+                    disabled={isProtectedAdmin}
                     className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer"
                     style={editState.roles.includes(role)
                       ? { background: rc.bg, color: rc.text, boxShadow: `inset 0 0 0 1px ${rc.border}` }
@@ -345,7 +364,7 @@ export default function UsersPage() {
                 >
                   Edit
                 </button>
-                <button
+                {!isProtectedAdmin && <button
                   onClick={() => toggleStatus(u)}
                   disabled={isToggling}
                   className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
@@ -359,8 +378,8 @@ export default function UsersPage() {
                     : u.status === "ACTIVE"
                       ? "Deactivate"
                       : "Activate"}
-                </button>
-                {isInactive && (
+                </button>}
+                {isInactive && !isProtectedAdmin && (
                   <button
                     onClick={() => setDeleteTarget(u)}
                     title="Permanently delete"
@@ -388,6 +407,7 @@ export default function UsersPage() {
     const isEditing = editingId === u.id;
     const isToggling = togglingId === u.id;
     const isInactive = u.status === "INACTIVE";
+    const isProtectedAdmin = u.roles.includes("ADMIN");
 
     if (isEditing) {
       return (
@@ -408,6 +428,13 @@ export default function UsersPage() {
               className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
             />
             <div className="text-text-tertiary text-xs mt-1">{u.telegramId}</div>
+            <input
+              type="text"
+              value={editState.githubUsername}
+              onChange={(e) => setEditState((s) => ({ ...s, githubUsername: e.target.value }))}
+              placeholder="GitHub username"
+              className="mt-2 w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+            />
           </div>
           <div className="flex flex-wrap gap-1">
             {["ADMIN", "DONOR", "DEV"].map((role) => {
@@ -416,6 +443,7 @@ export default function UsersPage() {
                 <button
                   key={role}
                   onClick={() => toggleEditRole(role)}
+                  disabled={isProtectedAdmin}
                   className="font-mono text-[10px] uppercase tracking-[0.08em] px-2 py-0.5 rounded transition-colors cursor-pointer"
                   style={editState.roles.includes(role)
                     ? { background: rc.bg, color: rc.text, boxShadow: `inset 0 0 0 1px ${rc.border}` }
@@ -484,7 +512,7 @@ export default function UsersPage() {
           >
             Edit
           </button>
-          <button
+          {!isProtectedAdmin && <button
             onClick={() => toggleStatus(u)}
             disabled={isToggling}
             className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
@@ -494,8 +522,8 @@ export default function UsersPage() {
             } disabled:opacity-40`}
           >
             {isToggling ? "..." : u.status === "ACTIVE" ? "Deactivate" : "Activate"}
-          </button>
-          {isInactive && (
+          </button>}
+          {isInactive && !isProtectedAdmin && (
             <button
               onClick={() => setDeleteTarget(u)}
               className="px-3 py-1 rounded-full text-xs text-text-tertiary hover:text-coral hover:bg-coral/10 transition-colors flex items-center gap-1"
@@ -733,6 +761,18 @@ export default function UsersPage() {
                   onChange={(e) => setTelegramUser(e.target.value)}
                   placeholder="@username"
                   required
+                  className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
+                />
+              </div>
+              <div>
+                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  GitHub Username
+                </label>
+                <input
+                  type="text"
+                  value={githubUsername}
+                  onChange={(e) => setGithubUsername(e.target.value)}
+                  placeholder="octocat"
                   className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
                 />
               </div>

@@ -6,7 +6,7 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /**
  * Upload proof screenshots → Telegram group (screenshots topic).
- * Returns proxy URLs (/api/avatar/{fileId}) stored in transaction.attachments.
+ * Returns private proof URLs stored in transaction.attachments.
  */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     // Grab the largest photo size's file_id (stays valid after message deletion)
     const photos = tgData.result.photo;
     const bestPhoto = photos[photos.length - 1];
-    urls.push(`/api/avatar/${bestPhoto.file_id}`);
+    urls.push(`/api/proof/${encodeURIComponent(bestPhoto.file_id)}`);
   }
 
   return NextResponse.json({ urls });

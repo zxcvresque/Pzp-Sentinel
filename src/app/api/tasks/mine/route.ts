@@ -12,12 +12,21 @@ export async function GET() {
   }
 
   const tasks = await prisma.task.findMany({
-    where: { assigneeId: user.id, parentId: null },
+    where: {
+      parentId: null,
+      archivedAt: null,
+      project: { archivedAt: null },
+      OR: [
+        { assigneeId: user.id },
+        { subtasks: { some: { assigneeId: user.id, archivedAt: null } } },
+      ],
+    },
     include: {
       project: { select: { id: true, name: true } },
       assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } },
       tags: true,
       subtasks: {
+        where: { archivedAt: null },
         include: { assignee: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, tags: true },
         orderBy: { createdAt: "asc" },
       },

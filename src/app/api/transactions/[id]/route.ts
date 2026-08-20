@@ -12,19 +12,33 @@ import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archiv
 import { serviceReminderRepeat } from "@/lib/service-templates";
 import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
 import { parseBmcWebhook } from "@/lib/bmc-webhook";
+import { parseDonationFrequency } from "@/lib/donation-frequency";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user.roles, "ADMIN")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const body = await req.json();
-  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, serviceId, createService, confirmReviewedEdit } = body;
+  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, serviceId, createService, confirmReviewedEdit, donationFrequency } = body;
+
+  const transaction = await prisma.transaction.findUnique({ where: { id } });
+  if (!transaction) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+  const isAdmin = hasRole(user.roles, "ADMIN");
+  const donorOwnsPending = hasRole(user.roles, "DONOR")
+    && (transaction.fromUserId === user.id || transaction.createdById === user.id)
+    && transaction.status === "PENDING"
+    && !transaction.providerVerified
+    && !transaction.voidedAt;
+  if (!isAdmin && !donorOwnsPending) return NextResponse.json({ error: "Only an admin or the owner of a pending manual submission may edit it" }, { status: 403 });
+  if (!isAdmin) {
+    const allowed = new Set(["amount", "currency", "method", "description", "date", "attachments", "donationFrequency"]);
+    const invalid = Object.keys(body).filter((key) => !allowed.has(key));
+    if (invalid.length) return NextResponse.json({ error: `Donors cannot edit: ${invalid.join(", ")}` }, { status: 400 });
+  }
 
   // Validate amount if provided
   if (amount !== undefined) {
@@ -34,10 +48,6 @@ export async function PATCH(
     }
   }
 
-  const transaction = await prisma.transaction.findUnique({ where: { id } });
-  if (!transaction) {
-    return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
-  }
   if (transaction.voidedAt) {
     return NextResponse.json({ error: "Voided transactions cannot be edited" }, { status: 400 });
   }
@@ -59,6 +69,9 @@ export async function PATCH(
   }
   if (method !== undefined && !["UPI", "RAZORPAY", "BMC", "BANK", "OTHER"].includes(method)) {
     return NextResponse.json({ error: "Invalid payment method" }, { status: 400 });
+  }
+  if (method !== undefined && ["RAZORPAY", "BMC"].includes(method) && !transaction.providerVerified) {
+    return NextResponse.json({ error: "Provider methods can only come from a verified provider payment" }, { status: 400 });
   }
   if (description !== undefined && (typeof description !== "string" || !description.trim())) {
     return NextResponse.json({ error: "Description is required" }, { status: 400 });
@@ -123,6 +136,7 @@ export async function PATCH(
   if (method !== undefined) data.method = method;
   if (description !== undefined) data.description = description.trim();
   if (date !== undefined) data.date = new Date(date);
+  if (donationFrequency !== undefined) data.donationFrequency = parseDonationFrequency(donationFrequency);
   if (attachments !== undefined) {
     data.attachments = attachments.map((item: string) => item.trim());
   }
@@ -283,6 +297,7 @@ export async function PATCH(
     after,
     userName: user.name,
     details: `Updated transaction: ${updated.direction} ${updated.currency} ${updated.amount}`,
+    request: req,
   });
 
   // GitHub immutable log
@@ -336,15 +351,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getCurrentUser();
-  if (!user || !hasRole(user.roles, "ADMIN")) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  }
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
-  if (!reason) {
+  const isAdmin = hasRole(user.roles, "ADMIN");
+  if (!reason && isAdmin) {
     return NextResponse.json({ error: "A void reason is required" }, { status: 400 });
   }
   if (reason.length > 500) {
@@ -361,11 +375,17 @@ export async function DELETE(
   if (transaction.voidedAt) {
     return NextResponse.json({ error: "Transaction is already voided" }, { status: 400 });
   }
+  const donorCanCancel = hasRole(user.roles, "DONOR")
+    && (transaction.fromUserId === user.id || transaction.createdById === user.id)
+    && transaction.status === "PENDING"
+    && !transaction.providerVerified;
+  if (!isAdmin && !donorCanCancel) return NextResponse.json({ error: "Only your pending manual submission can be cancelled" }, { status: 403 });
+  const effectiveReason = reason || "Cancelled by donor";
   const identityUser = transaction.fromUser || transaction.createdBy;
 
   const voided = await prisma.transaction.update({
     where: { id },
-    data: { voidedAt: new Date(), voidedById: user.id, voidReason: reason },
+    data: { voidedAt: new Date(), voidedById: user.id, voidReason: effectiveReason },
     include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true },
   });
 
@@ -382,12 +402,13 @@ export async function DELETE(
       description: transaction.description,
       status: transaction.status,
     },
-    after: { voidedAt: voided.voidedAt, voidedById: user.id, voidReason: reason },
+    after: { voidedAt: voided.voidedAt, voidedById: user.id, voidReason: effectiveReason },
     userName: user.name,
     details: `"Voided Txn:"
 ${transaction.direction} ${transaction.currency} ${transaction.amount} — ${transaction.description}
 "Reason:"
-${reason}`,
+${effectiveReason}`,
+    request: req,
   });
 
   // GitHub immutable log
@@ -400,7 +421,7 @@ ${reason}`,
     direction: transaction.direction,
     method: transaction.method,
     entityId: id,
-    details: `Voided: ${transaction.description} — Reason: ${reason}`,
+    details: `Voided: ${transaction.description} — Reason: ${effectiveReason}`,
   });
 
   logTransactionMutation({
@@ -414,7 +435,7 @@ ${reason}`,
     identityName: identityUser.name,
     identityTelegramUser: identityUser.telegramUser,
     identityTelegramId: identityUser.telegramId,
-    changes: [`reason: ${reason}`],
+    changes: [`reason: ${effectiveReason}`],
   });
   scheduleFinanceAutomation({ action: "DELETED", actorName: user.name, transactionId: id });
 

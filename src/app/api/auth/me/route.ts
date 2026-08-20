@@ -43,6 +43,9 @@ export async function GET() {
       chatId: user.chatId,
       roles: user.roles,
       dmPreferences: user.dmPreferences,
+      inAppPreferences: user.inAppPreferences,
+      preferredCurrency: user.preferredCurrency,
+      githubUsername: user.githubUsername,
       donateReminderCadence: user.donateReminderCadence,
       donateReminderAnchorAt: user.donateReminderAnchorAt?.toISOString() ?? null,
       donateReminderEveryN: user.donateReminderEveryN,
@@ -86,6 +89,8 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const {
     dmPreferences,
+    inAppPreferences,
+    preferredCurrency,
     donateReminderCadence,
     donateReminderEveryN,
     donateReminderUnit,
@@ -95,6 +100,8 @@ export async function PATCH(req: NextRequest) {
 
   const data: {
     dmPreferences?: string[];
+    inAppPreferences?: string[];
+    preferredCurrency?: "INR" | "USD";
     donateReminderCadence?: DonateCadence;
     donateReminderEveryN?: number | null;
     donateReminderUnit?: ReminderUnit | null;
@@ -115,6 +122,17 @@ export async function PATCH(req: NextRequest) {
       );
     }
     data.dmPreferences = dmPreferences;
+  }
+  if (inAppPreferences !== undefined) {
+    if (!Array.isArray(inAppPreferences)) return NextResponse.json({ error: "inAppPreferences must be an array" }, { status: 400 });
+    const validTypes = Object.values(NotifType) as string[];
+    const invalid = inAppPreferences.filter((type: string) => !validTypes.includes(type));
+    if (invalid.length) return NextResponse.json({ error: `Invalid notification types: ${invalid.join(", ")}` }, { status: 400 });
+    data.inAppPreferences = inAppPreferences;
+  }
+  if (preferredCurrency !== undefined) {
+    if (preferredCurrency !== "INR" && preferredCurrency !== "USD") return NextResponse.json({ error: "Invalid preferred currency" }, { status: 400 });
+    data.preferredCurrency = preferredCurrency;
   }
 
   if (donateReminderCadence !== undefined) {
@@ -197,6 +215,8 @@ export async function PATCH(req: NextRequest) {
     data,
     select: {
       dmPreferences: true,
+      inAppPreferences: true,
+      preferredCurrency: true,
       donateReminderCadence: true,
       donateReminderEveryN: true,
       donateReminderUnit: true,

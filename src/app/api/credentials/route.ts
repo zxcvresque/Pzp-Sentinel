@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logCredentialAction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
-import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
+import { encryptSecret } from "@/lib/secret-crypto";
+import { logAudit } from "@/lib/audit";
 
 const userSelect = { id: true, name: true, photoUrl: true, telegramUser: true };
 const ACCESS_LEVELS = ["PUBLIC_KEY", "FULL"] as const;
@@ -32,13 +33,13 @@ export async function GET() {
         },
         orderBy: [{ platform: "asc" }, { label: "asc" }],
       });
-      // Admins see plaintext — decrypt at the return point only.
-      const decrypted = credentials.map((c) => ({
-        ...c,
-        value: decryptSecret(c.value),
-        revisions: c.revisions.map((r) => ({ ...r, value: decryptSecret(r.value) })),
+      const safe = credentials.map((credential) => ({
+        ...credential,
+        value: undefined,
+        hasValue: true,
+        revisions: credential.revisions.map((revision) => ({ ...revision, value: undefined, hasValue: true })),
       }));
-      return NextResponse.json({ credentials: decrypted });
+      return NextResponse.json({ credentials: safe });
     }
 
     if (hasRole(user.roles, "DEV")) {
@@ -100,13 +101,14 @@ export async function GET() {
         };
       });
 
-      // The dev's own pending proposals (they typed these — show them back decrypted).
+      // Pending proposals remain encrypted in list responses. A full-access
+      // reveal uses the same audited endpoint as every other secret access.
       const pendingByMe = await prisma.credential.findMany({
         where: { createdById: user.id, status: "PENDING" },
         include: { parent: { select: { id: true, platform: true, label: true } } },
         orderBy: { createdAt: "desc" },
       });
-      const pending = pendingByMe.map((c) => ({ ...c, value: decryptSecret(c.value) }));
+      const pending = pendingByMe.map((credential) => ({ ...credential, value: undefined, hasValue: true }));
 
       return NextResponse.json({ credentials, pendingGrants, pending });
     }
@@ -155,6 +157,18 @@ export async function POST(req: NextRequest) {
           { error: "Each access entry needs a userId and accessLevel (PUBLIC_KEY or FULL)" },
           { status: 400 },
         );
+      }
+    }
+    if (accessRows.length) {
+      const validTargets = await prisma.user.count({
+        where: {
+          id: { in: [...new Set(accessRows.map((row) => row.userId))] },
+          status: "ACTIVE",
+          roles: { has: "DEV" },
+        },
+      });
+      if (validTargets !== new Set(accessRows.map((row) => row.userId)).size) {
+        return NextResponse.json({ error: "Every credential recipient must be an active developer" }, { status: 400 });
       }
     }
     const now = new Date();
@@ -213,7 +227,7 @@ export async function POST(req: NextRequest) {
         message: `${platform} -- ${label} has been shared with you by ${user.name} (${a.accessLevel === "FULL" ? "full access" : "public-key access"}).`,
         entityId: credential.id,
         priority: "NORMAL",
-        actionUrl: "/credentials",
+        actionUrl: "/dev/credentials",
         telegramMessage: formatTgMessage(
           "🔐 Credential Shared",
           `${platform} · ${label}`,
@@ -222,8 +236,24 @@ export async function POST(req: NextRequest) {
       }).catch((err) => console.error("[cred] notify failed:", err));
     }
 
+    await logAudit({
+      userId: user.id,
+      action: "CREDENTIAL_CREATE",
+      entityType: "Credential",
+      entityId: credential.id,
+      after: {
+        platform: credential.platform,
+        label: credential.label,
+        serviceId: credential.serviceId,
+        expiresAt: credential.expiresAt,
+        shares: accessRows,
+      },
+      userName: user.name,
+      request: req,
+    });
+
     return NextResponse.json(
-      { credential: { ...credential, value: decryptSecret(credential.value) } },
+      { credential: { ...credential, value: undefined, hasValue: true } },
       { status: 201 },
     );
   }
@@ -248,5 +278,15 @@ export async function POST(req: NextRequest) {
     details: `Dev proposed: ${label}${parentId ? ` (revision of ${parentId.slice(0, 8)})` : ""}`,
   });
 
-  return NextResponse.json({ credential, message: "Submitted for admin approval" }, { status: 201 });
+  await logAudit({
+    userId: user.id,
+    action: "CREDENTIAL_PROPOSE",
+    entityType: "Credential",
+    entityId: credential.id,
+    after: { platform, label, parentId: parentId || null },
+    userName: user.name,
+    request: req,
+  });
+
+  return NextResponse.json({ credential: { ...credential, value: undefined, hasValue: true }, message: "Submitted for admin approval" }, { status: 201 });
 }

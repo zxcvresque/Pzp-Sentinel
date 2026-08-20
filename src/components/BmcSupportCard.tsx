@@ -84,8 +84,8 @@ export default function BmcSupportCard({
       <div className="pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full bg-amber/10 blur-3xl" />
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-start gap-3.5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber/25 bg-amber/10" aria-hidden="true">
-            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={22} height={32} className="h-7 w-auto object-contain" />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white p-2 shadow-sm" aria-hidden="true">
+            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={18} height={26} className="h-7 w-auto object-contain" />
           </div>
           <div>
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
@@ -122,11 +122,12 @@ export default function BmcSupportCard({
             rel="noopener noreferrer"
             onClick={openCheckout}
             aria-label="Support Piratezparty on Buy Me a Coffee (opens in browser)"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70 lg:min-h-0 lg:bg-transparent lg:p-0"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
           >
-            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={20} height={29} className="h-6 w-auto object-contain lg:hidden" />
-            <span className="lg:hidden">Buy me a coffee</span>
-            <Image src={`${BMC_ASSET_ROOT}/bmc-button.png`} alt="" width={218} height={61} className="hidden h-12 w-auto object-contain lg:block" />
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white p-1 shadow-sm">
+              <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={13} height={19} className="h-[19px] w-auto object-contain" />
+            </span>
+            <span>Buy me a coffee</span>
           </a>
         ) : config.checkoutUrl ? (
           <button
@@ -135,7 +136,9 @@ export default function BmcSupportCard({
             onClick={() => void prepareCheckout()}
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-amber px-5 py-3 text-sm font-bold text-bg-void transition-all hover:-translate-y-0.5 hover:brightness-105 active:translate-y-0 disabled:cursor-wait disabled:opacity-70"
           >
-            <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={20} height={29} className="h-6 w-auto object-contain" />
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white p-1 shadow-sm">
+              <Image src={`${BMC_ASSET_ROOT}/bmc-logo-no-background.png`} alt="" width={13} height={19} className="h-[19px] w-auto object-contain" />
+            </span>
             {preparing ? "Preparing secure reference..." : intent ? "Generate a new reference" : `Continue ${donationFrequency === "MONTHLY" ? "monthly" : "one time"}`}
           </button>
         ) : (

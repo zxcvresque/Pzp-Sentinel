@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logCredentialAction } from "@/lib/github-log";
 import { notify, formatTgMessage } from "@/lib/notifications";
-import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
+import { encryptSecret } from "@/lib/secret-crypto";
+import { logAudit } from "@/lib/audit";
 
 const userSelect = { id: true, name: true, photoUrl: true, telegramUser: true };
 const ACCESS_LEVELS = ["PUBLIC_KEY", "FULL"] as const;
@@ -51,6 +52,9 @@ export async function PATCH(
         );
       }
     }
+    const uniqueUsers = [...new Set(incoming.map((entry) => entry.userId))];
+    const validUsers = await prisma.user.count({ where: { id: { in: uniqueUsers }, status: "ACTIVE", roles: { has: "DEV" } } });
+    if (validUsers !== uniqueUsers.length) return NextResponse.json({ error: "Every credential recipient must be an active developer" }, { status: 400 });
   }
 
   const valueChanged = typeof value === "string" && value.length > 0;
@@ -155,6 +159,16 @@ export async function PATCH(
     platform: credential.platform,
     details: `Updated: ${credential.label}`,
   });
+  await logAudit({
+    userId: user.id,
+    action: "CREDENTIAL_UPDATE",
+    entityType: "Credential",
+    entityId: id,
+    before: { platform: existing.platform, label: existing.label, serviceId: existing.serviceId, expiresAt: existing.expiresAt, accesses: existing.accesses.map((access) => ({ userId: access.userId, accessLevel: access.accessLevel, granted: access.granted })) },
+    after: { platform: credential.platform, label: credential.label, serviceId: credential.serviceId, expiresAt: credential.expiresAt, valueChanged, accesses: incoming },
+    userName: user.name,
+    request: req,
+  });
 
   for (const t of newlyGranted) {
     notify({
@@ -164,7 +178,7 @@ export async function PATCH(
       message: `${credential.platform} -- ${credential.label}: access granted by ${user.name} (${t.accessLevel === "FULL" ? "full access" : "public-key access"}).`,
       entityId: id,
       priority: "NORMAL",
-      actionUrl: "/credentials",
+      actionUrl: "/dev/credentials",
       telegramMessage: formatTgMessage(
         "🔓 Credential Access Granted",
         `${credential.platform} · ${credential.label}`,
@@ -173,7 +187,8 @@ export async function PATCH(
     }).catch((err) => console.error("[cred] notify failed:", err));
   }
 
-  // Response with fresh access list (admin sees plaintext value).
+  // List/mutation responses never contain plaintext. Reveal is a separate,
+  // audited request.
   const full = await prisma.credential.findUnique({
     where: { id },
     include: {
@@ -183,12 +198,12 @@ export async function PATCH(
     },
   });
   return NextResponse.json({
-    credential: full ? { ...full, value: decryptSecret(full.value) } : credential,
+    credential: full ? { ...full, value: undefined, hasValue: true } : { ...credential, value: undefined, hasValue: true },
   });
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getCurrentUser();
@@ -214,6 +229,7 @@ export async function DELETE(
     platform: existing?.platform || "unknown",
     details: `Deleted: ${existing?.label || id}`,
   });
+  await logAudit({ userId: user.id, action: "CREDENTIAL_DELETE", entityType: "Credential", entityId: id, before: existing ? { platform: existing.platform, label: existing.label } : null, userName: user.name, request: req });
 
   return NextResponse.json({ success: true });
 }

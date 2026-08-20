@@ -23,9 +23,53 @@ type WebhookPayload = {
   payload?: {
     payment?: { entity?: { id?: string; order_id?: string; invoice_id?: string | null } };
     order?: { entity?: { id?: string } };
+    refund?: { entity?: { id?: string; payment_id?: string; amount?: number; currency?: string; created_at?: number } };
     subscription?: { entity?: RazorpaySubscriptionWebhookEntity };
   };
 };
+
+async function recordRazorpayRefund(refund: { id?: string; payment_id?: string; amount?: number; created_at?: number }) {
+  if (!refund.id || !refund.payment_id || !Number.isFinite(refund.amount) || Number(refund.amount) <= 0) return false;
+  const original = await prisma.transaction.findFirst({
+    where: {
+      OR: [
+        { providerPaymentId: refund.payment_id },
+        { razorpayOrder: { paymentId: refund.payment_id } },
+      ],
+    },
+  });
+  if (!original) return false;
+  const amount = new Prisma.Decimal(Number(refund.amount) / 100);
+  await prisma.$transaction(async (db) => {
+    const existing = await db.transaction.findUnique({ where: { providerPaymentId: refund.id } });
+    if (existing) return;
+    await db.transaction.update({
+      where: { id: original.id },
+      data: { providerState: Number(amount) >= Number(original.amount) ? "REFUNDED" : "PARTIALLY_REFUNDED" },
+    });
+    await db.transaction.create({
+      data: {
+        amount,
+        currency: original.currency,
+        method: "RAZORPAY",
+        direction: "OUT",
+        type: "OTHER",
+        donationFrequency: original.donationFrequency,
+        providerPaymentId: refund.id,
+        fromUserId: original.fromUserId,
+        description: `Razorpay refund reversal: ${original.description}`,
+        date: refund.created_at ? new Date(refund.created_at * 1000) : new Date(),
+        status: "APPROVED",
+        isTest: original.isTest,
+        createdById: original.createdById,
+        providerVerified: true,
+        providerState: "REFUND_REVERSAL",
+        reversalOfId: original.id,
+      },
+    });
+  });
+  return true;
+}
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -47,9 +91,10 @@ export async function POST(request: NextRequest) {
     const invoiceId = body.payload?.payment?.entity?.invoice_id;
     const orderId = body.payload?.order?.entity?.id || body.payload?.payment?.entity?.order_id;
     const subscription = body.payload?.subscription?.entity;
+    const refund = body.payload?.refund?.entity;
     const subscriptionEvent = normalizeRazorpaySubscriptionEvent(event, subscription);
     let processingStatus = "PROCESSED";
-    const resourceId = paymentId || subscriptionEvent?.subscriptionId || orderId || null;
+    const resourceId = refund?.id || paymentId || subscriptionEvent?.subscriptionId || orderId || null;
     if (eventId) {
       await prisma.razorpayWebhookEvent.upsert({
         where: { eventId },
@@ -71,7 +116,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (subscriptionEvent && shouldFinalizeSubscriptionPayment(subscriptionEvent, paymentId)) {
+    if ((event === "refund.processed" || event === "payment.refunded") && refund) {
+      const matched = await recordRazorpayRefund(refund);
+      if (!matched) processingStatus = "UNMATCHED";
+    } else if (subscriptionEvent && shouldFinalizeSubscriptionPayment(subscriptionEvent, paymentId)) {
       await finalizeMonthlySubscriptionCharge({
         subscriptionId: subscriptionEvent.subscriptionId,
         paymentId: paymentId!,

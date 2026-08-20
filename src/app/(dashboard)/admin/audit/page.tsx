@@ -131,18 +131,21 @@ export default function AuditPage() {
 
   // Initial load and filter changes
   useEffect(() => {
-    setLoading(true);
-    setLogs([]);
-    setNextCursor(null);
-    fetchLogs().then((data) => {
-      setLogs(data.logs || []);
-      setNextCursor(data.nextCursor || null);
-      setUserMap((prev) => ({ ...prev, ...(data.userMap || {}) }));
-      if (data.actions) setActions(data.actions);
-      if (data.entityTypes) setEntityTypes(data.entityTypes);
-      if (data.users) setUsers(data.users);
-      setLoading(false);
-    });
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setLogs([]);
+      setNextCursor(null);
+      fetchLogs().then((data) => {
+        setLogs(data.logs || []);
+        setNextCursor(data.nextCursor || null);
+        setUserMap((prev) => ({ ...prev, ...(data.userMap || {}) }));
+        if (data.actions) setActions(data.actions);
+        if (data.entityTypes) setEntityTypes(data.entityTypes);
+        if (data.users) setUsers(data.users);
+        setLoading(false);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchLogs]);
 
   async function loadMore() {

@@ -110,6 +110,12 @@ enum ProjStatus {
   ON_HOLD
 }
 
+enum ProjectMemberRole {
+  LEAD
+  MEMBER
+  VIEWER
+}
+
 enum ReminderFreq {
   ONCE
   DAILY
@@ -156,6 +162,9 @@ model User {
   roles         Role[]
   status        UserStatus @default(ACTIVE)
   dmPreferences String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  inAppPreferences String[] @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  preferredCurrency Currency @default(USD)
+  githubUsername String?
   createdById   String?
   createdBy     User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
   createdUsers  User[]     @relation("CreatedByAdmin")
@@ -163,6 +172,9 @@ model User {
 
   otpCode      String?
   otpExpiresAt DateTime?
+  otpAttempts  Int       @default(0)
+  otpRequestedAt DateTime?
+  otpLockedUntil DateTime?
 
   transactionsCreated   Transaction[]           @relation("TxCreatedBy")
   transactionsFrom      Transaction[]           @relation("TxFromUser")
@@ -173,6 +185,13 @@ model User {
   remindersCreated      Reminder[]
   broadcastSchedules   ScheduledBroadcast[]
   projectMembers        Project[]               @relation("ProjectMembers")
+  projectMemberships    ProjectMember[]
+  projectsCreated       Project[]               @relation("ProjectCreatedBy")
+  projectsArchived      Project[]               @relation("ProjectArchivedBy")
+  tasksArchived         Task[]                  @relation("TaskArchivedBy")
+  remindersOwned        Reminder[]              @relation("ReminderOwner")
+  remindersAcknowledged Reminder[]              @relation("ReminderAcknowledgedBy")
+  maintainedVpsServers  VpsServer[]             @relation("VpsMaintainers")
   credentialsCreated    Credential[]            @relation("CredCreatedBy")
   credentialsReviewed   Credential[]            @relation("CredReviewedBy")
   credentialAccess      CredentialAccess[]      @relation("CredAccessUser")
@@ -224,6 +243,15 @@ model Transaction {
   // Encrypted provider metadata (payer email/name/note/payment context). Never
   // expose this ciphertext through general transaction APIs.
   providerDetailsEncrypted String?
+  // Provider-backed methods are trusted only when this flag was set by a
+  // verified checkout/webhook/reconciliation path, never by a manual form.
+  providerVerified    Boolean @default(false)
+  providerState       String  @default("NONE")
+  reversalOfId        String?
+  reversalOf          Transaction? @relation("TransactionReversals", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversals           Transaction[] @relation("TransactionReversals")
+  donorAppealMessage  String?
+  donorAppealedAt     DateTime?
   fromUserId          String?
   fromUser            User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
   description         String
@@ -529,18 +557,50 @@ model Project {
   id          String     @id @default(cuid())
   name        String
   repoUrl     String?
+  trackedRepoId String?
+  trackedRepo TrackedRepo? @relation(fields: [trackedRepoId], references: [id], onDelete: SetNull)
   description String
   status      ProjStatus @default(ACTIVE)
   members     User[]     @relation("ProjectMembers")
+  memberships ProjectMember[]
+  createdById String?
+  createdBy   User?      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt  DateTime?
+  archivedById String?
+  archivedBy  User?      @relation("ProjectArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
   tasks       Task[]
+  tags        Tag[]
+  vpsServers  VpsServer[] @relation("ProjectVpsServers")
   createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, archivedAt])
+}
+
+model ProjectMember {
+  id        String            @id @default(cuid())
+  projectId String
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      ProjectMemberRole @default(MEMBER)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@unique([projectId, userId])
+  @@index([userId, role])
 }
 
 model Tag {
   id    String @id @default(cuid())
-  name  String @unique
+  name  String
   color String @default("#c8ff00")
+  projectId String?
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tasks Task[] @relation("TaskTags")
+
+  @@unique([projectId, name])
+  @@index([projectId])
 }
 
 model Task {
@@ -561,7 +621,14 @@ model Task {
   tags        Tag[]      @relation("TaskTags")
   createdById String
   createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  archivedAt  DateTime?
+  archivedById String?
+  archivedBy  User?      @relation("TaskArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
   createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([projectId, archivedAt, status])
+  @@index([assigneeId, archivedAt])
 }
 
 model Reminder {
@@ -576,6 +643,15 @@ model Reminder {
   lastFiredAt    DateTime?
   active         Boolean             @default(true)
   channel        Channel             @default(BOTH)
+  ownerId        String?
+  owner          User?               @relation("ReminderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  acknowledgedAt DateTime?
+  acknowledgedById String?
+  acknowledgedBy User?               @relation("ReminderAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  snoozedUntil   DateTime?
+  escalationAt   DateTime?
+  escalatedAt     DateTime?
+  lastError      String?
   // Kept for compatibility with existing databases. Admin reminders always
   // write ADMIN here; the audience is no longer configurable in the UI/API.
   recipientRoles Role[]              @default([ADMIN])
@@ -665,6 +741,8 @@ model OperationalAlert {
   service      Service?    @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   credentialId String?
   credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  vpsServerId  String?
+  vpsServer    VpsServer?   @relation(fields: [vpsServerId], references: [id], onDelete: Cascade)
   resolvedAt   DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -672,6 +750,7 @@ model OperationalAlert {
   @@index([status, severity, dueAt])
   @@index([serviceId, status])
   @@index([credentialId, status])
+  @@index([vpsServerId, status])
 }
 
 // Per-dev access to a credential. Replaces the old implicit M2M `assignees`.
@@ -702,7 +781,15 @@ model AuditLog {
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
   before        Json?
   after         Json?
+  ipAddress     String?
+  userAgent     String?
+  requestId     String?
+  outcome       String       @default("SUCCESS")
+  errorMessage  String?
   timestamp     DateTime     @default(now())
+
+  @@index([requestId])
+  @@index([outcome, timestamp])
 }
 
 enum NotifType {
@@ -728,7 +815,14 @@ model Notification {
   read      Boolean   @default(false)
   entityId  String?
   priority  String    @default("NORMAL")
+  telegramStatus String @default("NOT_REQUESTED")
+  telegramAttempts Int   @default(0)
+  telegramLastError String?
+  telegramSentAt DateTime?
   createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([telegramStatus, createdAt])
 }
 
 enum LoginTokenStatus {
@@ -753,6 +847,7 @@ model TrackedRepo {
   url       String
   addedById String
   createdAt DateTime @default(now())
+  projects  Project[]
 }
 
 model VpsServer {
@@ -771,6 +866,8 @@ model VpsServer {
   tags             String[]     @default([])
   notes            String       @default("")
   specs            Json         @default("{}")
+  processHealth    Json         @default("[]")
+  releaseVersion   String?
   cpuUsage         Float        @default(0)
   ramUsage         Float        @default(0)
   ramTotal         Float        @default(0)
@@ -789,6 +886,27 @@ model VpsServer {
   metrics          VpsMetric[]
   credentials      Credential[] // linked vault entries mirroring this server's secrets
   subscription     Service?     @relation("VpsSub") // billing row in the Services tab
+  projects         Project[]    @relation("ProjectVpsServers")
+  maintainers      User[]       @relation("VpsMaintainers")
+  alerts           OperationalAlert[]
+}
+
+model FinanceSyncJob {
+  id            String   @id @default(cuid())
+  action        String
+  actorName     String
+  transactionId String?
+  sendBackup    Boolean  @default(false)
+  status        String   @default("PENDING")
+  attempts      Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  lockedAt      DateTime?
+  completedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
 }
 
 model VpsMetric {

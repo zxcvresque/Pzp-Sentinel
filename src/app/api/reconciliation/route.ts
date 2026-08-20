@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
-import { finalizeCapturedDonation } from "@/lib/razorpay";
+import { finalizeCapturedDonation, reconcileRecentRazorpaySubscriptionPayments } from "@/lib/razorpay";
 import { logAudit } from "@/lib/audit";
 import { decryptSecret } from "@/lib/secret-crypto";
 import { parseBmcWebhook } from "@/lib/bmc-webhook";
@@ -93,6 +93,11 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const body = await req.json().catch(() => null);
+  if (body?.action === "SYNC_RAZORPAY") {
+    const result = await reconcileRecentRazorpaySubscriptionPayments(35);
+    await logAudit({ userId: auth.user.id, userName: auth.user.name, action: "RAZORPAY_SYNC_NOW", entityType: "Razorpay", entityId: "subscriptions", after: result, request: req, outcome: result.errors.length ? "FAILURE" : "SUCCESS", errorMessage: result.errors.length ? result.errors.slice(0, 5).join("; ") : undefined });
+    return NextResponse.json(result);
+  }
   if (body?.action !== "CAPTURE_RAZORPAY_ORDER" || typeof body?.orderId !== "string") {
     return NextResponse.json({ error: "Invalid reconciliation action" }, { status: 400 });
   }
@@ -113,6 +118,7 @@ export async function POST(req: NextRequest) {
     transactionId: result.transaction.id,
     userName: auth.user.name,
     details: `Reconciled ${order.razorpayOrderId}`,
+    request: req,
   });
   return NextResponse.json(result);
 }

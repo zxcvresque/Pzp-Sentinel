@@ -63,24 +63,23 @@ export async function notify(data: {
     telegramReplyMarkup, actionUrl, actionLabel,
   } = data;
 
-  // 1. Create in-app notification
-  const notification = await prisma.notification.create({
-    data: { userId, type, title, message, entityId, priority },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { chatId: true, dmPreferences: true, inAppPreferences: true },
   });
+  const isHighPriority = priority === "HIGH";
+  const notification = (user?.inAppPreferences.includes(type) || isHighPriority)
+    ? await prisma.notification.create({ data: { userId, type, title, message, entityId, priority } })
+    : null;
 
-  // 2. Attempt Telegram DM
+  // Attempt Telegram DM and persist channel delivery state.
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { chatId: true, dmPreferences: true },
-    });
-
     const dmBot = getBot();
     const hasPref = user?.dmPreferences.includes(type);
-    const isHighPriority = priority === "HIGH";
 
     // HIGH priority notifications (approvals, etc.) always send DM regardless of preference
     if (user?.chatId && dmBot && (hasPref || isHighPriority)) {
+      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SENDING", telegramAttempts: { increment: 1 }, telegramLastError: null } });
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";
       // Derive a readable label from the destination path if none given
@@ -93,6 +92,7 @@ export async function notify(data: {
         parse_mode: "HTML",
         reply_markup: replyMarkup,
       });
+      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SENT", telegramSentAt: new Date() } });
     } else if (!user?.chatId) {
       console.warn(`[notify] No chatId for user ${userId} — skipping TG DM`);
     } else if (!dmBot) {
@@ -113,6 +113,12 @@ export async function notify(data: {
       }
     }
     console.error(`[notify] TG DM failed for user ${userId}:`, err);
+    if (notification) {
+      await prisma.notification.update({
+        where: { id: notification.id },
+        data: { telegramStatus: "FAILED", telegramLastError: (err instanceof Error ? err.message : String(err)).slice(0, 1000) },
+      }).catch(() => undefined);
+    }
   }
 
   return notification;

@@ -10,7 +10,7 @@ import {
   monthlyDonationReminderGroupMessage,
 } from "./lib/donation-thanks";
 import { reminderDue } from "./lib/donation-reminders";
-import { scheduleFinanceAutomation } from "./lib/finance-sheets";
+import { drainFinanceAutomationQueue, scheduleFinanceAutomation } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
 import { registerRazorpayFeedbackHandlers } from "./lib/razorpay-feedback-bot";
@@ -87,12 +87,13 @@ async function notifyAdminsFromBot(
     priority?: string;
     telegramMessage?: string;
     channel?: "BOT" | "WEB" | "BOTH";
+    targetUserIds?: string[];
   },
 ) {
   try {
     const admins = await dbRetry(() =>
       db.user.findMany({
-        where: { roles: { has: "ADMIN" }, status: "ACTIVE" },
+        where: { roles: { has: "ADMIN" }, status: "ACTIVE", ...(data.targetUserIds?.length ? { id: { in: data.targetUserIds } } : {}) },
         select: { id: true, chatId: true, dmPreferences: true },
       }),
     );
@@ -246,9 +247,28 @@ async function checkAdminReminders() {
         message: reminder.message,
         entityId: reminder.id,
         channel: reminder.channel,
+        targetUserIds: reminder.ownerId ? [reminder.ownerId] : undefined,
         telegramMessage: `<blockquote><b>🔔 Admin reminder</b></blockquote>\n${escapeBotHtml(reminder.message)}`,
       });
       console.log(`[admin-reminder] Sent ${reminder.id}; next=${next?.toISOString() ?? "complete"}`);
+    }
+
+    const escalations = await dbRetry(() => prisma.reminder.findMany({
+      where: { escalationAt: { lte: now }, escalatedAt: null, acknowledgedAt: null, lastFiredAt: { not: null } },
+      take: 50,
+    }));
+    for (const reminder of escalations) {
+      const claimed = await dbRetry(() => prisma.reminder.updateMany({ where: { id: reminder.id, escalatedAt: null, acknowledgedAt: null }, data: { escalatedAt: now } }));
+      if (claimed.count !== 1) continue;
+      await notifyAdminsFromBot(prisma, bot, {
+        type: "REMINDER",
+        title: "Unacknowledged reminder escalated",
+        message: reminder.message,
+        entityId: reminder.id,
+        priority: "HIGH",
+        channel: reminder.channel,
+        telegramMessage: `<blockquote><b>⚠️ Reminder escalated</b></blockquote>\n${escapeBotHtml(reminder.message)}`,
+      });
     }
   } catch (err) {
     console.error("[admin-reminder] Check failed:", err);
@@ -908,6 +928,7 @@ async function createOperationalAlert(params: {
   dueAt?: Date | null;
   serviceId?: string;
   credentialId?: string;
+  vpsServerId?: string;
 }) {
   const existing = await dbRetry(() => prisma.operationalAlert.findUnique({ where: { fingerprint: params.fingerprint } }));
   if (existing) return false;
@@ -916,11 +937,46 @@ async function createOperationalAlert(params: {
     type: "SYSTEM",
     title: params.title,
     message: params.message,
-    entityId: params.serviceId ?? params.credentialId,
+    entityId: params.serviceId ?? params.credentialId ?? params.vpsServerId,
     priority: params.severity,
     telegramMessage: `<blockquote><b>⚠️ ${escapeBotHtml(params.title)}</b></blockquote>\n${escapeBotHtml(params.message)}`,
   });
   return true;
+}
+
+async function checkVpsAvailability() {
+  try {
+    const cutoff = new Date(Date.now() - 120_000);
+    const servers = await dbRetry(() => prisma.vpsServer.findMany({
+      where: { approved: true },
+      select: { id: true, name: true, lastSeen: true },
+    }));
+    for (const server of servers) {
+      const fingerprint = `vps:${server.id}:VPS_OFFLINE`;
+      const existing = await dbRetry(() => prisma.operationalAlert.findUnique({ where: { fingerprint } }));
+      const offline = server.lastSeen < cutoff;
+      if (!offline) {
+        if (existing?.status === "OPEN") await dbRetry(() => prisma.operationalAlert.update({ where: { id: existing.id }, data: { status: "RESOLVED", resolvedAt: new Date() } }));
+        continue;
+      }
+      const shouldNotify = !existing || existing.status !== "OPEN";
+      await dbRetry(() => prisma.operationalAlert.upsert({
+        where: { fingerprint },
+        create: { fingerprint, kind: "VPS_OFFLINE", severity: "HIGH", title: `${server.name} is offline`, message: `No heartbeat since ${server.lastSeen.toISOString()}.`, vpsServerId: server.id },
+        update: { status: "OPEN", resolvedAt: null, title: `${server.name} is offline`, message: `No heartbeat since ${server.lastSeen.toISOString()}.` },
+      }));
+      if (shouldNotify) await notifyAdminsFromBot(prisma, bot, {
+        type: "SYSTEM",
+        title: `${server.name} is offline`,
+        message: `No heartbeat since ${server.lastSeen.toLocaleString()}.`,
+        entityId: server.id,
+        priority: "HIGH",
+        telegramMessage: `<blockquote><b>⚠️ VPS offline</b></blockquote>\n${escapeBotHtml(server.name)} has stopped reporting.`,
+      });
+    }
+  } catch (error) {
+    console.error("[vps-alert] Availability check failed:", error);
+  }
 }
 
 async function checkServiceExpiry() {
@@ -1217,8 +1273,12 @@ async function checkSubscriptionRenewals() {
       setTimeout(() => {
         checkAdminReminders();
         checkScheduledBroadcasts();
+        checkVpsAvailability();
+        drainFinanceAutomationQueue();
         setInterval(checkAdminReminders, ADMIN_MESSAGE_CHECK_INTERVAL);
         setInterval(checkScheduledBroadcasts, ADMIN_MESSAGE_CHECK_INTERVAL);
+        setInterval(checkVpsAvailability, ADMIN_MESSAGE_CHECK_INTERVAL);
+        setInterval(drainFinanceAutomationQueue, ADMIN_MESSAGE_CHECK_INTERVAL);
       }, 40_000);
       console.log("[admin-messages] Scheduled — first check in 40s, then every minute");
       setTimeout(() => {

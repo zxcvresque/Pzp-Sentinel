@@ -28,6 +28,16 @@ interface Transaction {
   date: string;
   attachments?: string[];
   isTest?: boolean;
+  providerVerified?: boolean;
+  donorAppealMessage?: string | null;
+  reviewNote?: string | null;
+}
+
+interface SummaryRow {
+  status: string;
+  currency: DisplayCurrency;
+  _sum: { amount: string | null };
+  _count: { _all: number };
 }
 
 export default function DonorDashboard() {
@@ -45,6 +55,10 @@ export default function DonorDashboard() {
   } | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [summary, setSummary] = useState<SummaryRow[]>([]);
+  const [mutatingId, setMutatingId] = useState<string | null>(null);
 
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>("USD");
   const [usdToInr, setUsdToInr] = useState<number | null>(null);
@@ -65,11 +79,15 @@ export default function DonorDashboard() {
   // contributed / pending / approved) are derived from `transactions`, so
   // refreshing this one endpoint refreshes the whole overview.
   const load = useCallback(async () => {
-    const res = await fetch("/api/transactions?scope=mine&limit=50");
+    const query = new URLSearchParams({ scope: "mine", limit: "25", page: String(page) });
+    if (statusFilter !== "ALL") query.set("status", statusFilter);
+    const res = await fetch(`/api/transactions?${query}`);
     if (!res.ok) throw new Error("Failed to load transactions");
     const data = await res.json();
     setTransactions(data.transactions || []);
-  }, []);
+    setSummary(data.summary || []);
+    setTotalPages(data.totalPages || 1);
+  }, [page, statusFilter]);
 
   const loadPaymentAccess = useCallback(async () => {
     const response = await fetch("/api/payments/access", { cache: "no-store" });
@@ -95,12 +113,17 @@ export default function DonorDashboard() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem("sentinel_donor_display_currency");
-    fetch("/api/exchange-rate", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => {
+    Promise.all([
+      fetch("/api/exchange-rate", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
+      fetch("/api/auth/me", { cache: "no-store" }).then((response) => response.ok ? response.json() : null),
+    ])
+      .then(([data, me]) => {
         if (typeof data?.rate === "number") setUsdToInr(data.rate);
         const detected = data?.suggestedCurrency === "INR" ? "INR" : "USD";
-        const selected: DisplayCurrency = saved === "INR" || saved === "USD" ? saved : detected;
+        const accountCurrency = me?.user?.preferredCurrency;
+        const selected: DisplayCurrency = accountCurrency === "INR" || accountCurrency === "USD"
+          ? accountCurrency
+          : saved === "INR" || saved === "USD" ? saved : detected;
         setDisplayCurrency(selected);
         setFormCurrency(selected);
       })
@@ -119,23 +142,22 @@ export default function DonorDashboard() {
   // Background refresh on focus / visibility regain + every 30s while visible.
   useAutoRefresh(refreshDashboard, 30000);
 
-  const approved = transactions.filter((t) => t.status === "APPROVED" && !t.isTest);
-  const contributionNeedsRate = approved.some((transaction) => transaction.currency !== displayCurrency);
+  const approvedSummary = summary.filter((row) => row.status === "APPROVED");
+  const contributionNeedsRate = approvedSummary.some((row) => row.currency !== displayCurrency);
   const totalContributed = contributionNeedsRate && !usdToInr
     ? null
-    : approved.reduce(
-        (sum, transaction) => sum + convertCurrencyAmount(
-          Number(transaction.amount),
-          transaction.currency,
+    : approvedSummary.reduce(
+        (sum, row) => sum + convertCurrencyAmount(
+          Number(row._sum.amount || 0),
+          row.currency,
           displayCurrency,
           usdToInr,
         ),
         0,
       );
-  const pendingCount = transactions.filter(
-    (t) => t.status === "PENDING"
-  ).length;
-  const approvedCount = approved.length;
+  const pendingCount = summary.filter((row) => row.status === "PENDING").reduce((sum, row) => sum + row._count._all, 0);
+  const approvedCount = approvedSummary.reduce((sum, row) => sum + row._count._all, 0);
+  const donationCount = summary.reduce((sum, row) => sum + row._count._all, 0);
 
   const filteredTransactions =
     statusFilter === "ALL"
@@ -146,6 +168,64 @@ export default function DonorDashboard() {
     setDisplayCurrency(next);
     setFormCurrency(next);
     window.localStorage.setItem("sentinel_donor_display_currency", next);
+    fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferredCurrency: next }) }).catch(() => {});
+  }
+
+  async function editPending(tx: Transaction) {
+    const nextAmount = window.prompt("Donation amount", tx.amount);
+    if (nextAmount === null) return;
+    const nextDescription = window.prompt("Description or payment reference", tx.description);
+    if (nextDescription === null) return;
+    setMutatingId(tx.id);
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: nextAmount, description: nextDescription }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Could not update donation");
+      await load();
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Could not update donation"); }
+    finally { setMutatingId(null); }
+  }
+
+  async function attachProof(tx: Transaction, fileList: FileList | null) {
+    if (!fileList?.length) return;
+    setMutatingId(tx.id);
+    try {
+      const form = new FormData();
+      Array.from(fileList).forEach((file) => form.append("files", file));
+      const upload = await fetch("/api/attachments", { method: "POST", body: form });
+      const uploadData = await upload.json().catch(() => null);
+      if (!upload.ok) throw new Error(uploadData?.error || "Could not upload proof");
+      const response = await fetch(`/api/transactions/${tx.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachments: [...(tx.attachments || []), ...(uploadData.urls || [])] }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Could not attach proof");
+      await load();
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Could not attach proof"); }
+    finally { setMutatingId(null); }
+  }
+
+  async function cancelPending(tx: Transaction) {
+    if (!window.confirm("Cancel this pending submission?")) return;
+    setMutatingId(tx.id);
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Cancelled by donor" }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Could not cancel donation");
+      await load();
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Could not cancel donation"); }
+    finally { setMutatingId(null); }
+  }
+
+  async function appealRejected(tx: Transaction) {
+    const message = window.prompt("Tell the admins why this contribution should be reviewed again", tx.donorAppealMessage || "");
+    if (!message?.trim()) return;
+    setMutatingId(tx.id);
+    try {
+      const response = await fetch(`/api/transactions/${tx.id}/appeal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Could not send appeal");
+      await load();
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Could not send appeal"); }
+    finally { setMutatingId(null); }
   }
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -465,12 +545,12 @@ export default function DonorDashboard() {
       )}
 
       {/* Filter tabs */}
-      {transactions.length > 0 && (
+      {donationCount > 0 && (
         <div data-tour="donation-history" className="flex flex-wrap items-center gap-2 mb-4">
           {["ALL", "PENDING", "APPROVED", "REJECTED"].map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => { setStatusFilter(s); setPage(1); }}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors border ${
                 statusFilter === s
                   ? s === "APPROVED"
@@ -486,7 +566,7 @@ export default function DonorDashboard() {
               {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
               {s !== "ALL" && (
                 <span className="ml-1.5 text-[10px] opacity-60">
-                  {transactions.filter((t) => t.status === s).length}
+                  {summary.filter((row) => row.status === s).reduce((sum, row) => sum + row._count._all, 0)}
                 </span>
               )}
             </button>
@@ -550,9 +630,31 @@ export default function DonorDashboard() {
                   <span className="w-1.5 h-1.5 rounded-full bg-current" />
                   {tx.status}
                 </span>
+                {tx.status === "PENDING" && !tx.providerVerified && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button disabled={mutatingId === tx.id} onClick={() => editPending(tx)} className="btn-secondary px-2.5 py-1 text-[11px]">Edit</button>
+                    <label className="btn-secondary px-2.5 py-1 text-[11px] cursor-pointer">
+                      Add proof
+                      <input type="file" multiple className="hidden" onChange={(event) => { void attachProof(tx, event.target.files); event.target.value = ""; }} />
+                    </label>
+                    <button disabled={mutatingId === tx.id} onClick={() => cancelPending(tx)} className="px-2.5 py-1 text-[11px] text-coral">Cancel</button>
+                  </div>
+                )}
+                {tx.status === "REJECTED" && (
+                  <button disabled={mutatingId === tx.id} onClick={() => appealRejected(tx)} className="btn-secondary px-2.5 py-1 text-[11px]">
+                    {tx.donorAppealMessage ? "Update appeal" : "Appeal"}
+                  </button>
+                )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <button className="btn-secondary px-4 py-2 text-xs" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
+          <span className="text-xs text-text-secondary">Page {page} of {totalPages}</span>
+          <button className="btn-secondary px-4 py-2 text-xs" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
         </div>
       )}
       <PageTour pageKey="donor-overview" />

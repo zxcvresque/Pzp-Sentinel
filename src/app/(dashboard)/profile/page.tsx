@@ -17,6 +17,7 @@ interface UserProfile {
   roles: string[];
   createdAt: string | null;
   dmPreferences: string[];
+  inAppPreferences: string[];
   savedColors: string[];
 }
 
@@ -41,6 +42,7 @@ export default function ProfilePage() {
 
   const [savedColors, setSavedColors] = useState<string[]>([]);
   const [dmPrefs, setDmPrefs] = useState<string[]>([]);
+  const [inAppPrefs, setInAppPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null);
   const { showExamples, hideExamples, enableExamples } = useFormExamples();
@@ -56,6 +58,7 @@ export default function ProfilePage() {
         setUser(u);
         setSavedColors(u?.savedColors || []);
         if (u?.dmPreferences) setDmPrefs(u.dmPreferences);
+        if (u?.inAppPreferences) setInAppPrefs(u.inAppPreferences);
       })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
@@ -503,36 +506,43 @@ export default function ProfilePage() {
               <>Not linked — start <span className="text-text-primary font-medium">@TheSentinelRobot</span></>
             )}
           </div>
+          <div className="mb-1 grid grid-cols-[1fr_48px_48px] gap-2 font-mono text-[8px] uppercase tracking-wider text-text-tertiary">
+            <span>Event</span><span className="text-center">Telegram</span><span className="text-center">In app</span>
+          </div>
 
           <div className="space-y-0 divide-y divide-[var(--border)]">
             {DM_CATEGORIES.map((cat) => {
-              const isOn = cat.types.every((t) => dmPrefs.includes(t));
-              const disabled = !user.chatId;
+              const dmOn = cat.types.every((t) => dmPrefs.includes(t));
+              const inAppOn = cat.types.every((t) => inAppPrefs.includes(t));
+              const dmDisabled = !user.chatId;
 
-              async function toggle() {
-                if (disabled) return;
+              async function toggle(channel: "dm" | "inApp") {
+                if (channel === "dm" && dmDisabled) return;
+                const current = channel === "dm" ? dmPrefs : inAppPrefs;
+                const isOn = channel === "dm" ? dmOn : inAppOn;
                 const newPrefs = isOn
-                  ? dmPrefs.filter((p) => !(cat.types as readonly string[]).includes(p))
-                  : [...dmPrefs, ...cat.types.filter((t) => !dmPrefs.includes(t))];
-                setDmPrefs(newPrefs);
+                  ? current.filter((p) => !(cat.types as readonly string[]).includes(p))
+                  : [...current, ...cat.types.filter((t) => !current.includes(t))];
+                if (channel === "dm") setDmPrefs(newPrefs); else setInAppPrefs(newPrefs);
                 setDmSaving(true);
                 try {
-                  await fetch("/api/auth/me", {
+                  const response = await fetch("/api/auth/me", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ dmPreferences: newPrefs }),
+                    body: JSON.stringify(channel === "dm" ? { dmPreferences: newPrefs } : { inAppPreferences: newPrefs }),
                   });
+                  if (!response.ok) throw new Error("Save failed");
                 } catch {
-                  setDmPrefs(dmPrefs);
+                  if (channel === "dm") setDmPrefs(dmPrefs); else setInAppPrefs(inAppPrefs);
                 } finally {
                   setDmSaving(false);
                 }
               }
 
               return (
-                <div key={cat.label} className="flex items-center justify-between py-2.5">
+                <div key={cat.label} className="grid grid-cols-[1fr_48px_48px] items-center gap-2 py-2.5">
                   <div className="pr-3 min-w-0">
-                    <div className={`text-xs font-medium ${disabled ? "text-text-tertiary" : "text-text-primary"}`}>
+                    <div className="text-xs font-medium text-text-primary">
                       {cat.label}
                     </div>
                     <div className="text-[11px] text-text-secondary mt-0.5 break-words">
@@ -542,24 +552,33 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     role="switch"
-                    aria-checked={isOn}
-                    disabled={disabled}
-                    onClick={toggle}
-                    className={`relative w-9 h-5 rounded-full shrink-0 transition-colors duration-200 ${
-                      disabled
+                    aria-checked={dmOn}
+                    disabled={dmDisabled}
+                    onClick={() => toggle("dm")}
+                    className={`relative w-9 h-5 rounded-full justify-self-center transition-colors duration-200 ${
+                      dmDisabled
                         ? "opacity-40 cursor-not-allowed bg-bg-elevated border border-[var(--border)]"
-                        : isOn
+                        : dmOn
                           ? "bg-lime/30 cursor-pointer"
                           : "bg-bg-elevated border border-[var(--border)] cursor-pointer"
                     }`}
                   >
                     <span
                       className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${
-                        isOn
+                        dmOn
                           ? "translate-x-4 bg-lime"
                           : "translate-x-0 bg-text-tertiary"
                       }`}
                     />
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={inAppOn}
+                    onClick={() => toggle("inApp")}
+                    className={`relative w-9 h-5 rounded-full justify-self-center transition-colors duration-200 ${inAppOn ? "bg-lime/30 cursor-pointer" : "bg-bg-elevated border border-[var(--border)] cursor-pointer"}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-all duration-200 ${inAppOn ? "translate-x-4 bg-lime" : "translate-x-0 bg-text-tertiary"}`} />
                   </button>
                 </div>
               );

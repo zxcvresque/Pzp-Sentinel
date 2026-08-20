@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({
-    url: `/api/avatar/${tgData.result.document.file_id}`,
+    url: `/api/vps-key/${encodeURIComponent(tgData.result.document.file_id)}`,
     fileName: tgData.result.document.file_name || file.name || "ssh-key",
   });
 }

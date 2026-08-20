@@ -29,7 +29,7 @@ interface Revision {
   id: string;
   platform: string;
   label: string;
-  value: string;
+  value?: string;
   status: string;
   createdBy: UserRef;
   createdAt: string;
@@ -39,7 +39,7 @@ interface Credential {
   id: string;
   platform: string;
   label: string;
-  value: string;
+  value?: string;
   status: string;
   accesses: AccessRow[];
   createdBy: UserRef;
@@ -138,6 +138,7 @@ export default function CredentialsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
 
   const [platform, setPlatform] = useState("");
   const [fields, setFields] = useState<{ label: string; value: string }[]>([{ label: "", value: "" }]);
@@ -166,7 +167,20 @@ export default function CredentialsPage() {
     });
   }, []);
 
-  function toggleReveal(id: string) {
+  async function revealValue(id: string, purpose: "REVEAL" | "COPY" = "REVEAL") {
+    const res = await fetch(`/api/credentials/${id}/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purpose }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not reveal credential");
+    setRevealedValues((current) => ({ ...current, [id]: data.value }));
+    return String(data.value || "");
+  }
+
+  async function toggleReveal(id: string) {
+    if (!revealed.has(id) && !revealedValues[id]) await revealValue(id);
     setRevealed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -175,10 +189,16 @@ export default function CredentialsPage() {
     });
   }
 
-  function startEdit(cred: Credential) {
+  async function copyCredential(id: string) {
+    const value = await revealValue(id, "COPY");
+    await navigator.clipboard.writeText(value);
+  }
+
+  async function startEdit(cred: Credential) {
+    const value = revealedValues[cred.id] ?? await revealValue(cred.id);
     setEditId(cred.id);
     setPlatform(cred.platform);
-    setFields([{ label: cred.label, value: cred.value }]);
+    setFields([{ label: cred.label, value }]);
     setAccessMap(Object.fromEntries(cred.accesses.map((a) => [a.userId, a.accessLevel])));
     setServiceId(cred.service?.id || "");
     setExpiresAt(cred.expiresAt?.slice(0, 10) || "");
@@ -502,9 +522,15 @@ export default function CredentialsPage() {
                           >
                             {revealed.has(cred.id) ? "Hide" : "Reveal"}
                           </button>
+                          <button
+                            onClick={() => copyCredential(cred.id)}
+                            className="font-mono text-xs px-3 py-1.5 rounded-lg bg-bg-deep border border-[var(--border)] text-text-secondary hover:text-text-primary transition-colors"
+                          >
+                            Copy
+                          </button>
                           {revealed.has(cred.id) && (
                             <code className="max-w-full font-mono text-sm text-lime bg-bg-deep px-3 py-1.5 rounded-lg border border-[var(--border)] break-all">
-                              {cred.value}
+                              {revealedValues[cred.id]}
                             </code>
                           )}
                         </div>
@@ -577,7 +603,13 @@ export default function CredentialsPage() {
                                 </div>
                                 <div className="text-sm">
                                   <span className="text-text-tertiary">Value:</span>{" "}
-                                  <code className="font-mono text-lime">{rev.value}</code>
+                                  {revealed.has(rev.id) ? (
+                                    <code className="font-mono text-lime break-all">{revealedValues[rev.id]}</code>
+                                  ) : (
+                                    <button type="button" onClick={() => toggleReveal(rev.id)} className="rounded bg-bg-card px-2 py-1 font-mono text-[10px] text-text-secondary hover:text-text-primary">
+                                      Reveal proposed value
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex w-full justify-end gap-2 sm:w-auto sm:shrink-0">

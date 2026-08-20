@@ -116,7 +116,8 @@ export default function DevTasksPage() {
   }, []);
 
   useEffect(() => {
-    load().finally(() => setLoading(false));
+    const timer = window.setTimeout(() => { void load().finally(() => setLoading(false)); }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   useAutoRefresh(load, 30000);

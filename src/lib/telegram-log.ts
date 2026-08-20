@@ -249,7 +249,7 @@ export function logProofScreenshot(txId: string, fileId: string, description: st
 
 /**
  * Send proof screenshots to the screenshots topic with full transaction context.
- * `urls` are proxy URLs like /api/avatar/{fileId} — extracts the file_id and
+ * `urls` are private proxy URLs like /api/proof/{fileId} — extracts the file_id and
  * re-sends the photo with a proper caption containing tx details.
  */
 export async function logProofScreenshots(tx: {
@@ -267,9 +267,9 @@ export async function logProofScreenshots(tx: {
     `<code>${tx.id}</code>`;
 
   for (const url of tx.attachments) {
-    const match = url.match(/\/api\/avatar\/(.+)$/);
+    const match = url.match(/\/api\/(?:proof|avatar)\/(.+)$/);
     if (match) {
-      await sendPhotoToTopic("screenshots", match[1], caption);
+      await sendPhotoToTopic("screenshots", decodeURIComponent(match[1]), caption);
     }
   }
 }

@@ -215,8 +215,8 @@ export default function RazorpayDonationCard({
         <div>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-lime/20 bg-lime/8 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[.14em] text-lime">Secure checkout</span>
-            <span className="flex h-8 items-center rounded-lg border border-[#3395ff]/25 bg-[#f3f7ff] px-2.5 shadow-[0_5px_20px_rgba(51,149,255,.12)]">
-              <Image src={`${PAYMENT_ICON_ROOT}/razorpay-icon.svg`} alt="Razorpay checkout" width={123} height={27} className="h-[18px] w-auto" priority />
+            <span className="grid h-8 w-8 place-items-center rounded-lg border border-[#3395ff]/25 bg-[#3395ff]/10 shadow-[0_5px_20px_rgba(51,149,255,.12)]">
+              <Image src={`${PAYMENT_ICON_ROOT}/razorpay-logo-notext.png`} alt="Razorpay checkout" width={21} height={21} className="h-[21px] w-[21px] object-contain" priority />
             </span>
           </div>
           <h2 className="max-w-xl text-xl font-extrabold leading-tight sm:text-2xl">

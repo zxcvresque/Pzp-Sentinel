@@ -46,12 +46,13 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [serverUnreadCount, setServerUnreadCount] = useState(0);
   const [avatarImgError, setAvatarImgError] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const unread = notifications.filter((n) => !n.read);
-  const unreadCount = unread.length;
+  const unreadCount = serverUnreadCount;
   const hasHighPriority = unread.some((n) => n.priority === "HIGH");
   const broadcast = unread.find(
     (notification) => notification.priority === "HIGH" && notification.entityId?.startsWith("broadcast:"),
@@ -59,10 +60,11 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications");
+      const res = await fetch("/api/notifications?includeRead=true&limit=50");
       if (res.ok) {
         const data = await res.json();
         setNotifications(data.notifications ?? []);
+        setServerUnreadCount(data.unreadCount ?? 0);
       }
     } catch {
       // silently ignore fetch errors
@@ -71,13 +73,16 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
   // Fetch on mount; the hook then refreshes on tab focus and every 15s.
   useEffect(() => {
-    fetchNotifications();
+    const timer = window.setTimeout(() => { void fetchNotifications(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchNotifications]);
   useAutoRefresh(fetchNotifications, 15_000);
 
   // Re-fetch when dropdown opens
   useEffect(() => {
-    if (notifOpen) fetchNotifications();
+    if (!notifOpen) return;
+    const timer = window.setTimeout(() => { void fetchNotifications(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [notifOpen, fetchNotifications]);
 
   async function markRead(ids: string[]) {
@@ -90,6 +95,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
       setNotifications((prev) =>
         prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n))
       );
+      setServerUnreadCount((count) => Math.max(0, count - notifications.filter((item) => ids.includes(item.id) && !item.read).length));
     } catch {
       // silently ignore
     }
@@ -103,6 +109,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
         body: JSON.stringify({ markAllRead: true }),
       });
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setServerUnreadCount(0);
     } catch {
       // silently ignore
     }

@@ -1,4 +1,5 @@
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
+import sharp from "sharp";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN environment variable is required");
@@ -34,10 +35,24 @@ export async function fetchTelegramPhotoUrl(
     if (!groupId || !topicId) return null;
 
     try {
-      const archived = await botInstance.api.sendPhoto(groupId, biggest.file_id, {
+      const telegramFile = await botInstance.api.getFile(biggest.file_id);
+      if (!telegramFile.file_path) return null;
+      const source = await fetch(
+        `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${telegramFile.file_path}`,
+      );
+      if (!source.ok) throw new Error(`Telegram download failed (${source.status})`);
+      const webp = await sharp(Buffer.from(await source.arrayBuffer()))
+        .rotate()
+        .webp({ lossless: true, quality: 100, effort: 6 })
+        .toBuffer();
+      const archived = await botInstance.api.sendPhoto(
+        groupId,
+        new InputFile(webp, `avatar-${telegramId}.webp`),
+        {
         message_thread_id: Number(topicId),
-        caption: `📸 Avatar: ${userName || telegramId}\nID: ${telegramId}`,
-      });
+          caption: `📸 Avatar: ${userName || telegramId}\nID: ${telegramId} · lossless WebP`,
+        },
+      );
       const archivedSizes = archived.photo;
       const archivedFileId = archivedSizes[archivedSizes.length - 1]?.file_id;
       return archivedFileId ? `/api/avatar/${encodeURIComponent(archivedFileId)}` : null;

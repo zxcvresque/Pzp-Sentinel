@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getCurrentUser, hasRole } from "@/lib/auth";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
@@ -144,6 +145,13 @@ function parseEvents(events: Record<string, unknown>[], repoName: string, repoFu
 }
 
 export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // The cross-repository feed is deliberately visible to all developers for
+  // community motivation, but never to donors or other authenticated roles.
+  if (!hasRole(user.roles, "ADMIN") && !hasRole(user.roles, "DEV")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (!GITHUB_TOKEN) {
     return NextResponse.json(
       { activity: [], error: "GITHUB_TOKEN not configured" },

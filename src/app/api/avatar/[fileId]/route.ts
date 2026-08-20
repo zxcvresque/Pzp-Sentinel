@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { getCurrentUser, hasRole } from "@/lib/auth";
+import { fetchTelegramFile } from "@/lib/telegram-file";
 
 /**
  * GET /api/avatar/[fileId]
@@ -11,53 +14,43 @@ import { NextRequest, NextResponse } from "next/server";
  * through normal <img src=""> tags without exposing the bot token.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ fileId: string }> },
 ) {
   const { fileId } = await params;
-  const token = process.env.BOT_TOKEN;
-
-  if (!token || !fileId) {
+  if (!process.env.BOT_TOKEN || !fileId) {
     return NextResponse.json({ error: "Missing config" }, { status: 500 });
   }
 
   try {
-    // Resolve file_id → temporary file_path
-    const fileRes = await fetch(
-      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
-    );
-    const fileData = await fileRes.json();
+    const rawUrl = `/api/avatar/${fileId}`;
+    const encodedUrl = `/api/avatar/${encodeURIComponent(fileId)}`;
+    const isAvatar = await prisma.user.count({ where: { photoUrl: { in: [rawUrl, encodedUrl] } } });
 
-    if (!fileData.ok || !fileData.result?.file_path) {
-      return new NextResponse(null, { status: 404 });
+    // Legacy proof/key URLs used this route. Keep them private while existing
+    // records are migrated to /api/proof and /api/vps-key.
+    if (!isAvatar) {
+      const user = await getCurrentUser();
+      if (!user) return new NextResponse(null, { status: 401 });
+      const isAdmin = hasRole(user.roles, "ADMIN");
+      const ownsProof = isAdmin ? true : Boolean(await prisma.transaction.count({
+        where: {
+          OR: [{ fromUserId: user.id }, { createdById: user.id }],
+          attachments: { hasSome: [rawUrl, encodedUrl] },
+        },
+      }));
+      if (!ownsProof) return new NextResponse(null, { status: 403 });
     }
 
-    // Download the actual file bytes
-    const photoRes = await fetch(
-      `https://api.telegram.org/file/bot${token}/${fileData.result.file_path}`,
-    );
+    const file = await fetchTelegramFile(fileId);
+    if (!file) return new NextResponse(null, { status: 404 });
 
-    if (!photoRes.ok) {
-      return new NextResponse(null, { status: 502 });
-    }
-
-    const buffer = await photoRes.arrayBuffer();
-    const ext = fileData.result.file_path.split(".").pop() || "jpg";
-    const contentType =
-      ext === "png"
-        ? "image/png"
-        : ext === "webp"
-          ? "image/webp"
-          : ext === "gif"
-            ? "image/gif"
-            : ext === "jpg" || ext === "jpeg"
-              ? "image/jpeg"
-              : "application/octet-stream";
-
-    return new NextResponse(buffer, {
+    return new NextResponse(file.body, {
       headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=604800, stale-while-revalidate=86400", // 7d cache, 1d stale
+        "Content-Type": file.contentType,
+        "Cache-Control": isAvatar
+          ? "public, max-age=2592000, immutable"
+          : "private, no-store",
       },
     });
   } catch {

@@ -77,6 +77,19 @@ collect_metrics() {
 
   # Load average (1, 5, 15 min)
   load_avg=$(awk '{print $1 ", " $2 ", " $3}' /proc/loadavg)
+
+  # Deployment/process health. PM2 output is reduced to non-sensitive health
+  # metadata; environment variables and command arguments are never uploaded.
+  if command -v pm2 >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    processes=$(pm2 jlist 2>/dev/null | node -e '
+      let raw=""; process.stdin.on("data", c => raw += c); process.stdin.on("end", () => {
+        try { console.log(JSON.stringify(JSON.parse(raw).slice(0,50).map(p => ({name:p.name,status:p.pm2_env?.status||"unknown",restarts:p.pm2_env?.restart_time||0,cpu:p.monit?.cpu||0,memory:p.monit?.memory||0,uptime:p.pm2_env?.pm_uptime ? Math.max(0,Math.floor((Date.now()-p.pm2_env.pm_uptime)/1000)) : 0})))); }
+        catch { console.log("[]"); }
+      });')
+  else
+    processes="[]"
+  fi
+  release_version="${SENTINEL_RELEASE_VERSION:-}"
 }
 
 # ---------------------------------------------------------------------------
@@ -96,7 +109,9 @@ send_metrics() {
   "net_out": $net_out,
   "uptime": $uptime_secs,
   "load_avg": "$load_avg",
-  "ip": "$public_ip"
+  "ip": "$public_ip",
+  "processes": $processes,
+  "release_version": "$release_version"
 }
 EOF
 )

@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { logUserCreated } from "@/lib/telegram-log";
 import { logUserAction } from "@/lib/github-log";
 import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { isImmutableAdmin } from "@/lib/protected-admins";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -23,6 +24,7 @@ export async function GET() {
       roles: true,
       status: true,
       chatId: true,
+      githubUsername: true,
       createdAt: true,
     },
   });
@@ -36,7 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const { telegramId, telegramUser, name, roles } = await req.json();
+  const { telegramId, telegramUser, name, roles, githubUsername } = await req.json();
 
   if (!telegramId || !name) {
     return NextResponse.json({ error: "Telegram ID and name are required" }, { status: 400 });
@@ -47,12 +49,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "User with this Telegram ID already exists" }, { status: 409 });
   }
 
+  const requestedRoles = Array.isArray(roles) ? roles : ["DONOR"];
+  if (requestedRoles.includes("ADMIN") && !isImmutableAdmin(telegramId)) {
+    return NextResponse.json({ error: "Administrator IDs are code-managed and cannot be granted through Sentinel" }, { status: 403 });
+  }
   const newUser = await prisma.user.create({
     data: {
       telegramId,
       telegramUser: telegramUser || "",
       name,
-      roles: roles || ["DONOR"],
+      roles: requestedRoles,
+      githubUsername: typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") || null : null,
       createdById: user.id,
     },
   });
@@ -64,6 +71,7 @@ export async function POST(req: NextRequest) {
     entityId: newUser.id,
     after: newUser,
     userName: user.name,
+    request: req,
   });
 
   logUserCreated({
@@ -106,7 +114,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
-  const { id, roles, status, name, telegramUser } = await req.json();
+  const { id, roles, status, name, telegramUser, githubUsername } = await req.json();
 
   if (!id) {
     return NextResponse.json({ error: "User ID is required" }, { status: 400 });
@@ -117,11 +125,29 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  if (target.roles.includes("ADMIN")) {
+    const removesAdmin = roles !== undefined && (!Array.isArray(roles) || !roles.includes("ADMIN"));
+    const disablesAdmin = status !== undefined && status !== "ACTIVE";
+    if (removesAdmin || disablesAdmin) {
+      return NextResponse.json({ error: "Administrators cannot be demoted or deactivated through Sentinel" }, { status: 403 });
+    }
+  }
+  if (roles !== undefined && Array.isArray(roles) && roles.includes("ADMIN") && !target.roles.includes("ADMIN") && !isImmutableAdmin(target.telegramId)) {
+    return NextResponse.json({ error: "Administrator IDs are code-managed and require a deployment" }, { status: 403 });
+  }
+
   const data: Record<string, unknown> = {};
   if (roles !== undefined) data.roles = roles;
   if (status !== undefined) data.status = status;
   if (name !== undefined) data.name = name;
   if (telegramUser !== undefined) data.telegramUser = telegramUser;
+  if (githubUsername !== undefined) {
+    const normalized = typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") : "";
+    if (normalized && !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(normalized)) {
+      return NextResponse.json({ error: "Invalid GitHub username" }, { status: 400 });
+    }
+    data.githubUsername = normalized || null;
+  }
 
   const updated = await prisma.user.update({
     where: { id },
@@ -133,16 +159,18 @@ export async function PATCH(req: NextRequest) {
   if (status !== undefined) changes.push(`status: ${target.status} → ${updated.status}`);
   if (name !== undefined && name !== target.name) changes.push(`name: ${target.name} → ${updated.name}`);
   if (telegramUser !== undefined && telegramUser !== target.telegramUser) changes.push(`tg: @${target.telegramUser} → @${updated.telegramUser}`);
+  if (githubUsername !== undefined && updated.githubUsername !== target.githubUsername) changes.push(`GitHub: @${target.githubUsername || "none"} → @${updated.githubUsername || "none"}`);
 
   await logAudit({
     userId: user.id,
     action: "UPDATE_USER",
     entityType: "User",
     entityId: id,
-    before: { roles: target.roles, status: target.status, name: target.name, telegramUser: target.telegramUser },
-    after: { roles: updated.roles, status: updated.status, name: updated.name, telegramUser: updated.telegramUser },
+    before: { roles: target.roles, status: target.status, name: target.name, telegramUser: target.telegramUser, githubUsername: target.githubUsername },
+    after: { roles: updated.roles, status: updated.status, name: updated.name, telegramUser: updated.telegramUser, githubUsername: updated.githubUsername },
     userName: user.name,
     details: `${target.name}: ${changes.join("; ")}`,
+    request: req,
   });
 
   // GitHub immutable log
@@ -194,6 +222,9 @@ export async function DELETE(req: NextRequest) {
   if (!target) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+  if (target.roles.includes("ADMIN") || isImmutableAdmin(target.telegramId)) {
+    return NextResponse.json({ error: "Administrators cannot be deleted through Sentinel" }, { status: 403 });
+  }
 
   // Active users WITH roles must be deactivated first (safety check).
   // Pending users (no roles) can be deleted directly — they never had access.
@@ -213,6 +244,7 @@ export async function DELETE(req: NextRequest) {
     before: { name: target.name, telegramId: target.telegramId, roles: target.roles },
     userName: user.name,
     details: `Permanently deleted ${target.name} (@${target.telegramUser})`,
+    request: req,
   });
 
   logUserAction({

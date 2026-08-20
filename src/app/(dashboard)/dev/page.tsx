@@ -13,6 +13,7 @@ interface Member {
   id: string;
   name: string;
   photoUrl?: string | null;
+  projectRole?: "LEAD" | "MEMBER" | "VIEWER";
 }
 
 interface Tag {
@@ -41,6 +42,7 @@ interface Project {
   repoUrl: string | null;
   members: Member[];
   taskCounts: Record<string, number>;
+  archivedAt?: string | null;
 }
 
 interface ActivityItem {
@@ -103,6 +105,7 @@ type GroupMode = "status" | "tag";
 
 export default function DevDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -150,6 +153,8 @@ export default function DevDashboard() {
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [confirmProjectDelete, setConfirmProjectDelete] = useState(false);
   const [deletingProject, setDeletingProject] = useState(false);
+  const [developers, setDevelopers] = useState<Member[]>([]);
+  const [projectMemberRoles, setProjectMemberRoles] = useState<Record<string, "LEAD" | "MEMBER" | "VIEWER">>({});
 
   // Org-wide git activity
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -180,12 +185,15 @@ export default function DevDashboard() {
   // failed background refresh keeps the last good data with no error flash.
   const load = useCallback(async () => {
     try {
-      const [projData, tagData] = await Promise.all([
+      const projectId = selectedProjectIdRef.current;
+      const [projData, archivedData, tagData] = await Promise.all([
         fetch("/api/projects").then((r) => r.json()),
-        fetch("/api/tags").then((r) => r.json()),
+        fetch("/api/projects?archived=true").then((r) => r.ok ? r.json() : { projects: [] }),
+        projectId ? fetch(`/api/tags?projectId=${encodeURIComponent(projectId)}`).then((r) => r.json()) : Promise.resolve({ tags: [] }),
       ]);
       const list = projData.projects || [];
       setProjects(list);
+      setArchivedProjects(archivedData.projects || []);
       setAllTags(tagData.tags || []);
     } catch {
       // keep last good data
@@ -214,19 +222,31 @@ export default function DevDashboard() {
   }, []);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/projects").then((r) => r.json()),
-      fetch("/api/tags").then((r) => r.json()),
-    ])
-      .then(([projData, tagData]) => {
+    fetch("/api/developers").then((response) => response.ok ? response.json() : { developers: [] }).then((data) => setDevelopers(data.developers || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    Promise.all([fetch("/api/projects").then((r) => r.json()), fetch("/api/projects?archived=true").then((r) => r.ok ? r.json() : { projects: [] })])
+      .then(([projData, archivedData]) => {
         const list = projData.projects || [];
         setProjects(list);
+        setArchivedProjects(archivedData.projects || []);
         if (list.length > 0) setSelectedProjectId(list[0].id);
-        setAllTags(tagData.tags || []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      const timer = window.setTimeout(() => setAllTags([]), 0);
+      return () => window.clearTimeout(timer);
+    }
+    fetch(`/api/tags?projectId=${encodeURIComponent(selectedProjectId)}`)
+      .then((response) => response.ok ? response.json() : { tags: [] })
+      .then((data) => setAllTags(data.tags || []))
+      .catch(() => setAllTags([]));
+  }, [selectedProjectId]);
 
   useEffect(() => {
     const timer = setTimeout(fetchTasks, 0);
@@ -372,6 +392,7 @@ export default function DevDashboard() {
     setProjName("");
     setProjDesc("");
     setProjRepo("");
+    setProjectMemberRoles({});
   }
 
   function openCreateProject() {
@@ -386,6 +407,7 @@ export default function DevDashboard() {
     setProjName(selectedProject.name);
     setProjDesc(selectedProject.description);
     setProjRepo(selectedProject.repoUrl || "");
+    setProjectMemberRoles(Object.fromEntries(selectedProject.members.map((member) => [member.id, member.projectRole || "MEMBER"])));
     setShowProjectForm(true);
     if (showForm) resetForm();
   }
@@ -402,6 +424,9 @@ export default function DevDashboard() {
         name: projName.trim(),
         description: projDesc.trim(),
         repoUrl: projRepo.trim() || null,
+        ...(editingProjectId
+          ? { members: Object.entries(projectMemberRoles).map(([userId, role]) => ({ userId, role })) }
+          : { memberIds: Object.keys(projectMemberRoles) }),
       }),
     });
 
@@ -439,8 +464,19 @@ export default function DevDashboard() {
       setTasks([]);
       resetProjectForm();
       setConfirmProjectDelete(false);
+      const archivedData = await fetch("/api/projects?archived=true").then((response) => response.ok ? response.json() : { projects: [] });
+      setArchivedProjects(archivedData.projects || []);
     }
     setDeletingProject(false);
+  }
+
+  async function restoreProject(project: Project) {
+    const response = await fetch(`/api/projects/${project.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restore: true }) });
+    if (!response.ok) return;
+    const restored = { ...project, archivedAt: null };
+    setArchivedProjects((current) => current.filter((item) => item.id !== project.id));
+    setProjects((current) => [restored, ...current]);
+    setSelectedProjectId(project.id);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -707,9 +743,9 @@ export default function DevDashboard() {
       open={confirmProjectDelete}
       onClose={() => setConfirmProjectDelete(false)}
       onConfirm={handleDeleteProject}
-      title={`Delete ${selectedProject?.name || "project"}?`}
-      message="This permanently deletes the project and every task inside it. This cannot be undone."
-      confirmLabel="Delete Project"
+      title={`Archive ${selectedProject?.name || "project"}?`}
+      message="The project and its tasks will leave active boards, but can be restored later."
+      confirmLabel="Archive Project"
       loading={deletingProject}
     />
     <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-start">
@@ -734,9 +770,9 @@ export default function DevDashboard() {
           <button
             onClick={() => setConfirmProjectDelete(true)}
             className="px-3 py-2 rounded-full text-sm font-semibold border border-coral/20 text-coral hover:bg-coral/10 transition-colors"
-            title="Delete selected project"
+            title="Archive selected project"
           >
-            Delete
+            Archive
           </button>
           <button
             onClick={() => showProjectForm ? resetProjectForm() : openCreateProject()}
@@ -763,6 +799,15 @@ export default function DevDashboard() {
           </button>
         </div>
       </div>
+
+      {archivedProjects.length > 0 && (
+        <details className="card mb-4 p-4">
+          <summary className="cursor-pointer font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Archived projects ({archivedProjects.length})</summary>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {archivedProjects.map((project) => <button key={project.id} onClick={() => restoreProject(project)} className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs text-text-secondary hover:text-mint">Restore {project.name}</button>)}
+          </div>
+        </details>
+      )}
 
       {showProjectForm && (
         <form onSubmit={handleSaveProject} className="card p-6 mb-6">
@@ -814,6 +859,19 @@ export default function DevDashboard() {
                 className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30 resize-none"
               />
             </div>
+          </div>
+          <div className="mb-4">
+            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Project members &amp; roles</label>
+            <div className="flex flex-wrap gap-2">
+              {developers.map((developer) => {
+                const role = projectMemberRoles[developer.id];
+                return <div key={developer.id} className={`flex items-center overflow-hidden rounded-full border ${role ? "border-lime/30" : "border-[var(--border)]"}`}>
+                  <button type="button" onClick={() => setProjectMemberRoles((current) => { const next = { ...current }; if (next[developer.id]) delete next[developer.id]; else next[developer.id] = "MEMBER"; return next; })} className="px-3 py-1.5 text-xs text-text-secondary">{developer.name}</button>
+                  {role && <button type="button" onClick={() => setProjectMemberRoles((current) => ({ ...current, [developer.id]: role === "MEMBER" ? "VIEWER" : role === "VIEWER" ? "LEAD" : "MEMBER" }))} className="border-l border-[var(--border)] bg-lime/5 px-2 py-1.5 font-mono text-[9px] text-lime">{role}</button>}
+                </div>;
+              })}
+            </div>
+            <p className="mt-2 text-[10px] text-text-tertiary">Leads manage projects; members edit tasks; viewers have read-only access. The creator is always added as lead.</p>
           </div>
           <button
             type="submit"

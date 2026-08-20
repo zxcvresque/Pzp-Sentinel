@@ -155,6 +155,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         fromUserId,
         description: transactionDescription(event),
         status: "APPROVED",
+        providerVerified: true,
+        providerState: "CAPTURED",
         isTest: !event.liveMode,
         bmcEventId: eventId,
         date: event.occurredAt,
@@ -277,12 +279,37 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
 async function refundTransaction(event: NormalizedBmcEvent) {
   const existing = await findTransaction(event);
   if (!existing) return null;
-  const transaction = existing.status === "REJECTED"
-    ? existing
-    : await prisma.transaction.update({
-        where: { id: existing.id },
-        data: { status: "REJECTED", reviewNote: "Refunded via Buy Me a Coffee" },
+  const transaction = await prisma.$transaction(async (db) => {
+    const updated = existing.providerState === "REFUNDED"
+      ? existing
+      : await db.transaction.update({
+          where: { id: existing.id },
+          data: { providerState: "REFUNDED", reviewNote: "Refunded via Buy Me a Coffee" },
+        });
+    const reversal = await db.transaction.findFirst({ where: { reversalOfId: existing.id, providerState: "REFUND_REVERSAL" } });
+    if (!reversal) {
+      await db.transaction.create({
+        data: {
+          amount: existing.amount,
+          currency: existing.currency,
+          method: "BMC",
+          direction: "OUT",
+          type: "OTHER",
+          donationFrequency: existing.donationFrequency,
+          fromUserId: existing.fromUserId,
+          description: `BMC refund reversal: ${existing.description}`,
+          date: event.occurredAt,
+          status: "APPROVED",
+          isTest: existing.isTest,
+          createdById: existing.createdById,
+          providerVerified: true,
+          providerState: "REFUND_REVERSAL",
+          reversalOfId: existing.id,
+        },
       });
+    }
+    return updated;
+  });
 
   await notifyAdmins({
     type: "SYSTEM",

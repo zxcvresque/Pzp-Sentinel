@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!hasRole(user.roles, "ADMIN") && !hasRole(user.roles, "DEV")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const tracked = await prisma.trackedRepo.findMany({
+    where: hasRole(user.roles, "ADMIN") ? {} : {
+      projects: { some: {
+        archivedAt: null,
+        OR: [
+          { memberships: { some: { userId: user.id } } },
+          { members: { some: { id: user.id } } },
+        ],
+      } },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -36,6 +47,16 @@ export async function POST(req: NextRequest) {
     data: { name, fullName, url, addedById: user.id },
   });
 
+  await logAudit({
+    userId: user.id,
+    action: "TRACKED_REPO_CREATE",
+    entityType: "TrackedRepo",
+    entityId: repo.id,
+    after: repo,
+    userName: user.name,
+    request: req,
+  });
+
   return NextResponse.json({ repo }, { status: 201 });
 }
 
@@ -56,5 +77,14 @@ export async function DELETE(req: NextRequest) {
   }
 
   await prisma.trackedRepo.delete({ where: { fullName } });
+  await logAudit({
+    userId: user.id,
+    action: "TRACKED_REPO_DELETE",
+    entityType: "TrackedRepo",
+    entityId: repo.id,
+    before: repo,
+    userName: user.name,
+    request: req,
+  });
   return NextResponse.json({ success: true });
 }

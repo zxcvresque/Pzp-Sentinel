@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { generateOtp } from "@/lib/auth";
+import { generateOtp, hashOtp } from "@/lib/auth";
 import { bot } from "@/lib/bot";
 
 export async function POST(req: NextRequest) {
   const { telegramId } = await req.json();
 
-  if (!telegramId || typeof telegramId !== "string") {
+  if (!telegramId || typeof telegramId !== "string" || !/^\d{5,20}$/.test(telegramId)) {
     return NextResponse.json({ error: "Telegram ID is required" }, { status: 400 });
   }
 
@@ -14,19 +14,19 @@ export async function POST(req: NextRequest) {
     where: { telegramId },
   });
 
-  if (!user) {
-    return NextResponse.json({ error: "No account found for this Telegram ID" }, { status: 404 });
-  }
+  // Do not disclose whether an ID exists, is inactive, or has linked the bot.
+  const generic = () => NextResponse.json({
+    success: true,
+    message: "If this Telegram account can sign in, a code has been sent.",
+  });
+  if (!user || user.status !== "ACTIVE" || !user.chatId) return generic();
 
-  if (user.status !== "ACTIVE") {
-    return NextResponse.json({ error: "Account is inactive" }, { status: 403 });
+  const now = new Date();
+  if (user.otpLockedUntil && user.otpLockedUntil > now) {
+    return generic();
   }
-
-  if (!user.chatId) {
-    return NextResponse.json({
-      error: "Please start the bot first",
-      botLink: `https://t.me/${process.env.BOT_USERNAME}?start=auth`,
-    }, { status: 400 });
+  if (user.otpRequestedAt && now.getTime() - user.otpRequestedAt.getTime() < 60_000) {
+    return generic();
   }
 
   const otp = generateOtp();
@@ -34,7 +34,13 @@ export async function POST(req: NextRequest) {
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { otpCode: otp, otpExpiresAt: expiresAt },
+    data: {
+      otpCode: hashOtp(telegramId, otp),
+      otpExpiresAt: expiresAt,
+      otpAttempts: 0,
+      otpRequestedAt: now,
+      otpLockedUntil: null,
+    },
   });
 
   try {
@@ -46,8 +52,12 @@ export async function POST(req: NextRequest) {
       { parse_mode: "HTML" }
     );
   } catch {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { otpCode: null, otpExpiresAt: null },
+    }).catch(() => undefined);
     return NextResponse.json({ error: "Failed to send OTP. Please try again." }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, message: "OTP sent to your Telegram" });
+  return generic();
 }

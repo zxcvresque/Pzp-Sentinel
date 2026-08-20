@@ -14,6 +14,7 @@ export default function ReconciliationPage() {
   const [data, setData] = useState<ReconciliationData | null>(null);
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
+  const [syncResult, setSyncResult] = useState("");
   const load = useCallback(() => fetch("/api/reconciliation", { cache: "no-store" }).then(async (response) => {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || "Could not load reconciliation inbox");
@@ -30,12 +31,25 @@ export default function ReconciliationPage() {
     setWorking("");
   }
 
+  async function syncRazorpay() {
+    setWorking("sync");
+    setSyncResult("");
+    const response = await fetch("/api/reconciliation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "SYNC_RAZORPAY" }) });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) setError(body?.error || "Razorpay sync failed");
+    else {
+      setSyncResult(`Checked ${body.checked}; recovered ${body.recovered}; ${body.errors?.length || 0} errors.`);
+      await load();
+    }
+    setWorking("");
+  }
+
   if (error) return <div className="rounded-xl border border-coral/20 bg-coral/8 p-4 text-coral">{error}</div>;
   if (!data) return <div className="skeleton h-72 w-full" />;
   const total = data.unmatchedBmc.length + data.unmatchedRazorpayOrders.length + data.pendingRazorpayEvents.length + data.possibleDuplicates.length;
 
   return <div>
-    <div className="mb-6"><h1 className="text-3xl font-extrabold">Reconciliation <span className="font-display text-lime">Inbox</span></h1><p className="mt-2 text-sm text-text-secondary">Unmatched provider payments, incomplete webhook processing and possible duplicate ledger entries.</p></div>
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Reconciliation <span className="font-display text-lime">Inbox</span></h1><p className="mt-2 text-sm text-text-secondary">Unmatched provider payments, incomplete provider processing and possible duplicate ledger entries.</p>{syncResult && <p className="mt-2 text-xs text-mint">{syncResult}</p>}</div><button onClick={syncRazorpay} disabled={working === "sync"} className="rounded-full bg-lime px-5 py-2 text-sm font-semibold text-bg-void disabled:opacity-40">{working === "sync" ? "Syncing…" : "Sync Razorpay now"}</button></div>
     <div className="mb-6 grid gap-3 sm:grid-cols-4"><Stat label="Total flags" value={total} /><Stat label="BMC unmatched" value={data.unmatchedBmc.length} /><Stat label="Razorpay unmatched" value={data.unmatchedRazorpayOrders.length + data.pendingRazorpayEvents.length} /><Stat label="Possible duplicates" value={data.possibleDuplicates.length} /></div>
 
     <Section title="Unmatched BMC payments" empty="No unmatched BMC payments.">

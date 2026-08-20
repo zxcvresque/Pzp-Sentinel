@@ -55,3 +55,4 @@ next-env.d.ts
 .gstack/
 plain-bmc-history-export.pdf
 Sentinel Rzp.txt
+bmc-history-export.xlsx

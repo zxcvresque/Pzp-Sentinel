@@ -547,8 +547,15 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [projectIds, setProjectIds] = useState<string[]>([]);
 
-  const canSubmit = name.trim() && platform.trim() && ip.trim() && password.trim();
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/projects").then((response) => response.ok ? response.json() : { projects: [] }).then((data) => setProjects(data.projects || [])).catch(() => {});
+  }, [open]);
+
+  const canSubmit = name.trim() && platform.trim() && ip.trim() && password.trim() && projectIds.length > 0;
 
   const inputClass =
     "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary text-sm focus:outline-none focus:border-[var(--border-active)] transition-colors";
@@ -572,6 +579,8 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
           platform: platform.trim(),
           password: password.trim(),
           notes: notes.trim(),
+          projectIds,
+          maintainerIds: [],
         }),
       });
 
@@ -586,6 +595,7 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
       setPlatform("");
       setPassword("");
       setNotes("");
+      setProjectIds([]);
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -696,6 +706,16 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
                 className={`${inputClass} resize-none`}
               />
 
+              <div>
+                <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--text-tertiary)]">Project responsibility (required)</div>
+                <div className="flex flex-wrap gap-2">
+                  {projects.map((project) => (
+                    <button key={project.id} type="button" onClick={() => setProjectIds((current) => current.includes(project.id) ? current.filter((id) => id !== project.id) : [...current, project.id])} className="rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase" style={projectIds.includes(project.id) ? { color: "var(--bg-deep)", background: "var(--lime)", borderColor: "var(--lime)" } : { color: "var(--text-secondary)", borderColor: "var(--border)" }}>{project.name}</button>
+                  ))}
+                  {!projects.length && <span className="text-xs text-[var(--coral)]">You need project membership before requesting a VPS.</span>}
+                </div>
+              </div>
+
               {error && (
                 <p className="text-xs text-[var(--coral)]">{error}</p>
               )}
@@ -745,7 +765,8 @@ export default function VpsPage() {
 
   /* Initial fetch on mount (skeleton shows until this resolves) */
   useEffect(() => {
-    fetchServers();
+    const timer = window.setTimeout(() => { void fetchServers(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchServers]);
 
   /* Background refresh: on focus/visibility + every 20s while visible (agent heartbeats) */

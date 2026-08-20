@@ -9,6 +9,8 @@ import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { logCredentialAction } from "@/lib/github-log";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { logAudit } from "@/lib/audit";
+import { projectAccessFor } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -40,43 +42,48 @@ function normalizeSshPort(value: unknown) {
   return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 22;
 }
 
-async function metricSummary(serverId: string, since: Date) {
-  const [aggregate, samples] = await Promise.all([
-    prisma.vpsMetric.aggregate({
-      where: { serverId, createdAt: { gte: since } },
-      _avg: {
-        cpuUsage: true,
-        ramUsage: true,
-        ramTotal: true,
-        diskUsage: true,
-        diskTotal: true,
-        load1: true,
-        load5: true,
-        load15: true,
-      },
-    }),
-    prisma.vpsMetric.count({
-      where: { serverId, createdAt: { gte: since } },
-    }),
-  ]);
+type MetricAggregate = {
+  _count: { _all: number };
+  _avg: {
+    cpuUsage: number | null;
+    ramUsage: number | null;
+    ramTotal: number | null;
+    diskUsage: number | null;
+    diskTotal: number | null;
+    load1: number | null;
+    load5: number | null;
+    load15: number | null;
+  };
+};
 
-  const ramUsage = aggregate._avg.ramUsage ?? 0;
-  const ramTotal = aggregate._avg.ramTotal ?? 0;
-  const diskUsage = aggregate._avg.diskUsage ?? 0;
-  const diskTotal = aggregate._avg.diskTotal ?? 0;
+async function metricSummaries(serverIds: string[], since: Date) {
+  const groups = serverIds.length ? await prisma.vpsMetric.groupBy({
+    by: ["serverId"],
+    where: { serverId: { in: serverIds }, createdAt: { gte: since } },
+    _count: { _all: true },
+    _avg: { cpuUsage: true, ramUsage: true, ramTotal: true, diskUsage: true, diskTotal: true, load1: true, load5: true, load15: true },
+  }) : [];
+  return new Map(groups.map((group) => [group.serverId, group]));
+}
 
+function metricSummary(aggregate?: MetricAggregate) {
+  const avg = aggregate?._avg;
+  const ramUsage = avg?.ramUsage ?? 0;
+  const ramTotal = avg?.ramTotal ?? 0;
+  const diskUsage = avg?.diskUsage ?? 0;
+  const diskTotal = avg?.diskTotal ?? 0;
   return {
-    samples,
-    cpuUsage: round1(aggregate._avg.cpuUsage ?? 0),
+    samples: aggregate?._count._all ?? 0,
+    cpuUsage: round1(avg?.cpuUsage ?? 0),
     ramUsage: round1(ramUsage),
     ramTotal: round1(ramTotal),
     ramPct: round1(pct(ramUsage, ramTotal)),
     diskUsage: round1(diskUsage),
     diskTotal: round1(diskTotal),
     diskPct: round1(pct(diskUsage, diskTotal)),
-    load1: round2(aggregate._avg.load1 ?? 0),
-    load5: round2(aggregate._avg.load5 ?? 0),
-    load15: round2(aggregate._avg.load15 ?? 0),
+    load1: round2(avg?.load1 ?? 0),
+    load5: round2(avg?.load5 ?? 0),
+    load15: round2(avg?.load15 ?? 0),
   };
 }
 
@@ -89,9 +96,20 @@ export async function GET() {
 
   const isAdmin = hasRole(user.roles, "ADMIN");
   const servers = await prisma.vpsServer.findMany({
-    where: isAdmin ? {} : { approved: true },
+    where: isAdmin ? {} : {
+      approved: true,
+      OR: [
+        { maintainers: { some: { id: user.id } } },
+        { projects: { some: { OR: [{ memberships: { some: { userId: user.id } } }, { members: { some: { id: user.id } } }] } } },
+      ],
+    },
     orderBy: { createdAt: "asc" },
-    include: { subscription: true },
+    include: {
+      subscription: true,
+      projects: { select: { id: true, name: true } },
+      maintainers: { select: { id: true, name: true, photoUrl: true, telegramUser: true, githubUsername: true } },
+      alerts: { where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 },
+    },
   });
 
   // Per-dev SSH access status per server (dev view only) — derived from the
@@ -118,7 +136,12 @@ export async function GET() {
   }
 
   const now = Date.now();
-  const result = await Promise.all(servers.map(async (s) => ({
+  const serverIds = servers.map((server) => server.id);
+  const [weekSummaries, monthSummaries] = await Promise.all([
+    metricSummaries(serverIds, new Date(now - WEEK_MS)),
+    metricSummaries(serverIds, new Date(now - MONTH_MS)),
+  ]);
+  const result = servers.map((s) => ({
     id: s.id,
     name: s.name,
     provider: s.provider,
@@ -133,10 +156,9 @@ export async function GET() {
     // devs and never shared — devs see stats (+ shared credentials) only.
     ...(isAdmin
       ? {
-          password: decryptSecret(s.password),
-          sshKeyFileUrl: s.sshKeyFileUrl ? decryptSecret(s.sshKeyFileUrl) : null,
           accessPublicKeys: s.accessPublicKeys,
-          token: s.token, // admin-only: lets the card re-show the agent install command
+          hasPassword: Boolean(s.password),
+          hasSshKeyFile: Boolean(s.sshKeyFileUrl),
           planLink: s.planLink ?? null,
           subscription: s.subscription
             ? {
@@ -160,6 +182,11 @@ export async function GET() {
       ? {}
       : { access: accessByServer.get(s.id) ?? { status: "none", accessLevel: null, devPublicKey: null } }),
     specs: s.specs,
+    processHealth: s.processHealth,
+    releaseVersion: s.releaseVersion,
+    projects: s.projects,
+    maintainers: s.maintainers,
+    alerts: s.alerts,
     approved: s.approved,
     addedById: s.addedById,
     status: !s.approved ? "pending" : (now - s.lastSeen.getTime() > 120_000 ? "offline" : "online"),
@@ -175,11 +202,11 @@ export async function GET() {
       netOut: round2(s.netOut),
     },
     history: {
-      week: await metricSummary(s.id, new Date(now - WEEK_MS)),
-      month: await metricSummary(s.id, new Date(now - MONTH_MS)),
+      week: metricSummary(weekSummaries.get(s.id)),
+      month: metricSummary(monthSummaries.get(s.id)),
     },
     lastSeen: s.lastSeen.toISOString(),
-  })));
+  }));
 
   return NextResponse.json(
     { servers: result },
@@ -208,6 +235,8 @@ export async function POST(req: NextRequest) {
     tags,
     notes,
     shareWith,
+    projectIds,
+    maintainerIds,
     planLink,
     duration,
   } = await req.json();
@@ -218,6 +247,8 @@ export async function POST(req: NextRequest) {
   const cleanSshKeyFileUrl = String(sshKeyFileUrl ?? "").trim();
   const cleanSshKeyFileName = String(sshKeyFileName ?? "").trim();
   const cleanPlanLink = String(planLink ?? "").trim();
+  const linkedProjectIds = Array.isArray(projectIds) ? [...new Set(projectIds.filter((value: unknown): value is string => typeof value === "string"))] : [];
+  const linkedMaintainerIds = Array.isArray(maintainerIds) ? [...new Set(maintainerIds.filter((value: unknown): value is string => typeof value === "string"))] : [];
 
   if (!cleanName || !cleanIp || !cleanUsername || (!cleanPassword && !cleanSshKeyFileUrl)) {
     return NextResponse.json(
@@ -227,6 +258,20 @@ export async function POST(req: NextRequest) {
   }
 
   const isAdmin = hasRole(user.roles, "ADMIN");
+  if (!isAdmin) {
+    if (!linkedProjectIds.length) return NextResponse.json({ error: "A developer-submitted server must be linked to one of their projects" }, { status: 400 });
+    for (const projectId of linkedProjectIds) {
+      if (!await projectAccessFor(user, projectId)) return NextResponse.json({ error: "You can only link servers to your projects" }, { status: 403 });
+    }
+  }
+  if (linkedProjectIds.length) {
+    const projectCount = await prisma.project.count({ where: { id: { in: linkedProjectIds }, archivedAt: null } });
+    if (projectCount !== linkedProjectIds.length) return NextResponse.json({ error: "One or more projects are invalid" }, { status: 400 });
+  }
+  if (linkedMaintainerIds.length) {
+    const maintainerCount = await prisma.user.count({ where: { id: { in: linkedMaintainerIds }, status: "ACTIVE", roles: { has: "DEV" } } });
+    if (maintainerCount !== linkedMaintainerIds.length) return NextResponse.json({ error: "Every maintainer must be an active developer" }, { status: 400 });
+  }
   const token = isAdmin ? randomBytes(32).toString("hex") : randomBytes(32).toString("hex");
 
   const server = await prisma.vpsServer.create({
@@ -247,7 +292,26 @@ export async function POST(req: NextRequest) {
       token,
       approved: isAdmin,
       addedById: user.id,
+      projects: linkedProjectIds.length ? { connect: linkedProjectIds.map((id) => ({ id })) } : undefined,
+      maintainers: { connect: [...new Set([user.id, ...linkedMaintainerIds])].map((id) => ({ id })) },
     },
+  });
+
+  await logAudit({
+    userId: user.id,
+    action: "VPS_CREATE",
+    entityType: "VpsServer",
+    entityId: server.id,
+    after: {
+      name: server.name,
+      ip: server.ip,
+      provider: server.provider,
+      approved: server.approved,
+      projectIds: linkedProjectIds,
+      maintainerIds: [...new Set([user.id, ...linkedMaintainerIds])],
+    },
+    userName: user.name,
+    request: req,
   });
 
   // Mirror secrets into the vault as access-controlled credentials (admin-created
@@ -299,7 +363,7 @@ export async function POST(req: NextRequest) {
             message: `${user.name} gave you full access to ${server.name}'s credentials.`,
             entityId: server.id,
             priority: "NORMAL",
-            actionUrl: "/credentials",
+            actionUrl: "/dev/credentials",
             telegramMessage: formatTgMessage(
               "🔐 VPS Credentials Shared",
               `${server.name}`,
@@ -353,6 +417,21 @@ export async function PATCH(req: NextRequest) {
     const newPassword = String(body.password ?? "").trim();
     const newSshKeyFileUrl = String(body.sshKeyFileUrl ?? "").trim();
     const cleanPlanLink = String(body.planLink ?? "").trim();
+    const projectIds: string[] | null = Array.isArray(body.projectIds)
+      ? Array.from(new Set<string>(body.projectIds.filter((value: unknown): value is string => typeof value === "string")))
+      : null;
+    const maintainerIds: string[] | null = Array.isArray(body.maintainerIds)
+      ? Array.from(new Set<string>(body.maintainerIds.filter((value: unknown): value is string => typeof value === "string")))
+      : null;
+
+    if (projectIds) {
+      const validProjects = await prisma.project.count({ where: { id: { in: projectIds }, archivedAt: null } });
+      if (validProjects !== projectIds.length) return NextResponse.json({ error: "One or more projects are invalid" }, { status: 400 });
+    }
+    if (maintainerIds) {
+      const validMaintainers = await prisma.user.count({ where: { id: { in: maintainerIds }, status: "ACTIVE", roles: { has: "DEV" } } });
+      if (validMaintainers !== maintainerIds.length) return NextResponse.json({ error: "Every maintainer must be an active developer" }, { status: 400 });
+    }
 
     const data: Prisma.VpsServerUpdateInput = {
       name: String(body.name ?? existingServer.name).trim() || existingServer.name,
@@ -365,6 +444,8 @@ export async function PATCH(req: NextRequest) {
       tags: normalizeTags(body.tags),
       notes: String(body.notes ?? "").trim(),
       planLink: cleanPlanLink || null,
+      ...(projectIds ? { projects: { set: projectIds.map((projectId) => ({ id: projectId })) } } : {}),
+      ...(maintainerIds ? { maintainers: { set: maintainerIds.map((maintainerId) => ({ id: maintainerId })) } } : {}),
     };
     // Secrets: blank input means "keep existing" (never overwrite with empty).
     if (newPassword) data.password = encryptSecret(newPassword);
@@ -400,6 +481,17 @@ export async function PATCH(req: NextRequest) {
     } catch (e) {
       console.error("[vps] syncVpsSubscription failed:", e);
     }
+
+    await logAudit({
+      userId: user.id,
+      action: "VPS_UPDATE",
+      entityType: "VpsServer",
+      entityId: id,
+      before: { name: existingServer.name, ip: existingServer.ip, provider: existingServer.provider },
+      after: { name: server.name, ip: server.ip, provider: server.provider, projectIds, maintainerIds, secretChanged: Boolean(newPassword || newSshKeyFileUrl) },
+      userName: user.name,
+      request: req,
+    });
 
     return NextResponse.json({ ok: true });
   }
@@ -439,6 +531,7 @@ export async function PATCH(req: NextRequest) {
       },
     });
     scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: tx.id, sendBackup: true });
+    await logAudit({ userId: user.id, action: "VPS_RENEW", entityType: "VpsServer", entityId: id, transactionId: tx.id, after: { serviceId: sub.id }, userName: user.name, request: req });
     return NextResponse.json({ ok: true });
   }
 
@@ -469,6 +562,7 @@ export async function PATCH(req: NextRequest) {
       data: { status: "CANCELLED", autoRenew: false },
     });
     scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: refundTx.id, sendBackup: true });
+    await logAudit({ userId: user.id, action: "VPS_REFUND", entityType: "VpsServer", entityId: id, transactionId: refundTx.id, userName: user.name, request: req });
     return NextResponse.json({ ok: true });
   }
 
@@ -493,12 +587,22 @@ export async function PATCH(req: NextRequest) {
     } catch (e) {
       console.error("[vps] syncVpsCredentials failed:", e);
     }
+    await logAudit({ userId: user.id, action: "VPS_APPROVE", entityType: "VpsServer", entityId: id, before: { approved: false }, after: { approved: true }, userName: user.name, request: req });
     // Return the token so admin can set up the agent
     return NextResponse.json({ server: { id: server.id, name: server.name, token: server.token } });
   }
 
+  if (action === "rotate_token") {
+    const token = randomBytes(32).toString("hex");
+    const server = await prisma.vpsServer.update({ where: { id }, data: { token }, select: { id: true, name: true } });
+    await logAudit({ userId: user.id, action: "VPS_TOKEN_ROTATE", entityType: "VpsServer", entityId: id, after: { rotated: true }, userName: user.name, request: req });
+    return NextResponse.json({ server: { ...server, token } }, { headers: { "Cache-Control": "private, no-store" } });
+  }
+
   if (action === "reject") {
+    const rejected = await prisma.vpsServer.findUnique({ where: { id }, select: { id: true, name: true, addedById: true } });
     await prisma.vpsServer.delete({ where: { id } });
+    await logAudit({ userId: user.id, action: "VPS_REJECT", entityType: "VpsServer", entityId: id, before: rejected, userName: user.name, request: req });
     return NextResponse.json({ ok: true });
   }
 
@@ -539,5 +643,6 @@ export async function DELETE(req: NextRequest) {
   }
 
   await prisma.vpsServer.delete({ where: { id } });
+  await logAudit({ userId: user.id, action: "VPS_DELETE", entityType: "VpsServer", entityId: id, userName: user.name, request: req });
   return NextResponse.json({ ok: true });
 }

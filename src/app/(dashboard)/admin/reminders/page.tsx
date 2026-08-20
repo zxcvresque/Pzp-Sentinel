@@ -17,6 +17,11 @@ interface Reminder {
   channel: string;
   createdBy: { name: string; photoUrl?: string | null; telegramUser?: string | null };
   createdAt: string;
+  owner?: { id: string; name: string } | null;
+  acknowledgedAt?: string | null;
+  acknowledgedBy?: { id: string; name: string } | null;
+  escalationAt?: string | null;
+  escalatedAt?: string | null;
 }
 
 const FREQ_COLORS: Record<string, string> = {
@@ -58,11 +63,16 @@ export default function RemindersPage() {
   const [nextFire, setNextFire] = useState("");
   const [channel, setChannel] = useState("BOTH");
   const [errorMsg, setErrorMsg] = useState("");
+  const [admins, setAdmins] = useState<Array<{ id: string; name: string }>>([]);
+  const [ownerId, setOwnerId] = useState("");
+  const [escalationAt, setEscalationAt] = useState("");
 
   useEffect(() => {
-    fetch("/api/reminders")
-      .then((r) => r.json())
-      .then((data) => setReminders(data.reminders || []))
+    Promise.all([fetch("/api/reminders").then((r) => r.json()), fetch("/api/users").then((r) => r.ok ? r.json() : { users: [] })])
+      .then(([data, userData]) => {
+        setReminders(data.reminders || []);
+        setAdmins((userData.users || []).filter((candidate: { roles: string[]; status: string }) => candidate.roles.includes("ADMIN") && candidate.status === "ACTIVE"));
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -74,6 +84,8 @@ export default function RemindersPage() {
     setNextFire("");
     setChannel("BOTH");
     setErrorMsg("");
+    setOwnerId("");
+    setEscalationAt("");
     setEditingId(null);
   }
 
@@ -88,6 +100,8 @@ export default function RemindersPage() {
     ));
     setNextFire(localDateTimeValue(rem.nextFire));
     setChannel(rem.channel);
+    setOwnerId(rem.owner?.id || "");
+    setEscalationAt(rem.escalationAt ? localDateTimeValue(rem.escalationAt) : "");
     setErrorMsg("");
     setShowForm(true);
   }
@@ -109,6 +123,8 @@ export default function RemindersPage() {
       channel,
       repeatEvery: frequency === "CUSTOM" ? Number(repeatEvery) : undefined,
       repeatUnit: frequency === "CUSTOM" ? repeatUnit : undefined,
+      ownerId: ownerId || undefined,
+      escalationAt: escalationAt ? new Date(escalationAt).toISOString() : null,
     };
 
     const res = editingId
@@ -162,6 +178,19 @@ export default function RemindersPage() {
       setDeleting(false);
       setDeleteTarget(null);
     }
+  }
+
+  async function reminderAction(id: string, action: "ACKNOWLEDGE" | "SNOOZE") {
+    const payload: Record<string, string> = { action };
+    if (action === "SNOOZE") {
+      const until = window.prompt("Snooze until (for example 2026-08-22T10:00)");
+      if (!until) return;
+      payload.until = new Date(until).toISOString();
+    }
+    const response = await fetch(`/api/reminders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!response.ok) return;
+    const data = await response.json();
+    setReminders((current) => current.map((reminder) => reminder.id === id ? { ...reminder, ...data.reminder } : reminder));
   }
 
   if (loading) {
@@ -321,6 +350,16 @@ export default function RemindersPage() {
               </div>
             </div>
           )}
+          <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Owner</label>
+              <Dropdown value={ownerId} options={[{ value: "", label: "Me" }, ...admins.map((admin) => ({ value: admin.id, label: admin.name }))]} onChange={setOwnerId} />
+            </div>
+            <div>
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Escalate if unacknowledged (optional)</label>
+              <input type="datetime-local" value={escalationAt} onChange={(event) => setEscalationAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" />
+            </div>
+          </div>
           <button
             type="submit"
             disabled={submitting || !message || !nextFire || (frequency === "CUSTOM" && !repeatEvery)}
@@ -363,10 +402,14 @@ export default function RemindersPage() {
                   </span>
                 </div>
                 <div className="text-text-tertiary text-xs mt-2">
-                  Next: {new Date(rem.nextFire).toLocaleString()} · all admins · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
+                  Next: {new Date(rem.nextFire).toLocaleString()} · owner {rem.owner?.name || "admin"} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
                 </div>
+                {rem.escalationAt && <div className="mt-1 text-[10px] text-amber">Escalates {new Date(rem.escalationAt).toLocaleString()}{rem.escalatedAt ? " · escalated" : ""}</div>}
+                {rem.acknowledgedAt && <div className="mt-1 text-[10px] text-mint">Acknowledged by {rem.acknowledgedBy?.name || "admin"}</div>}
               </div>
               <div className="flex gap-2 shrink-0">
+                {!rem.acknowledgedAt && <button onClick={() => reminderAction(rem.id, "ACKNOWLEDGE")} className="px-3 py-1 rounded-full text-xs font-semibold bg-mint/10 text-mint">Acknowledge</button>}
+                <button onClick={() => reminderAction(rem.id, "SNOOZE")} className="px-3 py-1 rounded-full text-xs font-semibold bg-amber/10 text-amber">Snooze</button>
                 <button
                   onClick={() => handleEdit(rem)}
                   className="px-3 py-1 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20 transition-colors"

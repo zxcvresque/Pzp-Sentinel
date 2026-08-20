@@ -16,8 +16,11 @@ export function useFormExamples() {
   const [showExamples, setShowExamples] = useState(false);
 
   useEffect(() => {
-    const hidden = localStorage.getItem(STORAGE_KEY);
-    setShowExamples(hidden !== "true");
+    const timer = window.setTimeout(() => {
+      const hidden = localStorage.getItem(STORAGE_KEY);
+      setShowExamples(hidden !== "true");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const hideExamples = useCallback(() => {

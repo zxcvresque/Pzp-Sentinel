@@ -460,9 +460,64 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
 }
 
 export function scheduleFinanceAutomation(event: FinanceAutomationEvent) {
-  if (!configured()) return;
-  automationQueue = automationQueue
-    .then(() => syncFinanceWorkbook(event))
-    .then(() => undefined)
-    .catch((error) => console.error("[finance-sheets] automation failed:", error));
+  if (!configured()) return Promise.resolve();
+  return prisma.financeSyncJob.create({
+    data: {
+      action: event.action,
+      actorName: event.actorName,
+      transactionId: event.transactionId,
+      sendBackup: event.sendBackup === true,
+    },
+  }).then(() => {
+    void drainFinanceAutomationQueue();
+  });
+}
+
+export function drainFinanceAutomationQueue(limit = 10) {
+  if (!configured()) return Promise.resolve();
+  automationQueue = automationQueue.then(async () => {
+    for (let index = 0; index < limit; index++) {
+      const now = new Date();
+      const staleLock = new Date(now.getTime() - 10 * 60_000);
+      const job = await prisma.financeSyncJob.findFirst({
+        where: {
+          nextAttemptAt: { lte: now },
+          OR: [
+            { status: { in: ["PENDING", "RETRY"] } },
+            { status: "PROCESSING", lockedAt: { lt: staleLock } },
+          ],
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!job) break;
+      const claimed = await prisma.financeSyncJob.updateMany({
+        where: { id: job.id, status: job.status, updatedAt: job.updatedAt },
+        data: { status: "PROCESSING", lockedAt: now, attempts: { increment: 1 }, lastError: null },
+      });
+      if (claimed.count !== 1) continue;
+      try {
+        await syncFinanceWorkbook({
+          action: job.action as FinanceAutomationEvent["action"],
+          actorName: job.actorName,
+          transactionId: job.transactionId ?? undefined,
+          sendBackup: job.sendBackup,
+        });
+        await prisma.financeSyncJob.update({ where: { id: job.id }, data: { status: "COMPLETED", completedAt: new Date(), lockedAt: null } });
+      } catch (error) {
+        const attempts = job.attempts + 1;
+        const delayMinutes = Math.min(360, 2 ** Math.min(attempts, 8));
+        await prisma.financeSyncJob.update({
+          where: { id: job.id },
+          data: {
+            status: "RETRY",
+            lockedAt: null,
+            nextAttemptAt: new Date(Date.now() + delayMinutes * 60_000),
+            lastError: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
+          },
+        });
+        console.error("[finance-sheets] durable sync failed:", error);
+      }
+    }
+  }).catch((error) => console.error("[finance-sheets] queue drain failed:", error));
+  return automationQueue;
 }
