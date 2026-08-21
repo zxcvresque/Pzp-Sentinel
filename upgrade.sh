@@ -89,27 +89,42 @@ BEGIN
   END LOOP;
 END $$;
 
-WITH ranked_renewals AS (
-  SELECT
-    id,
-    ROW_NUMBER() OVER (
-      PARTITION BY "automatedRenewalKey"
-      ORDER BY
-        CASE
-          WHEN "voidedAt" IS NULL AND status IN ('PENDING', 'APPROVED') THEN 0
-          ELSE 1
-        END,
-        "createdAt",
-        id
-    ) AS duplicate_position
-  FROM "Transaction"
-  WHERE "automatedRenewalKey" IS NOT NULL
-)
-UPDATE "Transaction" AS tx
-SET "automatedRenewalKey" = NULL
-FROM ranked_renewals
-WHERE tx.id = ranked_renewals.id
-  AND ranked_renewals.duplicate_position > 1;
+DO $$
+BEGIN
+  -- Newer partial deployments may already have this column without its unique
+  -- index. Fresh upgrades do not have it yet, so defer entirely to db push.
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'Transaction'
+      AND column_name = 'automatedRenewalKey'
+  ) THEN
+    EXECUTE $cleanup$
+      WITH ranked_renewals AS (
+        SELECT
+          id,
+          ROW_NUMBER() OVER (
+            PARTITION BY "automatedRenewalKey"
+            ORDER BY
+              CASE
+                WHEN "voidedAt" IS NULL AND status IN ('PENDING', 'APPROVED') THEN 0
+                ELSE 1
+              END,
+              "createdAt",
+              id
+          ) AS duplicate_position
+        FROM "Transaction"
+        WHERE "automatedRenewalKey" IS NOT NULL
+      )
+      UPDATE "Transaction" AS tx
+      SET "automatedRenewalKey" = NULL
+      FROM ranked_renewals
+      WHERE tx.id = ranked_renewals.id
+        AND ranked_renewals.duplicate_position > 1
+    $cleanup$;
+  END IF;
+END $$;
 SQL
 
 step "Applying Prisma schema…"
