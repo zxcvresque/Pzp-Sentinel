@@ -6,6 +6,14 @@ import ThemeColorPicker from "@/components/ThemeColorPicker";
 import { getRoleColor } from "@/lib/role-colors";
 import { useFormExamples } from "@/hooks/useFormExamples";
 import DonateReminderCard from "@/components/DonateReminderCard";
+import {
+  introStorageKey,
+  isGuidanceRole,
+  mainTourStorageKey,
+  pageTourStoragePrefix,
+  pageToursDisabledStorageKey,
+} from "@/lib/guidance-storage";
+import type { GuidanceRole } from "@/lib/guidance-storage";
 
 interface UserProfile {
   id: string;
@@ -16,7 +24,7 @@ interface UserProfile {
   themeColor?: string;
   formLayout: FormLayout;
   chatId: string | null;
-  roles: string[];
+  roles: GuidanceRole[];
   createdAt: string | null;
   dmPreferences: string[];
   inAppPreferences: string[];
@@ -34,7 +42,7 @@ const FORM_LAYOUTS: Array<{ value: FormLayout; label: string; description: strin
 
 function currentWorkspace(user: UserProfile) {
   const stored = localStorage.getItem(`sentinel_active_role_${user.id}`);
-  const role = stored && user.roles.includes(stored) ? stored : user.roles[0] || "DONOR";
+  const role: GuidanceRole = isGuidanceRole(stored) && user.roles.includes(stored) ? stored : user.roles[0] || "DONOR";
   return { role, route: `/${role.toLowerCase()}` };
 }
 
@@ -688,22 +696,22 @@ export default function ProfilePage() {
             <p className="text-xs text-text-tertiary">Walk through Sentinel&apos;s interface step by step</p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <button onClick={async () => { if (user) { const workspace = currentWorkspace(user); localStorage.removeItem(`sentinel_intro_seen_${user.id}_${workspace.role}`); await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = workspace.route; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
+            <button onClick={async () => { if (user) { const workspace = currentWorkspace(user); localStorage.removeItem(introStorageKey(user.id, workspace.role)); await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = workspace.route; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
             <button
               onClick={() => {
                 if (user) {
                   const workspace = currentWorkspace(user);
-                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${workspace.role}`);
+                  localStorage.removeItem(pageToursDisabledStorageKey(user.id, workspace.role));
                   const pagePrefix = `${workspace.role.toLowerCase()}-`;
                   // Clear page-specific tours only for the current workspace.
                   const keys = Object.keys(localStorage).filter(
-                    (k) => k.startsWith(`sentinel_page_tour_${user.id}_${pagePrefix}`)
+                    (k) => k.startsWith(`${pageTourStoragePrefix(user.id)}${pagePrefix}`)
                   );
                   keys.forEach((k) => localStorage.removeItem(k));
                   // Dev and donor landing guidance is intentionally consolidated
                   // into the workspace tour instead of a second overlapping tour.
                   if (workspace.role === "DEV" || workspace.role === "DONOR") {
-                    localStorage.removeItem(`sentinel_tour_seen_${user.id}_${workspace.role}`);
+                    localStorage.removeItem(mainTourStorageKey(user.id, workspace.role));
                   }
                   window.location.href = workspace.route;
                 }
@@ -716,8 +724,8 @@ export default function ProfilePage() {
               onClick={() => {
                 if (user) {
                   const workspace = currentWorkspace(user);
-                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${workspace.role}`);
-                  localStorage.removeItem(`sentinel_tour_seen_${user.id}_${workspace.role}`);
+                  localStorage.removeItem(pageToursDisabledStorageKey(user.id, workspace.role));
+                  localStorage.removeItem(mainTourStorageKey(user.id, workspace.role));
                   window.location.href = workspace.route;
                 }
               }}

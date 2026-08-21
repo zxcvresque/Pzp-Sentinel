@@ -7,6 +7,12 @@ import TopBar from "@/components/TopBar";
 import SpotlightTour from "@/components/SpotlightTour";
 import RoleOnboarding from "@/components/RoleOnboarding";
 import { getTourSteps } from "@/lib/tour-steps";
+import {
+  GUIDANCE_VERSION,
+  introStorageKey,
+  mainTourStorageKey,
+  pageToursDisabledStorageKey,
+} from "@/lib/guidance-storage";
 import type { Role } from "@/generated/prisma/enums";
 
 interface UserData {
@@ -117,19 +123,21 @@ export default function DashboardLayout({
   // roles, so remember the introduction independently for each switched view.
   useEffect(() => {
     if (!user) return;
-    const introKey = `sentinel_intro_seen_${user.id}_${onboardingRole}`;
+    const introKey = introStorageKey(user.id, onboardingRole);
     const roleIntroSeen = localStorage.getItem(introKey) === "1";
-    const shouldShowRoleIntro = !roleIntroSeen && ((user.onboardingVersion || 0) < 1 || user.roles.includes("ADMIN"));
+    const shouldShowRoleIntro = !roleIntroSeen && ((user.onboardingVersion || 0) < GUIDANCE_VERSION || user.roles.includes("ADMIN"));
     if (shouldShowRoleIntro) {
       const timer = window.setTimeout(() => setIntroActive(true), 0);
       return () => window.clearTimeout(timer);
     }
     const closeIntroTimer = window.setTimeout(() => setIntroActive(false), 0);
-    const key = `sentinel_tour_seen_${user.id}_${onboardingRole}`;
-    if (!localStorage.getItem(key) && !localStorage.getItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`)) {
+    const key = mainTourStorageKey(user.id, onboardingRole);
+    if (!localStorage.getItem(key) && !localStorage.getItem(pageToursDisabledStorageKey(user.id, onboardingRole))) {
       // Small delay so the page renders first
-      setTourRole(onboardingRole);
-      const timer = setTimeout(() => setTourActive(true), 800);
+      const timer = setTimeout(() => {
+        setTourRole(onboardingRole);
+        setTourActive(true);
+      }, 800);
       return () => { window.clearTimeout(closeIntroTimer); clearTimeout(timer); };
     }
     return () => window.clearTimeout(closeIntroTimer);
@@ -137,19 +145,19 @@ export default function DashboardLayout({
 
   async function completeIntro(startTours: boolean, githubUsername?: string) {
     if (!user) return false;
-    const response = await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 1, ...(onboardingRole === "DEV" ? { githubUsername } : {}) }) });
+    const response = await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: GUIDANCE_VERSION, ...(onboardingRole === "DEV" ? { githubUsername } : {}) }) });
     if (!response.ok) return false;
-    localStorage.setItem(`sentinel_intro_seen_${user.id}_${onboardingRole}`, "1");
-    setUser((current) => current ? { ...current, onboardingVersion: 1, ...(githubUsername ? { githubUsername } : {}) } : current);
+    localStorage.setItem(introStorageKey(user.id, onboardingRole), "1");
+    setUser((current) => current ? { ...current, onboardingVersion: GUIDANCE_VERSION, ...(githubUsername ? { githubUsername } : {}) } : current);
     setIntroActive(false);
     setTourRole(onboardingRole);
     if (startTours) {
-      localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`);
-      localStorage.removeItem(`sentinel_tour_seen_${user.id}_${onboardingRole}`);
+      localStorage.removeItem(pageToursDisabledStorageKey(user.id, onboardingRole));
+      localStorage.removeItem(mainTourStorageKey(user.id, onboardingRole));
       window.setTimeout(() => setTourActive(true), 300);
     } else {
-      localStorage.setItem(`sentinel_tour_seen_${user.id}_${onboardingRole}`, "1");
-      localStorage.setItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`, "1");
+      localStorage.setItem(mainTourStorageKey(user.id, onboardingRole), "1");
+      localStorage.setItem(pageToursDisabledStorageKey(user.id, onboardingRole), "1");
     }
     return true;
   }
@@ -157,7 +165,7 @@ export default function DashboardLayout({
   function handleTourFinish() {
     setTourActive(false);
     if (user) {
-      localStorage.setItem(`sentinel_tour_seen_${user.id}_${tourRole}`, "1");
+      localStorage.setItem(mainTourStorageKey(user.id, tourRole), "1");
       window.dispatchEvent(new Event("sentinel-tour-gate-change"));
       setTourToast(true);
       setTimeout(() => setTourToast(false), 6000);
