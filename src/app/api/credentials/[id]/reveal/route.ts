@@ -27,7 +27,7 @@ export async function POST(
     where: { id },
     include: { accesses: { where: { userId: user.id } } },
   });
-  if (!credential) {
+  if (!credential || credential.deletedAt) {
     await logAudit({ userId: user.id, userName: user.name, action: "CREDENTIAL_ACCESS_DENIED", entityType: "Credential", entityId: id, request: req, outcome: "FAILURE", errorMessage: "Credential not found" });
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

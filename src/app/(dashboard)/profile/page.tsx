@@ -13,6 +13,7 @@ interface UserProfile {
   telegramUser: string;
   photoUrl: string | null;
   themeColor?: string;
+  formLayout: FormLayout;
   chatId: string | null;
   roles: string[];
   createdAt: string | null;
@@ -20,6 +21,15 @@ interface UserProfile {
   inAppPreferences: string[];
   savedColors: string[];
 }
+
+type FormLayout = "SECTION_CARDS" | "ACCENT_RAILS" | "NUMBERED_WORKFLOW" | "INFORMATION_BANDS";
+
+const FORM_LAYOUTS: Array<{ value: FormLayout; label: string; description: string }> = [
+  { value: "SECTION_CARDS", label: "Section cards", description: "Grouped cards with rotating accents" },
+  { value: "ACCENT_RAILS", label: "Accent rails", description: "Compact groups with a coloured guide" },
+  { value: "NUMBERED_WORKFLOW", label: "Numbered workflow", description: "Step-oriented sections for long forms" },
+  { value: "INFORMATION_BANDS", label: "Information bands", description: "Wide tonal bands with clear separation" },
+];
 
 const DM_CATEGORIES = [
   { label: "Transactions", types: ["TX_PENDING", "TX_APPROVED", "TX_REJECTED"], desc: "New donations, approvals & rejections" },
@@ -44,6 +54,7 @@ export default function ProfilePage() {
   const [dmPrefs, setDmPrefs] = useState<string[]>([]);
   const [inAppPrefs, setInAppPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
+  const [layoutSaving, setLayoutSaving] = useState(false);
   const [hexDraft, setHexDraft] = useState<string | null>(null);
   const { showExamples, hideExamples, enableExamples } = useFormExamples();
 
@@ -70,6 +81,12 @@ export default function ProfilePage() {
       inputRef.current?.select();
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (user?.formLayout) {
+      document.documentElement.dataset.formLayout = user.formLayout;
+    }
+  }, [user?.formLayout]);
 
   function startEditing() {
     if (!user) return;
@@ -99,7 +116,7 @@ export default function ProfilePage() {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/profile", {
+      const res = await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmed }),
@@ -108,8 +125,7 @@ export default function ProfilePage() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to update name");
       }
-      const data = await res.json();
-      setUser(data.user);
+      setUser((current) => current ? { ...current, name: trimmed } : current);
       setEditing(false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -121,6 +137,25 @@ export default function ProfilePage() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter") saveName();
     if (e.key === "Escape") cancelEditing();
+  }
+
+  async function saveFormLayout(formLayout: FormLayout) {
+    if (!user || layoutSaving || user.formLayout === formLayout) return;
+    const previous = user.formLayout;
+    setUser({ ...user, formLayout });
+    setLayoutSaving(true);
+    try {
+      const response = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formLayout }),
+      });
+      if (!response.ok) throw new Error("Could not save layout");
+    } catch {
+      setUser((current) => current ? { ...current, formLayout: previous } : current);
+    } finally {
+      setLayoutSaving(false);
+    }
   }
 
   const [themeSaved, setThemeSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -141,7 +176,7 @@ export default function ProfilePage() {
       setThemeSaved("saving");
       setThemeError("");
       try {
-        const res = await fetch("/api/auth/profile", {
+        const res = await fetch("/api/auth/me", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ themeColor: hex }),
@@ -171,7 +206,7 @@ export default function ProfilePage() {
     const trimmed = newSaved.slice(0, 3);
     setSavedColors(trimmed);
     try {
-      await fetch("/api/auth/profile", {
+      await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ savedColors: trimmed }),
@@ -185,7 +220,7 @@ export default function ProfilePage() {
     const newSaved = savedColors.filter((_, idx) => idx !== index);
     setSavedColors(newSaved);
     try {
-      await fetch("/api/auth/profile", {
+      await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ savedColors: newSaved }),
@@ -381,6 +416,37 @@ export default function ProfilePage() {
                   }`}
                 />
               </button>
+            </div>
+            <div className="mt-4 border-t border-[var(--border)] pt-4">
+              <div className="text-xs font-medium text-text-primary">Form layout</div>
+              <div className="mt-0.5 text-[11px] text-text-secondary">
+                Applies to grouped forms throughout Sentinel. Section cards is the default.
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {FORM_LAYOUTS.map((layout, index) => {
+                  const active = user.formLayout === layout.value;
+                  const accents = ["var(--lime)", "var(--violet)", "var(--amber)", "var(--mint)"];
+                  return (
+                    <button
+                      key={layout.value}
+                      type="button"
+                      disabled={layoutSaving}
+                      aria-pressed={active}
+                      onClick={() => saveFormLayout(layout.value)}
+                      className={`min-w-0 rounded-xl border p-3 text-left transition-all ${active ? "bg-lime/[0.06]" : "bg-bg-deep hover:bg-bg-elevated"}`}
+                      style={{ borderColor: active ? accents[index] : "var(--border)" }}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="h-6 w-1 rounded-full" style={{ background: accents[index] }} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[11px] font-semibold text-text-primary">{layout.label}</span>
+                          <span className="mt-0.5 block text-[9px] leading-4 text-text-tertiary">{layout.description}</span>
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -605,15 +671,17 @@ export default function ProfilePage() {
 
       {/* ── Replay Tour ── */}
       <div className="card p-5">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-text-primary mb-1">Guided Tour</h3>
             <p className="text-xs text-text-tertiary">Walk through Sentinel&apos;s interface step by step</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button onClick={async () => { if (user) { await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
             <button
               onClick={() => {
                 if (user) {
+                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
                   // Clear all page-specific tours
                   const keys = Object.keys(localStorage).filter(
                     (k) => k.startsWith(`sentinel_page_tour_${user.id}_`)
@@ -630,6 +698,7 @@ export default function ProfilePage() {
             <button
               onClick={() => {
                 if (user) {
+                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
                   localStorage.removeItem(`sentinel_tour_seen_${user.id}`);
                   window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`;
                 }

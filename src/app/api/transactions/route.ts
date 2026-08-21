@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
-import { logAudit } from "@/lib/audit";
-import { logTransaction, logProofScreenshot, logProofScreenshots } from "@/lib/telegram-log";
-import { logTransaction as ghLogTransaction } from "@/lib/github-log";
-import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { Prisma } from "@/generated/prisma/client";
-import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
-import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
-import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
-import { parseDonationFrequency } from "@/lib/donation-frequency";
+import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { logAudit } from "@/lib/audit";
 import { archiveTransactionAttachmentsToTelegram } from "@/lib/attachment-archive";
-import { serviceReminderRepeat } from "@/lib/service-templates";
+import { parseDonationFrequency } from "@/lib/donation-frequency";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { logTransaction as logGithubTransaction } from "@/lib/github-log";
+import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-format";
+import { logProofScreenshot, logProofScreenshots, logTransaction as logTelegramTransaction } from "@/lib/telegram-log";
 import { resolveTransactionAccess } from "@/lib/transaction-access";
+import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -20,17 +19,14 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const access = resolveTransactionAccess(user.roles, searchParams.get("scope"));
-  if (!access.allowed) {
-    return NextResponse.json({ error: "Forbidden: insufficient role for this financial view" }, { status: 403 });
-  }
+  if (!access.allowed) return NextResponse.json({ error: "Forbidden: insufficient role for this financial view" }, { status: 403 });
+
   const { page, limit } = transactionPageFromParams(searchParams);
   const where = transactionWhereFromParams(searchParams, {
     donorUserId: access.selfScoped ? user.id : undefined,
     forceActive: access.selfScoped,
   });
-  const orderBy = transactionOrderFromParams(searchParams);
-
-  const [transactions, total, summaryRows] = await Promise.all([
+  const [transactions, total, summary] = await Promise.all([
     prisma.transaction.findMany({
       where,
       include: {
@@ -39,17 +35,9 @@ export async function GET(req: NextRequest) {
         reviewedBy: true,
         voidedBy: true,
         linkedService: { select: { id: true, name: true } },
-        ...(access.adminLedger ? {
-          bmcWebhookEvents: {
-            select: {
-              supporterEmail: true,
-              supporterId: true,
-              attributionStatus: true,
-            },
-          },
-        } : {}),
+        ...(access.adminLedger ? { bmcWebhookEvents: { select: { supporterEmail: true, supporterId: true, attributionStatus: true } } } : {}),
       },
-      orderBy,
+      orderBy: transactionOrderFromParams(searchParams),
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -62,228 +50,81 @@ export async function GET(req: NextRequest) {
     }) : Promise.resolve([]),
   ]);
 
-  const safeTransactions = transactions.map((transaction) => ({ ...transaction, providerDetailsEncrypted: undefined }));
-  return NextResponse.json({ transactions: safeTransactions, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)), summary: summaryRows });
+  return NextResponse.json({
+    transactions: transactions.map((transaction) => ({ ...transaction, providerDetailsEncrypted: undefined })),
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    summary,
+  });
 }
 
+/** Donor-only manual proof submission. Admin financial events use /api/financial-events. */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await req.json();
-  const access = resolveTransactionAccess(user.roles, body.scope);
-  if (!access.allowed) {
-    return NextResponse.json({ error: "Forbidden: insufficient role for this financial view" }, { status: 403 });
-  }
-  const { amount, currency, method, direction, type, description, date, proofFileId, fromUserId, serviceId, createService } = body;
-  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
-  const donationFrequency = parseDonationFrequency(body.donationFrequency);
-
-  if (!amount || !description) {
-    return NextResponse.json({ error: "Amount and description are required" }, { status: 400 });
+  const body = await req.json().catch(() => null);
+  const access = resolveTransactionAccess(user.roles, body?.scope);
+  if (!access.selfScoped) {
+    return NextResponse.json({ error: "Admin financial records must use the canonical financial event workflow" }, { status: 403 });
   }
 
-  if (
-    attachments.length > 10
-    || attachments.some((item: unknown) => typeof item !== "string" || !item.trim())
-  ) {
-    return NextResponse.json({ error: "Attachments must contain at most 10 valid references" }, { status: 400 });
+  const amount = Number(body?.amount);
+  const currency = body?.currency === "USD" ? "USD" : body?.currency === "INR" ? "INR" : null;
+  const method = ["UPI", "BANK", "OTHER"].includes(body?.method) ? body.method as "UPI" | "BANK" | "OTHER" : null;
+  const description = typeof body?.description === "string" ? body.description.trim() : "";
+  const date = body?.date ? new Date(body.date) : new Date();
+  const proofFileId = typeof body?.proofFileId === "string" ? body.proofFileId : null;
+  const attachments: string[] = Array.isArray(body?.attachments)
+    ? body.attachments.filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+  if (!(amount > 0) || !currency || !method || !description || Number.isNaN(date.getTime())) {
+    return NextResponse.json({ error: "Complete the amount, currency, payment source and description" }, { status: 400 });
   }
+  if (attachments.length > 10) return NextResponse.json({ error: "Add at most 10 proof files" }, { status: 400 });
 
-  const parsedAmount = parseFloat(amount);
-  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    return NextResponse.json({ error: "Amount must be a positive number" }, { status: 400 });
-  }
-  const transactionDate = date ? new Date(date) : new Date();
-  if (Number.isNaN(transactionDate.getTime())) {
-    return NextResponse.json({ error: "Invalid transaction date" }, { status: 400 });
-  }
-  if (!['INR', 'USD'].includes(currency || 'INR')) return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
-  if (!['IN', 'OUT'].includes(direction || 'IN')) return NextResponse.json({ error: "Invalid direction" }, { status: 400 });
-  if (!['DONATION', 'EXPENSE', 'SUBSCRIPTION', 'OTHER'].includes(type || (direction === 'IN' ? 'DONATION' : 'EXPENSE'))) return NextResponse.json({ error: "Invalid transaction type" }, { status: 400 });
-  if (!['UPI', 'BANK', 'OTHER'].includes(method || 'OTHER')) {
-    return NextResponse.json({ error: "BMC and Razorpay records can only be created by a verified provider checkout or webhook" }, { status: 400 });
-  }
-
-  // DONOR can only create direction=IN (donations)
-  if (access.selfScoped && direction && direction !== "IN") {
-    return NextResponse.json({ error: "Forbidden: donors can only create incoming donations" }, { status: 403 });
-  }
-
-  if (access.selfScoped && fromUserId && fromUserId !== user.id) {
-    return NextResponse.json({ error: "Forbidden: Donor view can only record your own donation" }, { status: 403 });
-  }
-
-  // Validate IDs if provided
-  if (fromUserId !== undefined && fromUserId !== null && (typeof fromUserId !== "string" || fromUserId.trim() === "")) {
-    return NextResponse.json({ error: "fromUserId must be a non-empty string" }, { status: 400 });
-  }
-  if (serviceId) {
-    const service = await prisma.service.findUnique({ where: { id: serviceId }, select: { id: true } });
-    if (!service) return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
-  }
-  let serviceDraft: { name: string; category: string; frequency: "WEEKLY" | "MONTHLY" | "YEARLY"; nextRenewal: Date } | null = null;
-  if (createService) {
-    const name = typeof createService.name === "string" ? createService.name.trim() : "";
-    const category = typeof createService.category === "string" ? createService.category.trim() : "";
-    const frequency = ["WEEKLY", "MONTHLY", "YEARLY"].includes(createService.frequency)
-      ? createService.frequency as "WEEKLY" | "MONTHLY" | "YEARLY"
-      : null;
-    const nextRenewal = createService.nextRenewal ? new Date(createService.nextRenewal) : null;
-    if (direction !== "OUT" || type !== "SUBSCRIPTION" || !name || !category || !frequency || !nextRenewal || Number.isNaN(nextRenewal.getTime())) {
-      return NextResponse.json({ error: "Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal" }, { status: 400 });
-    }
-    serviceDraft = { name, category, frequency, nextRenewal };
-  }
-
-  const txStatus = access.adminLedger && direction === "OUT" ? "APPROVED" : "PENDING";
-
-  const transaction = await prisma.$transaction(async (db) => {
-    const service = serviceDraft ? await db.service.create({
-      data: {
-        name: serviceDraft.name,
-        category: serviceDraft.category,
-        price: new Prisma.Decimal(amount),
-        currency: currency || "INR",
-        frequency: serviceDraft.frequency,
-        expiryDate: serviceDraft.nextRenewal,
-        lastRenewalDate: transactionDate,
-        status: "ACTIVE",
-        attachments,
-      },
-    }) : null;
-    const created = await db.transaction.create({ data: {
+  const transaction = await prisma.transaction.create({
+    data: {
       amount: new Prisma.Decimal(amount),
-      currency: currency || "INR",
-      method: method || "OTHER",
-      direction: direction || "IN",
-      type: type || (direction === "IN" ? "DONATION" : "EXPENSE"),
-      donationFrequency,
+      currency,
+      method,
+      direction: "IN",
+      type: "DONATION",
+      donationFrequency: parseDonationFrequency(body?.donationFrequency),
       description,
-      date: transactionDate,
-      proofFileId: proofFileId || null,
+      date,
+      proofFileId,
       attachments,
-      // Donor view always records the signed-in person, including multi-role
-      // admins. Admin-ledger income stays unlinked unless a donor is selected.
-      fromUserId: direction === "IN" && access.selfScoped ? user.id : fromUserId || null,
-      status: txStatus,
+      fromUserId: user.id,
+      status: "PENDING",
       providerVerified: false,
       providerState: "MANUAL",
       createdById: user.id,
-      serviceId: direction === "OUT" && type === "SUBSCRIPTION" ? service?.id || serviceId || null : null,
-    }, include: { fromUser: true, createdBy: true, linkedService: { select: { id: true, name: true } } } });
-    if (service) {
-      await db.service.update({ where: { id: service.id }, data: { paidTxId: created.id } });
-      const repeat = serviceReminderRepeat(service.frequency);
-      if (repeat) await db.reminder.create({ data: {
-        createdById: user.id,
-        message: `Renew ${service.name} (${service.currency} ${service.price})`,
-        frequency: "CUSTOM",
-        repeatEvery: repeat.repeatEvery,
-        repeatUnit: repeat.repeatUnit,
-        nextFire: service.expiryDate!,
-        channel: "BOTH",
-        recipientRoles: ["ADMIN"],
-        serviceId: service.id,
-      } });
-    }
-    return created;
+    },
+    include: { fromUser: true, createdBy: true },
   });
-  const identityUser = transaction.fromUser || transaction.createdBy;
 
-  await logAudit({
-    userId: user.id,
-    action: "CREATE",
-    entityType: "Transaction",
+  await logAudit({ userId: user.id, action: "MANUAL_DONATION_SUBMITTED", entityType: "Transaction", entityId: transaction.id, transactionId: transaction.id, after: transaction, userName: user.name, details: `${currency} ${amount}`, request: req });
+  logTelegramTransaction({ id: transaction.id, amount: transaction.amount, currency, method, direction: "IN", type: "DONATION", description, status: "PENDING", identityName: user.name, identityTelegramUser: user.telegramUser, identityTelegramId: user.telegramId, createdByName: user.name });
+  logGithubTransaction({ action: "CREATED", userId: user.id, userName: user.name, amount: transaction.amount.toString(), currency, direction: "IN", method, entityId: transaction.id, details: `DONATION: ${description}` });
+  if (proofFileId) logProofScreenshot(transaction.id, proofFileId, description);
+  if (attachments.length) {
+    logProofScreenshots({ id: transaction.id, amount: transaction.amount, currency, description, userName: user.name, attachments }).catch(() => {});
+  }
+  const attachmentArchive = attachments.length ? await archiveTransactionAttachmentsToTelegram(transaction) : [];
+  const symbol = currency === "INR" ? "₹" : "$";
+  notifyAdmins({
+    type: "TX_PENDING",
+    title: "Approval Required",
+    message: `${user.name} submitted ${symbol}${transaction.amount} via ${method} for review.`,
     entityId: transaction.id,
-    transactionId: transaction.id,
-    after: transaction,
-    userName: user.name,
-    details: `${transaction.direction} ${transaction.currency} ${transaction.amount}`,
-    request: req,
-  });
-
-  logTransaction({
-    id: transaction.id,
-    amount: transaction.amount,
-    currency: transaction.currency,
-    method: transaction.method,
-    direction: transaction.direction,
-    type: transaction.type,
-    description: transaction.description,
-    status: transaction.status,
-    identityName: identityUser.name,
-    identityTelegramUser: identityUser.telegramUser,
-    identityTelegramId: identityUser.telegramId,
-    createdByName: transaction.createdBy?.name,
-  });
-
-  // GitHub immutable log
-  ghLogTransaction({
-    action: "CREATED",
-    userId: user.id,
-    userName: user.name,
-    amount: transaction.amount.toString(),
-    currency: transaction.currency,
-    direction: transaction.direction,
-    method: transaction.method,
-    entityId: transaction.id,
-    details: `${transaction.type}: ${transaction.description}`,
-  });
-
-  if (proofFileId) {
-    logProofScreenshot(transaction.id, proofFileId, description);
-  }
-
-  // Legacy Telegram-backed image proofs still go to Screenshots.
-  if (attachments.length > 0) {
-    logProofScreenshots({
-      id: transaction.id,
-      amount: transaction.amount,
-      currency: transaction.currency,
-      description,
-      userName: user.name,
-      attachments,
-    }).catch(() => {});
-  }
-
-  // All locally stored files (PDFs included) are durably copied to the
-  // dedicated Attachments topic. Failure does not roll back the transaction;
-  // metadata retains the error so a later edit/startup backfill can retry it.
-  const attachmentArchive = attachments.length > 0
-    ? await archiveTransactionAttachmentsToTelegram({
-        id: transaction.id,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        description: transaction.description,
-        attachments: transaction.attachments,
-      })
-    : [];
-
-  // Notify admins when a pending donation needs approval
-  if (txStatus === "PENDING") {
-    const symbol = transaction.currency === "INR" ? "₹" : "$";
-    notifyAdmins({
-      type: "TX_PENDING",
-      title: "Approval Required",
-      message: `${identityUser.name} donated ${symbol}${transaction.amount} via ${transaction.method} — approve or reject.`,
-      entityId: transaction.id,
-      priority: "HIGH",
-      actionUrl: "/admin/transactions",
-      telegramMessage: formatTgMessage(
-        "🔔 Approval Required",
-        `${symbol}${transaction.amount} via ${transaction.method}`,
-        `${formatTelegramIdentity({ name: identityUser.name, username: identityUser.telegramUser, telegramId: identityUser.telegramId })}\n${escapeTelegramHtml(description)}`,
-      ),
-    }).catch((err) => console.error("[tx] notifyAdmins failed:", err));
-  }
-
-  scheduleFinanceAutomation({
-    action: "CREATED",
-    actorName: user.name,
-    transactionId: transaction.id,
-    sendBackup: true,
-  });
+    priority: "HIGH",
+    actionUrl: "/admin/transactions?status=PENDING",
+    telegramMessage: formatTgMessage("🔔 Approval Required", `${symbol}${transaction.amount} via ${method}`, `${formatTelegramIdentity({ name: user.name, username: user.telegramUser, telegramId: user.telegramId })}\n${escapeTelegramHtml(description)}`),
+  }).catch((error) => console.error("[tx] notifyAdmins failed:", error));
+  scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: transaction.id, sendBackup: true });
 
   return NextResponse.json({ transaction, attachmentArchive }, { status: 201 });
 }

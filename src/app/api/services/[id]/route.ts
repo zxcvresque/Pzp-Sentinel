@@ -18,10 +18,10 @@ export async function GET(
   const service = await prisma.service.findUnique({
     where: { id },
     include: {
-      transactions: { orderBy: { date: "desc" }, include: { createdBy: { select: { name: true } } } },
-      paidTransaction: { include: { createdBy: { select: { name: true } } } },
+      transactions: { orderBy: { date: "desc" }, include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } } },
+      paidTransaction: { include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } } },
       credentials: {
-        where: { parentId: null },
+        where: { parentId: null, deletedAt: null },
         select: { id: true, platform: true, label: true, status: true, expiresAt: true, updatedAt: true },
         orderBy: { label: "asc" },
       },
@@ -31,9 +31,11 @@ export async function GET(
     },
   });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 404 });
-  const transactions = service.transactions.length > 0
-    ? service.transactions
-    : service.paidTransaction ? [service.paidTransaction] : [];
+  const transactions = [...service.transactions];
+  if (service.paidTransaction && !transactions.some((transaction) => transaction.id === service.paidTransaction!.id)) {
+    transactions.push(service.paidTransaction);
+    transactions.sort((a, b) => b.date.getTime() - a.date.getTime());
+  }
   return NextResponse.json({ service: { ...service, transactions } });
 }
 
@@ -156,7 +158,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getCurrentUser();
@@ -172,15 +174,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Service not found" }, { status: 404 });
   }
 
-  await prisma.service.delete({ where: { id } });
+  const archivedAt = new Date();
+  await prisma.$transaction([
+    prisma.service.update({ where: { id }, data: { archivedAt, archivedById: user.id, status: "CANCELLED", autoRenew: false } }),
+    prisma.reminder.updateMany({ where: { serviceId: id, active: true }, data: { active: false } }),
+    prisma.operationalAlert.updateMany({ where: { serviceId: id, status: "OPEN" }, data: { status: "RESOLVED", resolvedAt: archivedAt } }),
+  ]);
 
   await logAudit({
     userId: user.id,
-    action: "SERVICE_DELETE",
+    action: "SERVICE_ARCHIVE",
     entityType: "Service",
     entityId: id,
     before: existing,
     userName: user.name,
+    request: req,
   });
 
   return NextResponse.json({ success: true });

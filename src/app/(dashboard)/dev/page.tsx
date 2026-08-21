@@ -866,7 +866,7 @@ export default function DevDashboard() {
               {developers.map((developer) => {
                 const role = projectMemberRoles[developer.id];
                 return <div key={developer.id} className={`flex items-center overflow-hidden rounded-full border ${role ? "border-lime/30" : "border-[var(--border)]"}`}>
-                  <button type="button" onClick={() => setProjectMemberRoles((current) => { const next = { ...current }; if (next[developer.id]) delete next[developer.id]; else next[developer.id] = "MEMBER"; return next; })} className="px-3 py-1.5 text-xs text-text-secondary">{developer.name}</button>
+                  <button type="button" onClick={() => setProjectMemberRoles((current) => { const next = { ...current }; if (next[developer.id]) delete next[developer.id]; else next[developer.id] = "MEMBER"; return next; })} className="px-2 py-1.5 text-xs text-text-secondary"><TgUser name={developer.name} photoUrl={developer.photoUrl} size={20} nameClassName="!text-xs !text-text-secondary" /></button>
                   {role && <button type="button" onClick={() => setProjectMemberRoles((current) => ({ ...current, [developer.id]: role === "MEMBER" ? "VIEWER" : role === "VIEWER" ? "LEAD" : "MEMBER" }))} className="border-l border-[var(--border)] bg-lime/5 px-2 py-1.5 font-mono text-[9px] text-lime">{role}</button>}
                 </div>;
               })}

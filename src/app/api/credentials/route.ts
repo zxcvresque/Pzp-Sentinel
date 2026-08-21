@@ -17,9 +17,24 @@ export async function GET() {
 
     const isAdmin = hasRole(user.roles, "ADMIN");
 
+    // Finalize credentials whose undo window has elapsed. The encrypted value
+    // and access rows remain recoverable until this cleanup runs.
+    const expiredDeletes = await prisma.credential.findMany({
+      where: { parentId: null, deletedAt: { not: null }, purgeAfter: { lte: new Date() } },
+      select: { id: true, platform: true, label: true, createdById: true, deletedById: true },
+      take: 50,
+    });
+    for (const credential of expiredDeletes) {
+      await prisma.$transaction([
+        prisma.credential.deleteMany({ where: { parentId: credential.id } }),
+        prisma.credential.delete({ where: { id: credential.id } }),
+      ]);
+      await logAudit({ userId: credential.deletedById || credential.createdById, action: "CREDENTIAL_PURGED", entityType: "Credential", entityId: credential.id, before: { platform: credential.platform, label: credential.label } });
+    }
+
     if (isAdmin) {
       const credentials = await prisma.credential.findMany({
-        where: { parentId: null },
+        where: { parentId: null, deletedAt: null },
         include: {
           accesses: { include: { user: { select: userSelect } } },
           createdBy: { select: userSelect },
@@ -49,6 +64,7 @@ export async function GET() {
         where: {
           accesses: { some: { userId: user.id, granted: true } },
           parentId: null,
+          deletedAt: null,
           status: "APPROVED",
         },
         include: {
@@ -79,6 +95,7 @@ export async function GET() {
         where: {
           accesses: { some: { userId: user.id, granted: false } },
           parentId: null,
+          deletedAt: null,
           status: "APPROVED",
         },
         include: {
@@ -104,7 +121,7 @@ export async function GET() {
       // Pending proposals remain encrypted in list responses. A full-access
       // reveal uses the same audited endpoint as every other secret access.
       const pendingByMe = await prisma.credential.findMany({
-        where: { createdById: user.id, status: "PENDING" },
+        where: { createdById: user.id, status: "PENDING", deletedAt: null },
         include: { parent: { select: { id: true, platform: true, label: true } } },
         orderBy: { createdAt: "desc" },
       });

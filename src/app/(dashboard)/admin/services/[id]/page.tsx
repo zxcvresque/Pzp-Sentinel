@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import ServicesNav from "@/components/ServicesNav";
+import TgUser from "@/components/TgUser";
 
 interface ServiceDetail {
   id: string;
@@ -16,8 +17,9 @@ interface ServiceDetail {
   planUrl: string | null;
   expiryDate: string | null;
   lastRenewalDate: string | null;
+  paidTxId: string | null;
   attachments: string[];
-  transactions: Array<{ id: string; amount: string; currency: string; method: string; status: string; date: string; description: string; attachments: string[]; createdBy: { name: string } }>;
+  transactions: Array<{ id: string; amount: string; currency: string; method: string; status: string; date: string; description: string; attachments: string[]; createdBy: { id: string; name: string; photoUrl: string | null; telegramUser: string | null } }>;
   credentials: Array<{ id: string; platform: string; label: string; status: string; expiresAt: string | null; updatedAt: string }>;
   reminders: Array<{ id: string; message: string; nextFire: string; repeatEvery: number | null; repeatUnit: string | null; channel: string }>;
   alerts: Array<{ id: string; kind: string; severity: string; title: string; message: string; dueAt: string | null }>;
@@ -44,9 +46,9 @@ export default function ServiceDetailPage() {
   return (
     <div>
       <ServicesNav role="ADMIN" />
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div><Link href="/admin/services" className="text-xs text-text-tertiary hover:text-lime">← Service catalogue</Link><h1 className="mt-2 text-3xl font-extrabold">{service.name}</h1><p className="mt-1 text-sm text-text-secondary">{service.category} · {service.status || "Untracked"}</p></div>
-        {service.planUrl && <a href={service.planUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-lime">Open plan ↗</a>}
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex"><Link href={`/admin/transactions/new?mode=RENEWAL&serviceId=${encodeURIComponent(service.id)}`} className="rounded-full bg-lime px-4 py-2.5 text-center text-sm font-semibold text-bg-void">Record renewal</Link>{service.planUrl && <a href={service.planUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--border)] px-4 py-2.5 text-center text-sm text-lime">Open plan ↗</a>}</div>
       </div>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -57,8 +59,8 @@ export default function ServiceDetailPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title={`Billing history · ${service.transactions.length}`}>
-          {service.transactions.length ? service.transactions.map((transaction) => <div key={transaction.id} className="border-b border-[var(--border)] py-3 last:border-0"><div className="flex justify-between gap-3 text-sm"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span><span className="text-text-tertiary">{new Date(transaction.date).toLocaleDateString()}</span></div><p className="mt-1 text-xs text-text-secondary">{transaction.description} · {transaction.method} · {transaction.status}</p>{transaction.attachments.length > 0 && <p className="mt-1 text-xs text-violet">📎 {transaction.attachments.length} attachment(s)</p>}</div>) : <Empty text="No linked payments yet." />}
+        <Panel title={`Billing ledger · ${service.transactions.length}`}>
+          {service.transactions.length ? service.transactions.map((transaction) => <div key={transaction.id} className="border-b border-[var(--border)] py-4 last:border-0"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span>{transaction.id === service.paidTxId && <span className="rounded-full bg-lime/10 px-2 py-0.5 font-mono text-[8px] uppercase text-lime">Initial payment</span>}<span className={`rounded-full px-2 py-0.5 font-mono text-[8px] uppercase ${transaction.status === "APPROVED" ? "bg-mint/10 text-mint" : transaction.status === "PENDING" ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{transaction.status}</span></div><p className="mt-1 text-xs leading-5 text-text-secondary">{transaction.description} · {transaction.method}</p></div><span className="text-xs text-text-tertiary">{new Date(transaction.date).toLocaleDateString()}</span></div><div className="mt-3"><TgUser name={transaction.createdBy.name} photoUrl={transaction.createdBy.photoUrl} telegramUser={transaction.createdBy.telegramUser} size={22} /></div>{transaction.attachments.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{transaction.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-3 py-1.5 text-[11px] text-violet">📎 {decodeURIComponent(url.split("/").pop() || "Receipt")}</a>)}</div>}</div>) : <Empty text="No linked payments yet." />}
         </Panel>
 
         <Panel title={`Credentials · ${service.credentials.length}`}>

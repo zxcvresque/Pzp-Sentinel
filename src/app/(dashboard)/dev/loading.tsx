@@ -1,9 +1,9 @@
 export default function DevBoardLoading() {
   return (
-    <div className="flex gap-4 p-6 md:p-8 overflow-x-auto">
+    <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 xl:grid-cols-4 md:p-8">
       {/* Kanban columns */}
       {Array.from({ length: 4 }).map((_, col) => (
-        <div key={col} className="flex flex-col gap-3 min-w-[220px] flex-shrink-0">
+        <div key={col} className="min-w-0 flex flex-col gap-3">
           {/* Column header */}
           <div className="skeleton h-7 w-24 rounded-lg" />
           {/* Cards */}

@@ -6,6 +6,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import ServicesNav from "@/components/ServicesNav";
+import TgUser from "@/components/TgUser";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -29,6 +30,7 @@ interface Server {
   tags: string[];
   notes: string;
   approved: boolean;
+  alertsEnabled: boolean;
   addedById: string;
   // ADMIN-ONLY (never sent to devs): plan link + billing/duration.
   planLink?: string | null;
@@ -54,7 +56,7 @@ interface Server {
   processHealth?: Array<{ name?: string; pm2_env?: { status?: string } }> | null;
   releaseVersion?: string | null;
   projects?: Array<{ id: string; name: string }>;
-  maintainers?: Array<{ id: string; name: string }>;
+  maintainers?: Array<{ id: string; name: string; photoUrl?: string | null; telegramUser?: string | null }>;
 }
 
 interface Subscription {
@@ -467,9 +469,18 @@ function ApprovedServerCard({
               </div>
             )}
             {(server.projects?.length || server.maintainers?.length) ? (
-              <div className="mt-1 text-[10px] text-[var(--text-tertiary)]">
-                {server.projects?.map((project) => project.name).join(", ") || "Unassigned project"}
-                {server.maintainers?.length ? ` · ${server.maintainers.map((maintainer) => maintainer.name).join(", ")}` : ""}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
+                <span>{server.projects?.map((project) => project.name).join(", ") || "Unassigned project"}</span>
+                {server.maintainers?.map((maintainer) => (
+                  <TgUser
+                    key={maintainer.id}
+                    name={maintainer.name}
+                    photoUrl={maintainer.photoUrl}
+                    telegramUser={maintainer.telegramUser}
+                    size={18}
+                    nameClassName="!text-[10px] !text-[var(--text-secondary)]"
+                  />
+                ))}
               </div>
             ) : null}
           </div>
@@ -636,9 +647,9 @@ function ApprovedServerCard({
                       }}
                       className="font-mono text-[10px] uppercase px-2.5 py-1 rounded transition-colors disabled:opacity-40"
                       style={{ color: "var(--lime)", background: "rgba(111,209,215,0.10)" }}
-                      title="Log one more billing cycle now (deducts the rate + extends expiry)"
+                      title="Request approval for one more billing cycle"
                     >
-                      {renewing ? "Renewing…" : "Renew now"}
+                      {renewing ? "Requesting…" : "Request renewal"}
                     </button>
                   )}
                   {sub.status !== "CANCELLED" && (sub.price ?? 0) > 0 && (
@@ -1206,11 +1217,12 @@ function ServerForm({
   const [autoRenew, setAutoRenew] = useState(initSub?.autoRenew ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [devs, setDevs] = useState<{ id: string; name: string }[]>([]);
+  const [devs, setDevs] = useState<{ id: string; name: string; photoUrl?: string | null; telegramUser?: string | null }[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [shareWith, setShareWith] = useState<string[]>([]);
   const [projectIds, setProjectIds] = useState<string[]>(initial?.projects?.map((project) => project.id) ?? []);
   const [maintainerIds, setMaintainerIds] = useState<string[]>(initial?.maintainers?.map((maintainer) => maintainer.id) ?? []);
+  const [alertsEnabled, setAlertsEnabled] = useState(initial?.alertsEnabled ?? false);
 
   useEffect(() => {
     if (!open) return;
@@ -1222,7 +1234,12 @@ function ServerForm({
         setDevs(
           (d.users || [])
             .filter((u: { roles: string[] }) => u.roles.includes("DEV"))
-            .map((u: { id: string; name: string }) => ({ id: u.id, name: u.name })),
+            .map((u: { id: string; name: string; photoUrl?: string | null; telegramUser?: string | null }) => ({
+              id: u.id,
+              name: u.name,
+              photoUrl: u.photoUrl,
+              telegramUser: u.telegramUser,
+            })),
         );
         setProjects((projectData.projects || []).map((project: { id: string; name: string }) => ({ id: project.id, name: project.name })));
       })
@@ -1316,6 +1333,7 @@ function ServerForm({
           duration,
           projectIds,
           maintainerIds,
+          alertsEnabled,
           ...(isEdit ? {} : { shareWith }),
         }),
       });
@@ -1346,6 +1364,7 @@ function ServerForm({
       setShareWith([]);
       setProjectIds([]);
       setMaintainerIds([]);
+      setAlertsEnabled(false);
       setPlanLink("");
       setDurationMode("NONE");
       setPrice("");
@@ -1393,7 +1412,7 @@ function ServerForm({
             </span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Connection</span>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
               <label className="xl:col-span-3">
@@ -1454,7 +1473,7 @@ function ServerForm({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Access</span>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
               <label className="xl:col-span-4">
@@ -1553,7 +1572,7 @@ function ServerForm({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Ownership</span>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label>
@@ -1579,10 +1598,10 @@ function ServerForm({
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Plan &amp; Duration</span>
             <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
-              Admin-only — never shown to or shared with devs. Saving with a price deducts it now from the current balance and adds a row to the Services tab.
+              Admin-only — never shown to or shared with devs. Saving with a price creates a Service and a pending transaction; the treasury changes only after approval.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-12">
               <label className="xl:col-span-6">
@@ -1667,7 +1686,7 @@ function ServerForm({
                         className="h-4 w-4 accent-[var(--mint)]"
                       />
                       <span className="font-mono text-[11px] text-[var(--text-secondary)]">
-                        Auto-renew — deduct the rate automatically each cycle until unchecked
+                        Auto-renew — request admin approval each cycle; deduct only after approval
                       </span>
                     </label>
                   </>
@@ -1682,7 +1701,7 @@ function ServerForm({
                       className={inputClass}
                     />
                     <span className="mt-1 block text-[10px] text-[var(--text-tertiary)]">
-                      One-time charge now; never auto-renews. Set an expiry only to track when it lapses.
+                      One-time approval request; never auto-renews. Set an expiry only to track when it lapses.
                     </span>
                   </label>
                 )}
@@ -1690,17 +1709,17 @@ function ServerForm({
             )}
             {durationMode !== "NONE" && priceNum > 0 && !initSub && (
               <p className="font-mono text-[10px] text-[var(--amber)]">
-                {formatMoney(priceNum, currency)} will be deducted from the current balance when you save.
+                Saving requests approval for {formatMoney(priceNum, currency)}. No funds are deducted until an admin approves it.
               </p>
             )}
             {isEdit && initSub && (
               <p className="font-mono text-[10px] text-[var(--text-tertiary)]">
-                Editing plan details won&apos;t re-charge — use “Renew now” on the card or auto-renew for further deductions.
+                Editing plan details won&apos;t create another charge — use “Request renewal” on the card or auto-renew for another approval request.
               </p>
             )}
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Ownership &amp; responsibility</span>
             <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">Link the machine to its community projects and the developers responsible for incidents and deployments.</p>
             <div>
@@ -1712,13 +1731,30 @@ function ServerForm({
             <div>
               <span className={labelClass}>Responsible maintainers</span>
               <div className="flex flex-wrap gap-2">
-                {devs.map((dev) => <button key={dev.id} type="button" onClick={() => setMaintainerIds((current) => current.includes(dev.id) ? current.filter((id) => id !== dev.id) : [...current, dev.id])} className="font-mono text-[10px] uppercase tracking-[0.08em] px-3 py-1.5 rounded-full border" style={maintainerIds.includes(dev.id) ? { color: "var(--bg-deep)", background: "var(--violet)", borderColor: "var(--violet)" } : { color: "var(--text-secondary)", borderColor: "var(--border)" }}>{dev.name}</button>)}
+                {devs.map((dev) => <button key={dev.id} type="button" onClick={() => setMaintainerIds((current) => current.includes(dev.id) ? current.filter((id) => id !== dev.id) : [...current, dev.id])} className="rounded-full border px-2 py-1.5" style={maintainerIds.includes(dev.id) ? { color: "var(--bg-deep)", background: "var(--violet)", borderColor: "var(--violet)" } : { color: "var(--text-secondary)", borderColor: "var(--border)" }}><TgUser name={dev.name} photoUrl={dev.photoUrl} size={20} nameClassName="!text-[10px] !font-mono !uppercase !tracking-[0.08em] !text-current" /></button>)}
               </div>
             </div>
+            <label className="flex items-start justify-between gap-4 rounded-xl border border-[var(--border)] bg-bg-deep p-3.5">
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[var(--text-primary)]">Alert monitoring</span>
+                <span className="mt-1 block text-xs leading-5 text-[var(--text-secondary)]">
+                  Detect offline, CPU, memory, disk, load and process incidents. Off by default; assigned maintainers choose their own alert categories and channels.
+                </span>
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={alertsEnabled}
+                onClick={() => setAlertsEnabled((enabled) => !enabled)}
+                className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${alertsEnabled ? "border-mint/50 bg-mint/30" : "border-[var(--border)] bg-[var(--bg-elevated)]"}`}
+              >
+                <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full transition-transform ${alertsEnabled ? "translate-x-5 bg-mint" : "translate-x-0 bg-text-tertiary"}`} />
+              </button>
+            </label>
           </div>
 
           {!isEdit && (
-          <div className="space-y-3">
+          <div className="space-y-3" data-form-section>
             <span className={sectionClass}>Share credentials (optional)</span>
             <p className="font-mono text-[10px] text-[var(--text-tertiary)] leading-relaxed">
               Give selected developers FULL access to this server&apos;s stored credentials right away. Leave empty and devs can request public-key access themselves.
@@ -1742,7 +1778,7 @@ function ServerForm({
                         : { color: "var(--text-secondary)", borderColor: "var(--border)", background: "transparent" }
                     }
                   >
-                    {dev.name}
+                    <TgUser name={dev.name} photoUrl={dev.photoUrl} size={20} nameClassName="!text-[10px] !font-mono !uppercase !tracking-[0.08em] !text-current" />
                   </button>
                 );
               })}

@@ -17,9 +17,9 @@ interface Reminder {
   channel: string;
   createdBy: { name: string; photoUrl?: string | null; telegramUser?: string | null };
   createdAt: string;
-  owner?: { id: string; name: string } | null;
+  owner?: { id: string; name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
   acknowledgedAt?: string | null;
-  acknowledgedBy?: { id: string; name: string } | null;
+  acknowledgedBy?: { id: string; name: string; photoUrl?: string | null; telegramUser?: string | null } | null;
   escalationAt?: string | null;
   escalatedAt?: string | null;
 }
@@ -63,7 +63,7 @@ export default function RemindersPage() {
   const [nextFire, setNextFire] = useState("");
   const [channel, setChannel] = useState("BOTH");
   const [errorMsg, setErrorMsg] = useState("");
-  const [admins, setAdmins] = useState<Array<{ id: string; name: string }>>([]);
+  const [admins, setAdmins] = useState<Array<{ id: string; name: string; photoUrl?: string | null }>>([]);
   const [ownerId, setOwnerId] = useState("");
   const [escalationAt, setEscalationAt] = useState("");
 
@@ -353,7 +353,7 @@ export default function RemindersPage() {
           <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Owner</label>
-              <Dropdown value={ownerId} options={[{ value: "", label: "Me" }, ...admins.map((admin) => ({ value: admin.id, label: admin.name }))]} onChange={setOwnerId} />
+              <Dropdown value={ownerId} options={[{ value: "", label: "Me" }, ...admins.map((admin) => ({ value: admin.id, label: admin.name, avatar: admin.photoUrl ?? null }))]} onChange={setOwnerId} />
             </div>
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Escalate if unacknowledged (optional)</label>
@@ -402,10 +402,10 @@ export default function RemindersPage() {
                   </span>
                 </div>
                 <div className="text-text-tertiary text-xs mt-2">
-                  Next: {new Date(rem.nextFire).toLocaleString()} · owner {rem.owner?.name || "admin"} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
+                  Next: {new Date(rem.nextFire).toLocaleString()} · owner {rem.owner ? <TgUser name={rem.owner.name} telegramUser={rem.owner.telegramUser} photoUrl={rem.owner.photoUrl} size={18} /> : "admin"} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
                 </div>
                 {rem.escalationAt && <div className="mt-1 text-[10px] text-amber">Escalates {new Date(rem.escalationAt).toLocaleString()}{rem.escalatedAt ? " · escalated" : ""}</div>}
-                {rem.acknowledgedAt && <div className="mt-1 text-[10px] text-mint">Acknowledged by {rem.acknowledgedBy?.name || "admin"}</div>}
+                {rem.acknowledgedAt && <div className="mt-1 flex items-center gap-1 text-[10px] text-mint">Acknowledged by {rem.acknowledgedBy ? <TgUser name={rem.acknowledgedBy.name} telegramUser={rem.acknowledgedBy.telegramUser} photoUrl={rem.acknowledgedBy.photoUrl} size={18} nameClassName="!text-[10px] !text-mint" /> : "admin"}</div>}
               </div>
               <div className="flex gap-2 shrink-0">
                 {!rem.acknowledgedAt && <button onClick={() => reminderAction(rem.id, "ACKNOWLEDGE")} className="px-3 py-1 rounded-full text-xs font-semibold bg-mint/10 text-mint">Acknowledge</button>}

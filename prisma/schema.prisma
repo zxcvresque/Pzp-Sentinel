@@ -89,6 +89,28 @@ enum Frequency {
   LIFETIME
 }
 
+enum FormLayout {
+  SECTION_CARDS
+  ACCENT_RAILS
+  NUMBERED_WORKFLOW
+  INFORMATION_BANDS
+}
+
+enum DocumentKind {
+  RECEIPT
+  INVOICE
+  CONTRACT
+  LICENCE
+  PROOF
+  OTHER
+}
+
+enum DocumentStatus {
+  DRAFT
+  LINKED
+  ABANDONED
+}
+
 enum TaskStatus {
   BACKLOG
   TODO
@@ -151,72 +173,76 @@ enum BroadcastRecipientMode {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  telegramId    String     @unique
-  telegramUser  String
-  name          String
-  photoUrl      String?
-  themeColor    String     @default("#6FD1D7")
-  savedColors   String[]   @default([])
-  chatId        String?
-  roles         Role[]
-  status        UserStatus @default(ACTIVE)
-  dmPreferences String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
-  inAppPreferences String[] @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
-  preferredCurrency Currency @default(USD)
-  githubUsername String?
-  createdById   String?
-  createdBy     User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
-  createdUsers  User[]     @relation("CreatedByAdmin")
-  createdAt     DateTime   @default(now())
+  id                String     @id @default(cuid())
+  telegramId        String     @unique
+  telegramUser      String
+  name              String
+  photoUrl          String?
+  themeColor        String     @default("#6FD1D7")
+  formLayout        FormLayout @default(SECTION_CARDS)
+  onboardingVersion Int        @default(0)
+  savedColors       String[]   @default([])
+  chatId            String?
+  roles             Role[]
+  status            UserStatus @default(ACTIVE)
+  dmPreferences     String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  inAppPreferences  String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  preferredCurrency Currency   @default(USD)
+  githubUsername    String?
+  createdById       String?
+  createdBy         User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
+  createdUsers      User[]     @relation("CreatedByAdmin")
+  createdAt         DateTime   @default(now())
 
-  otpCode      String?
-  otpExpiresAt DateTime?
-  otpAttempts  Int       @default(0)
+  otpCode        String?
+  otpExpiresAt   DateTime?
+  otpAttempts    Int       @default(0)
   otpRequestedAt DateTime?
   otpLockedUntil DateTime?
 
-  transactionsCreated   Transaction[]           @relation("TxCreatedBy")
-  transactionsFrom      Transaction[]           @relation("TxFromUser")
-  transactionsReviewed  Transaction[]           @relation("TxReviewedBy")
-  transactionsVoided    Transaction[]           @relation("TxVoidedBy")
-  tasksAssigned         Task[]                  @relation("TaskAssignee")
-  tasksCreated          Task[]                  @relation("TaskCreatedBy")
-  remindersCreated      Reminder[]
-  broadcastSchedules   ScheduledBroadcast[]
-  projectMembers        Project[]               @relation("ProjectMembers")
-  projectMemberships    ProjectMember[]
-  projectsCreated       Project[]               @relation("ProjectCreatedBy")
-  projectsArchived      Project[]               @relation("ProjectArchivedBy")
-  tasksArchived         Task[]                  @relation("TaskArchivedBy")
-  remindersOwned        Reminder[]              @relation("ReminderOwner")
-  remindersAcknowledged Reminder[]              @relation("ReminderAcknowledgedBy")
-  maintainedVpsServers  VpsServer[]             @relation("VpsMaintainers")
-  credentialsCreated    Credential[]            @relation("CredCreatedBy")
-  credentialsReviewed   Credential[]            @relation("CredReviewedBy")
-  credentialAccess      CredentialAccess[]      @relation("CredAccessUser")
-  notifications         Notification[]
-  razorpayOrders        RazorpayOrder[]
-  razorpaySubscriptions RazorpaySubscription[]
+  transactionsCreated          Transaction[]                  @relation("TxCreatedBy")
+  transactionsFrom             Transaction[]                  @relation("TxFromUser")
+  transactionsReviewed         Transaction[]                  @relation("TxReviewedBy")
+  transactionsVoided           Transaction[]                  @relation("TxVoidedBy")
+  tasksAssigned                Task[]                         @relation("TaskAssignee")
+  tasksCreated                 Task[]                         @relation("TaskCreatedBy")
+  remindersCreated             Reminder[]
+  broadcastSchedules           ScheduledBroadcast[]
+  projectMembers               Project[]                      @relation("ProjectMembers")
+  projectMemberships           ProjectMember[]
+  projectsCreated              Project[]                      @relation("ProjectCreatedBy")
+  projectsArchived             Project[]                      @relation("ProjectArchivedBy")
+  tasksArchived                Task[]                         @relation("TaskArchivedBy")
+  remindersOwned               Reminder[]                     @relation("ReminderOwner")
+  remindersAcknowledged        Reminder[]                     @relation("ReminderAcknowledgedBy")
+  maintainedVpsServers         VpsServer[]                    @relation("VpsMaintainers")
+  vpsAlertPreferences          VpsAlertPreference[]
+  credentialsCreated           Credential[]                   @relation("CredCreatedBy")
+  credentialsReviewed          Credential[]                   @relation("CredReviewedBy")
+  credentialAccess             CredentialAccess[]             @relation("CredAccessUser")
+  documentsUploaded            Document[]                     @relation("DocumentUploader")
+  notifications                Notification[]
+  razorpayOrders               RazorpayOrder[]
+  razorpaySubscriptions        RazorpaySubscription[]
   razorpaySubscriptionFeedback RazorpaySubscriptionFeedback[]
-  oneTimeInvitesCreated OneTimeDonationInvite[] @relation("OneTimeInviteCreator")
-  bmcCheckoutIntents    BmcCheckoutIntent[]
-  bmcSupporterLinks     BmcSupporterLink[]
-  bmcSubscriptionFeedback BmcSubscriptionFeedback[]
+  oneTimeInvitesCreated        OneTimeDonationInvite[]        @relation("OneTimeInviteCreator")
+  bmcCheckoutIntents           BmcCheckoutIntent[]
+  bmcSupporterLinks            BmcSupporterLink[]
+  bmcSubscriptionFeedback      BmcSubscriptionFeedback[]
 
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
-  donateReminderCadence DonateCadence @default(MONTHLY)
-  lastDonateReminderAt  DateTime?
+  donateReminderCadence  DonateCadence @default(MONTHLY)
+  lastDonateReminderAt   DateTime?
   // A donor who explicitly chooses monthly giving is reminded on this local
   // day-of-month instead of the generic 5th-of-the-month default.
   donateReminderAnchorAt DateTime?
   // CUSTOM cadence: remind every N units (e.g. every 3 DAYs / 2 WEEKs / 1 MONTH).
-  donateReminderEveryN  Int?
-  donateReminderUnit    ReminderUnit?
+  donateReminderEveryN   Int?
+  donateReminderUnit     ReminderUnit?
   // Time of day the nudge fires (minutes from local midnight; 540 = 09:00) in the
   // donor's timezone. Applies to ALL cadences. Default IST.
-  donateReminderTimeMin Int           @default(540)
-  donateReminderTz      String        @default("Asia/Kolkata")
+  donateReminderTimeMin  Int           @default(540)
+  donateReminderTz       String        @default("Asia/Kolkata")
 
   // Donor checkout access. BMC is available by default; Razorpay remains
   // available only while an administrator has enabled it for the donor.
@@ -226,57 +252,63 @@ model User {
 }
 
 model Transaction {
-  id                  String        @id @default(cuid())
-  amount              Decimal
-  currency            Currency      @default(INR)
-  method              PaymentMethod @default(UPI)
+  id                            String            @id @default(cuid())
+  amount                        Decimal
+  currency                      Currency          @default(INR)
+  method                        PaymentMethod     @default(UPI)
   // Provider-specific rail captured from verified payment data, for example
   // "upi:phonepe", "card:visa", "wallet:paytm", or "netbanking".
-  paymentMethodDetail String?
-  direction           Direction
-  type                TxType        @default(OTHER)
-  donationFrequency   DonationFrequency @default(ONE_TIME)
+  paymentMethodDetail           String?
+  direction                     Direction
+  type                          TxType            @default(OTHER)
+  donationFrequency             DonationFrequency @default(ONE_TIME)
   // Provider payment ID for recurring rails whose charges do not use a
   // Sentinel RazorpayOrder. Unique so webhook retries cannot duplicate income.
-  providerPaymentId   String?       @unique
-  razorpaySubscriptionId String?
+  providerPaymentId             String?           @unique
+  razorpaySubscriptionId        String?
   // Encrypted provider metadata (payer email/name/note/payment context). Never
   // expose this ciphertext through general transaction APIs.
-  providerDetailsEncrypted String?
+  providerDetailsEncrypted      String?
   // Provider-backed methods are trusted only when this flag was set by a
   // verified checkout/webhook/reconciliation path, never by a manual form.
-  providerVerified    Boolean @default(false)
-  providerState       String  @default("NONE")
-  reversalOfId        String?
-  reversalOf          Transaction? @relation("TransactionReversals", fields: [reversalOfId], references: [id], onDelete: Restrict)
-  reversals           Transaction[] @relation("TransactionReversals")
-  donorAppealMessage  String?
-  donorAppealedAt     DateTime?
-  fromUserId          String?
-  fromUser            User?         @relation("TxFromUser", fields: [fromUserId], references: [id])
-  description         String
-  proofFileId         String?
-  attachments         String[]      @default([])
-  date                DateTime      @default(now())
-  status              TxStatus      @default(PENDING)
-  isTest              Boolean       @default(false)
-  reviewedById        String?
-  reviewedBy          User?         @relation("TxReviewedBy", fields: [reviewedById], references: [id])
-  reviewNote          String?
-  voidedAt            DateTime?
-  voidedById          String?
-  voidedBy            User?         @relation("TxVoidedBy", fields: [voidedById], references: [id])
-  voidReason          String?
-  bmcEventId          String?       @unique
+  providerVerified              Boolean           @default(false)
+  providerState                 String            @default("NONE")
+  // Scheduler-created service renewals remain pending until an admin approves.
+  isAutomatedRenewal            Boolean           @default(false)
+  advancesServiceCycle          Boolean           @default(false)
+  automatedRenewalKey           String?           @unique
+  workflowId                    String?
+  reversalOfId                  String?
+  reversalOf                    Transaction?      @relation("TransactionReversals", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversals                     Transaction[]     @relation("TransactionReversals")
+  donorAppealMessage            String?
+  donorAppealedAt               DateTime?
+  fromUserId                    String?
+  fromUser                      User?             @relation("TxFromUser", fields: [fromUserId], references: [id])
+  description                   String
+  proofFileId                   String?
+  attachments                   String[]          @default([])
+  date                          DateTime          @default(now())
+  status                        TxStatus          @default(PENDING)
+  isTest                        Boolean           @default(false)
+  reviewedById                  String?
+  reviewedBy                    User?             @relation("TxReviewedBy", fields: [reviewedById], references: [id])
+  reviewNote                    String?
+  voidedAt                      DateTime?
+  voidedById                    String?
+  voidedBy                      User?             @relation("TxVoidedBy", fields: [voidedById], references: [id])
+  voidReason                    String?
+  bmcEventId                    String?           @unique
   // Durable outbox state for public funds-group thank-yous. Only eligible
   // DONOR-owned donations are claimed; stale claims can be retried safely.
   donationAnnouncementClaimedAt DateTime?
-  donationAnnouncedAt DateTime?
-  createdById         String
-  createdBy           User          @relation("TxCreatedBy", fields: [createdById], references: [id])
-  createdAt           DateTime      @default(now())
-  serviceId           String?
-  linkedService       Service?      @relation("ServiceTransactions", fields: [serviceId], references: [id], onDelete: SetNull)
+  donationAnnouncedAt           DateTime?
+  createdById                   String
+  createdBy                     User              @relation("TxCreatedBy", fields: [createdById], references: [id])
+  createdAt                     DateTime          @default(now())
+  serviceId                     String?
+  linkedService                 Service?          @relation("ServiceTransactions", fields: [serviceId], references: [id], onDelete: SetNull)
+  documents                     Document[]
 
   service           Service?           @relation("SubPaidTx")
   auditLogs         AuditLog[]
@@ -286,31 +318,33 @@ model Transaction {
 
   @@index([razorpaySubscriptionId, date])
   @@index([serviceId, date])
+  @@index([serviceId, isAutomatedRenewal, status])
+  @@index([workflowId])
   @@index([donationAnnouncedAt, date])
 }
 
 // Server-owned Razorpay order state. Checkout responses are never trusted until
 // they match one of these records and Razorpay confirms the payment is captured.
 model RazorpayOrder {
-  id              String                 @id @default(cuid())
-  razorpayOrderId String                 @unique
-  paymentId       String?                @unique
-  receipt         String                 @unique
-  userId          String?
-  user            User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
-  inviteId        String?                @unique
-  invite          OneTimeDonationInvite? @relation(fields: [inviteId], references: [id], onDelete: Restrict)
-  transactionId   String?                @unique
-  transaction     Transaction?           @relation(fields: [transactionId], references: [id], onDelete: SetNull)
-  amount          Int // smallest currency unit (paise for INR)
-  currency        Currency               @default(INR)
-  description     String
-  donationFrequency DonationFrequency @default(ONE_TIME)
-  testMode        Boolean                @default(false)
-  status          RazorpayOrderStatus    @default(CREATED)
-  paidAt          DateTime?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  id                String                 @id @default(cuid())
+  razorpayOrderId   String                 @unique
+  paymentId         String?                @unique
+  receipt           String                 @unique
+  userId            String?
+  user              User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  inviteId          String?                @unique
+  invite            OneTimeDonationInvite? @relation(fields: [inviteId], references: [id], onDelete: Restrict)
+  transactionId     String?                @unique
+  transaction       Transaction?           @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  amount            Int // smallest currency unit (paise for INR)
+  currency          Currency               @default(INR)
+  description       String
+  donationFrequency DonationFrequency      @default(ONE_TIME)
+  testMode          Boolean                @default(false)
+  status            RazorpayOrderStatus    @default(CREATED)
+  paidAt            DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   @@index([userId, createdAt])
 }
@@ -319,29 +353,29 @@ model RazorpayOrder {
 // server creates a plan for the selected amount and then creates a subscription
 // from that plan. Subsequent charges arrive through subscription webhooks.
 model RazorpaySubscription {
-  id                       String   @id @default(cuid())
-  razorpaySubscriptionId   String   @unique
-  razorpayPlanId           String
-  authorizationPaymentId   String?  @unique
-  userId                   String
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  amount                   Int
-  currency                 Currency @default(INR)
-  description              String
-  status                   String   @default("CREATED")
-  totalCount               Int      @default(1200)
-  paidCount                Int      @default(0)
-  remainingCount           Int?
-  nextChargeAt             DateTime?
-  endedAt                  DateTime?
-  cancelInitiatedBy        String?
-  pauseInitiatedBy         String?
-  lastWebhookEvent         String?
-  lastWebhookAt            DateTime?
-  testMode                 Boolean  @default(false)
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-  feedback                 RazorpaySubscriptionFeedback[]
+  id                     String                         @id @default(cuid())
+  razorpaySubscriptionId String                         @unique
+  razorpayPlanId         String
+  authorizationPaymentId String?                        @unique
+  userId                 String
+  user                   User                           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  amount                 Int
+  currency               Currency                       @default(INR)
+  description            String
+  status                 String                         @default("CREATED")
+  totalCount             Int                            @default(1200)
+  paidCount              Int                            @default(0)
+  remainingCount         Int?
+  nextChargeAt           DateTime?
+  endedAt                DateTime?
+  cancelInitiatedBy      String?
+  pauseInitiatedBy       String?
+  lastWebhookEvent       String?
+  lastWebhookAt          DateTime?
+  testMode               Boolean                        @default(false)
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+  feedback               RazorpaySubscriptionFeedback[]
 
   @@index([userId, createdAt])
 }
@@ -356,7 +390,7 @@ enum RazorpayFeedbackStage {
 model RazorpaySubscriptionFeedback {
   id                     String                @id @default(cuid())
   subscriptionId         String
-  subscription           RazorpaySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription           RazorpaySubscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   userId                 String
   user                   User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
   triggerAction          String
@@ -394,16 +428,16 @@ model OneTimeDonationInvite {
 }
 
 model RazorpayWebhookEvent {
-  id        String   @id @default(cuid())
-  eventId   String   @unique
-  eventType String
-  resourceId String?
-  payload   Json?
+  id               String   @id @default(cuid())
+  eventId          String   @unique
+  eventType        String
+  resourceId       String?
+  payload          Json?
   encryptedPayload String?
   // PROCESSED default keeps historical receipt rows from appearing as false
   // reconciliation failures; new webhook ingestion writes RECEIVED explicitly.
-  status    String   @default("PROCESSED")
-  createdAt DateTime @default(now())
+  status           String   @default("PROCESSED")
+  createdAt        DateTime @default(now())
 
   @@index([status, eventType, createdAt])
   @@index([resourceId])
@@ -447,16 +481,16 @@ model BmcWebhookEvent {
 // A short-lived, single-use code shown to a signed-in donor before BMC opens.
 // Only its SHA-256 hash is stored; the code itself is returned once to the UI.
 model BmcCheckoutIntent {
-  id            String       @id @default(cuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  codeHash      String       @unique
+  id                String            @id @default(cuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash          String            @unique
   donationFrequency DonationFrequency @default(ONE_TIME)
-  expiresAt     DateTime
-  consumedAt    DateTime?
-  transactionId String?      @unique
-  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
-  createdAt     DateTime     @default(now())
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  transactionId     String?           @unique
+  transaction       Transaction?      @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  createdAt         DateTime          @default(now())
 
   @@index([userId, expiresAt])
 }
@@ -464,18 +498,18 @@ model BmcCheckoutIntent {
 // A BMC supporter ID becomes trusted only after a signed webhook carries a
 // valid donor-bound checkout code, or an administrator reconciles a payment.
 model BmcSupporterLink {
-  id             String   @id @default(cuid())
-  accountSlug    String
-  supporterId    String
-  supporterEmail String?
+  id                        String            @id @default(cuid())
+  accountSlug               String
+  supporterId               String
+  supporterEmail            String?
   supporterDetailsEncrypted String?
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  donationFrequency DonationFrequency @default(ONE_TIME)
-  verifiedAt     DateTime @default(now())
-  lastSeenAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  userId                    String
+  user                      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  donationFrequency         DonationFrequency @default(ONE_TIME)
+  verifiedAt                DateTime          @default(now())
+  lastSeenAt                DateTime          @default(now())
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   @@unique([accountSlug, supporterId])
   @@index([userId])
@@ -503,7 +537,7 @@ model BmcSubscriptionFeedback {
 }
 
 model Service {
-  id              String       @id @default(cuid())
+  id              String             @id @default(cuid())
   category        String
   name            String
   columns         Json?
@@ -515,20 +549,27 @@ model Service {
   planUrl         String?
   expiryDate      DateTime?
   lastRenewalDate DateTime?
-  autoRenew       Boolean      @default(false)
-  paidTxId        String?      @unique
-  paidTransaction Transaction? @relation("SubPaidTx", fields: [paidTxId], references: [id])
+  autoRenew       Boolean            @default(false)
+  workflowId      String?
+  paidTxId        String?            @unique
+  paidTransaction Transaction?       @relation("SubPaidTx", fields: [paidTxId], references: [id])
   status          SubStatus?
-  attachments     String[]     @default([])
+  attachments     String[]           @default([])
+  archivedAt      DateTime?
+  archivedById    String?
   // Optional link back to the VPS server that created this subscription.
   // SetNull so deleting a server preserves the Service + its transaction history.
-  vpsServerId     String?      @unique
-  vpsServer       VpsServer?   @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
-  createdAt       DateTime     @default(now())
-  transactions    Transaction[] @relation("ServiceTransactions")
+  vpsServerId     String?            @unique
+  vpsServer       VpsServer?         @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
+  createdAt       DateTime           @default(now())
+  transactions    Transaction[]      @relation("ServiceTransactions")
   credentials     Credential[]
   reminders       Reminder[]
   alerts          OperationalAlert[]
+  documents       Document[]
+
+  @@index([archivedAt, status])
+  @@index([workflowId])
 }
 
 // Admin-managed provider accounts used by the Services > API Usage dashboard.
@@ -554,25 +595,25 @@ model ApiUsageAccount {
 }
 
 model Project {
-  id          String     @id @default(cuid())
-  name        String
-  repoUrl     String?
+  id            String          @id @default(cuid())
+  name          String
+  repoUrl       String?
   trackedRepoId String?
-  trackedRepo TrackedRepo? @relation(fields: [trackedRepoId], references: [id], onDelete: SetNull)
-  description String
-  status      ProjStatus @default(ACTIVE)
-  members     User[]     @relation("ProjectMembers")
-  memberships ProjectMember[]
-  createdById String?
-  createdBy   User?      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  archivedAt  DateTime?
-  archivedById String?
-  archivedBy  User?      @relation("ProjectArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
-  tasks       Task[]
-  tags        Tag[]
-  vpsServers  VpsServer[] @relation("ProjectVpsServers")
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  trackedRepo   TrackedRepo?    @relation(fields: [trackedRepoId], references: [id], onDelete: SetNull)
+  description   String
+  status        ProjStatus      @default(ACTIVE)
+  members       User[]          @relation("ProjectMembers")
+  memberships   ProjectMember[]
+  createdById   String?
+  createdBy     User?           @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  archivedAt    DateTime?
+  archivedById  String?
+  archivedBy    User?           @relation("ProjectArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  tasks         Task[]
+  tags          Tag[]
+  vpsServers    VpsServer[]     @relation("ProjectVpsServers")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   @@index([status, archivedAt])
 }
@@ -592,96 +633,96 @@ model ProjectMember {
 }
 
 model Tag {
-  id    String @id @default(cuid())
-  name  String
-  color String @default("#c8ff00")
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#c8ff00")
   projectId String?
-  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tasks Task[] @relation("TaskTags")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]   @relation("TaskTags")
 
   @@unique([projectId, name])
   @@index([projectId])
 }
 
 model Task {
-  id          String     @id @default(cuid())
-  projectId   String
-  project     Project    @relation(fields: [projectId], references: [id])
-  title       String
-  description String?
-  assigneeId  String?
-  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  status      TaskStatus @default(BACKLOG)
-  priority    Priority   @default(MEDIUM)
-  startDate   DateTime?
-  deadline    DateTime?
-  parentId    String?
-  parent      Task?      @relation("Subtasks", fields: [parentId], references: [id])
-  subtasks    Task[]     @relation("Subtasks")
-  tags        Tag[]      @relation("TaskTags")
-  createdById String
-  createdBy   User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  archivedAt  DateTime?
+  id           String     @id @default(cuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id])
+  title        String
+  description  String?
+  assigneeId   String?
+  assignee     User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  status       TaskStatus @default(BACKLOG)
+  priority     Priority   @default(MEDIUM)
+  startDate    DateTime?
+  deadline     DateTime?
+  parentId     String?
+  parent       Task?      @relation("Subtasks", fields: [parentId], references: [id])
+  subtasks     Task[]     @relation("Subtasks")
+  tags         Tag[]      @relation("TaskTags")
+  createdById  String
+  createdBy    User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  archivedAt   DateTime?
   archivedById String?
-  archivedBy  User?      @relation("TaskArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  archivedBy   User?      @relation("TaskArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   @@index([projectId, archivedAt, status])
   @@index([assigneeId, archivedAt])
 }
 
 model Reminder {
-  id             String              @id @default(cuid())
-  createdById    String
-  createdBy      User                @relation(fields: [createdById], references: [id])
-  message        String
-  frequency      ReminderFreq        @default(ONCE)
-  repeatEvery    Int?
-  repeatUnit     ReminderRepeatUnit?
-  nextFire       DateTime
-  lastFiredAt    DateTime?
-  active         Boolean             @default(true)
-  channel        Channel             @default(BOTH)
-  ownerId        String?
-  owner          User?               @relation("ReminderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  acknowledgedAt DateTime?
+  id               String              @id @default(cuid())
+  createdById      String
+  createdBy        User                @relation(fields: [createdById], references: [id])
+  message          String
+  frequency        ReminderFreq        @default(ONCE)
+  repeatEvery      Int?
+  repeatUnit       ReminderRepeatUnit?
+  nextFire         DateTime
+  lastFiredAt      DateTime?
+  active           Boolean             @default(true)
+  channel          Channel             @default(BOTH)
+  ownerId          String?
+  owner            User?               @relation("ReminderOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  acknowledgedAt   DateTime?
   acknowledgedById String?
-  acknowledgedBy User?               @relation("ReminderAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
-  snoozedUntil   DateTime?
-  escalationAt   DateTime?
-  escalatedAt     DateTime?
-  lastError      String?
+  acknowledgedBy   User?               @relation("ReminderAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  snoozedUntil     DateTime?
+  escalationAt     DateTime?
+  escalatedAt      DateTime?
+  lastError        String?
   // Kept for compatibility with existing databases. Admin reminders always
   // write ADMIN here; the audience is no longer configurable in the UI/API.
-  recipientRoles Role[]              @default([ADMIN])
-  createdAt      DateTime            @default(now())
-  serviceId      String?
-  service        Service?            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  recipientRoles   Role[]              @default([ADMIN])
+  createdAt        DateTime            @default(now())
+  serviceId        String?
+  service          Service?            @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@index([active, nextFire])
   @@index([serviceId, active])
 }
 
 model ScheduledBroadcast {
-  id             String                 @id @default(cuid())
-  createdById    String
-  createdBy      User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  title          String
-  message        String
-  audience       BroadcastAudienceScope
-  recipientMode  BroadcastRecipientMode @default(ALL)
-  recipientIds   String[]               @default([])
-  sendSentinel   Boolean                @default(true)
-  sendTelegram   Boolean                @default(false)
-  highPriority   Boolean                @default(true)
-  repeatEvery    Int
-  repeatUnit     ReminderRepeatUnit
-  nextFire       DateTime
-  lastFiredAt    DateTime?
-  lastError      String?
-  active         Boolean                @default(true)
-  createdAt      DateTime               @default(now())
+  id            String                 @id @default(cuid())
+  createdById   String
+  createdBy     User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  title         String
+  message       String
+  audience      BroadcastAudienceScope
+  recipientMode BroadcastRecipientMode @default(ALL)
+  recipientIds  String[]               @default([])
+  sendSentinel  Boolean                @default(true)
+  sendTelegram  Boolean                @default(false)
+  highPriority  Boolean                @default(true)
+  repeatEvery   Int
+  repeatUnit    ReminderRepeatUnit
+  nextFire      DateTime
+  lastFiredAt   DateTime?
+  lastError     String?
+  active        Boolean                @default(true)
+  createdAt     DateTime               @default(now())
 
   @@index([active, nextFire])
 }
@@ -719,6 +760,9 @@ model Credential {
   service      Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   expiresAt    DateTime?
   credKind     String? // "VPS_PASSWORD" | "VPS_SSH_KEY" — used to find/sync the linked row
+  deletedAt    DateTime?
+  purgeAfter   DateTime?
+  deletedById  String?
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   alerts       OperationalAlert[]
@@ -726,6 +770,35 @@ model Credential {
   @@index([vpsServerId])
   @@index([serviceId])
   @@index([expiresAt])
+  @@index([deletedAt, purgeAfter])
+}
+
+model Document {
+  id                   String         @id @default(cuid())
+  url                  String         @unique
+  originalName         String
+  contentType          String
+  size                 Int
+  kind                 DocumentKind   @default(OTHER)
+  status               DocumentStatus @default(DRAFT)
+  uploaderId           String
+  uploader             User           @relation("DocumentUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  transactionId        String?
+  transaction          Transaction?   @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  serviceId            String?
+  service              Service?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  workflowId           String?
+  telegramFileId       String?
+  telegramMessageId    Int?
+  telegramArchivedAt   DateTime?
+  telegramArchiveError String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([transactionId, kind])
+  @@index([serviceId, kind])
+  @@index([uploaderId, status, createdAt])
+  @@index([workflowId])
 }
 
 model OperationalAlert {
@@ -742,7 +815,7 @@ model OperationalAlert {
   credentialId String?
   credential   Credential? @relation(fields: [credentialId], references: [id], onDelete: Cascade)
   vpsServerId  String?
-  vpsServer    VpsServer?   @relation(fields: [vpsServerId], references: [id], onDelete: Cascade)
+  vpsServer    VpsServer?  @relation(fields: [vpsServerId], references: [id], onDelete: Cascade)
   resolvedAt   DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
@@ -784,11 +857,13 @@ model AuditLog {
   ipAddress     String?
   userAgent     String?
   requestId     String?
+  workflowId    String?
   outcome       String       @default("SUCCESS")
   errorMessage  String?
   timestamp     DateTime     @default(now())
 
   @@index([requestId])
+  @@index([workflowId, timestamp])
   @@index([outcome, timestamp])
 }
 
@@ -803,23 +878,25 @@ enum NotifType {
   CREDENTIAL_ASSIGNED
   CREDENTIAL_REVIEWED
   USER_REGISTERED
+  VPS_ALERT_SETTINGS
+  VPS_ALERT
 }
 
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  type      NotifType
-  title     String
-  message   String
-  read      Boolean   @default(false)
-  entityId  String?
-  priority  String    @default("NORMAL")
-  telegramStatus String @default("NOT_REQUESTED")
-  telegramAttempts Int   @default(0)
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  type              NotifType
+  title             String
+  message           String
+  read              Boolean   @default(false)
+  entityId          String?
+  priority          String    @default("NORMAL")
+  telegramStatus    String    @default("NOT_REQUESTED")
+  telegramAttempts  Int       @default(0)
   telegramLastError String?
-  telegramSentAt DateTime?
-  createdAt DateTime  @default(now())
+  telegramSentAt    DateTime?
+  createdAt         DateTime  @default(now())
 
   @@index([userId, createdAt])
   @@index([telegramStatus, createdAt])
@@ -841,70 +918,95 @@ model LoginToken {
 }
 
 model TrackedRepo {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   name      String // e.g. "Pzp-Sentinel"
-  fullName  String   @unique // e.g. "Spamverse/Pzp-Sentinel"
+  fullName  String    @unique // e.g. "Spamverse/Pzp-Sentinel"
   url       String
   addedById String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   projects  Project[]
 }
 
 model VpsServer {
-  id               String       @id @default(cuid())
+  id               String               @id @default(cuid())
   name             String
-  token            String       @unique
-  provider         String       @default("")
-  ip               String       @default("")
-  platform         String       @default("")
-  username         String       @default("root")
-  sshPort          Int          @default(22)
-  password         String       @default("")
+  token            String               @unique
+  provider         String               @default("")
+  ip               String               @default("")
+  platform         String               @default("")
+  username         String               @default("root")
+  sshPort          Int                  @default(22)
+  password         String               @default("")
   sshKeyFileUrl    String?
   sshKeyFileName   String?
-  accessPublicKeys String       @default("")
-  tags             String[]     @default([])
-  notes            String       @default("")
-  specs            Json         @default("{}")
-  processHealth    Json         @default("[]")
+  accessPublicKeys String               @default("")
+  tags             String[]             @default([])
+  notes            String               @default("")
+  specs            Json                 @default("{}")
+  processHealth    Json                 @default("[]")
   releaseVersion   String?
-  cpuUsage         Float        @default(0)
-  ramUsage         Float        @default(0)
-  ramTotal         Float        @default(0)
-  diskUsage        Float        @default(0)
-  diskTotal        Float        @default(0)
-  netIn            Float        @default(0)
-  netOut           Float        @default(0)
-  uptime           Int          @default(0)
-  loadAvg          String       @default("")
-  status           String       @default("offline")
-  approved         Boolean      @default(false)
+  cpuUsage         Float                @default(0)
+  ramUsage         Float                @default(0)
+  ramTotal         Float                @default(0)
+  diskUsage        Float                @default(0)
+  diskTotal        Float                @default(0)
+  netIn            Float                @default(0)
+  netOut           Float                @default(0)
+  uptime           Int                  @default(0)
+  loadAvg          String               @default("")
+  status           String               @default("offline")
+  approved         Boolean              @default(false)
+  alertsEnabled    Boolean              @default(false)
   addedById        String?
   planLink         String? // URL to the hosting plan / control panel
-  lastSeen         DateTime     @default(now())
-  createdAt        DateTime     @default(now())
+  lastSeen         DateTime             @default(now())
+  createdAt        DateTime             @default(now())
   metrics          VpsMetric[]
   credentials      Credential[] // linked vault entries mirroring this server's secrets
-  subscription     Service?     @relation("VpsSub") // billing row in the Services tab
-  projects         Project[]    @relation("ProjectVpsServers")
-  maintainers      User[]       @relation("VpsMaintainers")
+  subscription     Service?             @relation("VpsSub") // billing row in the Services tab
+  projects         Project[]            @relation("ProjectVpsServers")
+  maintainers      User[]               @relation("VpsMaintainers")
   alerts           OperationalAlert[]
+  alertPreferences VpsAlertPreference[]
+}
+
+model VpsAlertPreference {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vpsServerId   String
+  vpsServer     VpsServer @relation(fields: [vpsServerId], references: [id], onDelete: Cascade)
+  enabled       Boolean   @default(false)
+  notifyOffline Boolean   @default(true)
+  notifyCpu     Boolean   @default(true)
+  notifyMemory  Boolean   @default(true)
+  notifyDisk    Boolean   @default(true)
+  notifyLoad    Boolean   @default(true)
+  notifyProcess Boolean   @default(true)
+  inApp         Boolean   @default(true)
+  telegram      Boolean   @default(false)
+  promptedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, vpsServerId])
+  @@index([vpsServerId, enabled])
 }
 
 model FinanceSyncJob {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   action        String
   actorName     String
   transactionId String?
-  sendBackup    Boolean  @default(false)
-  status        String   @default("PENDING")
-  attempts      Int      @default(0)
-  nextAttemptAt DateTime @default(now())
+  sendBackup    Boolean   @default(false)
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
   lockedAt      DateTime?
   completedAt   DateTime?
   lastError     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([status, nextAttemptAt])
 }

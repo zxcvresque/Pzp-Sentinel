@@ -55,8 +55,42 @@ git pull --ff-only origin main
 step "Installing dependencies…"
 npm ci
 
+step "Normalizing project tags before schema constraints…"
+# Older builds allowed duplicate tag names within one project. Merge their
+# implicit Task↔Tag links into the oldest tag before adding the composite
+# unique constraint. This is idempotent and leaves global (projectId NULL)
+# tags untouched because PostgreSQL permits multiple NULL values.
+npx prisma db execute --stdin <<'SQL'
+DO $$
+DECLARE
+  duplicate RECORD;
+BEGIN
+  FOR duplicate IN
+    SELECT ranked.id AS duplicate_id, ranked.keep_id
+    FROM (
+      SELECT
+        id,
+        FIRST_VALUE(id) OVER (PARTITION BY "projectId", name ORDER BY id) AS keep_id,
+        ROW_NUMBER() OVER (PARTITION BY "projectId", name ORDER BY id) AS position
+      FROM "Tag"
+      WHERE "projectId" IS NOT NULL
+    ) ranked
+    WHERE ranked.position > 1
+  LOOP
+    INSERT INTO "_TaskTags" ("A", "B")
+    SELECT duplicate.keep_id, links."B"
+    FROM "_TaskTags" links
+    WHERE links."A" = duplicate.duplicate_id
+    ON CONFLICT DO NOTHING;
+
+    DELETE FROM "_TaskTags" WHERE "A" = duplicate.duplicate_id;
+    DELETE FROM "Tag" WHERE id = duplicate.duplicate_id;
+  END LOOP;
+END $$;
+SQL
+
 step "Applying Prisma schema…"
-npx prisma db push
+npx prisma db push --accept-data-loss
 
 step "Regenerating Prisma client…"
 npx prisma generate

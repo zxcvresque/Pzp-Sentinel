@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import TgUser from "@/components/TgUser";
+import TransactionsNav from "@/components/TransactionsNav";
 
 interface ReconciliationData {
   unmatchedBmc: Array<{ id: string; amount: string; currency: string; date: string; description: string; bmcWebhookEvents: Array<{ supporterName: string | null; supporterEmail: string | null }> }>;
-  unmatchedRazorpayOrders: Array<{ id: string; razorpayOrderId: string; paymentId: string | null; amount: number; currency: string; description: string; createdAt: string; user: { id: string; name: string } | null }>;
+  unmatchedRazorpayOrders: Array<{ id: string; razorpayOrderId: string; paymentId: string | null; amount: number; currency: string; description: string; createdAt: string; user: { id: string; name: string; photoUrl?: string | null; telegramUser?: string | null } | null }>;
   pendingRazorpayEvents: Array<{ id: string; eventType: string; resourceId: string | null; status: string; createdAt: string }>;
   possibleDuplicates: Array<{ reason: string; transactions: Array<{ id: string; amount: string; currency: string; method: string; date: string; description: string }> }>;
 }
@@ -49,6 +51,7 @@ export default function ReconciliationPage() {
   const total = data.unmatchedBmc.length + data.unmatchedRazorpayOrders.length + data.pendingRazorpayEvents.length + data.possibleDuplicates.length;
 
   return <div>
+    <TransactionsNav />
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-extrabold">Reconciliation <span className="font-display text-lime">Inbox</span></h1><p className="mt-2 text-sm text-text-secondary">Unmatched provider payments, incomplete provider processing and possible duplicate ledger entries.</p>{syncResult && <p className="mt-2 text-xs text-mint">{syncResult}</p>}</div><button onClick={syncRazorpay} disabled={working === "sync"} className="rounded-full bg-lime px-5 py-2 text-sm font-semibold text-bg-void disabled:opacity-40">{working === "sync" ? "Syncing…" : "Sync Razorpay now"}</button></div>
     <div className="mb-6 grid gap-3 sm:grid-cols-4"><Stat label="Total flags" value={total} /><Stat label="BMC unmatched" value={data.unmatchedBmc.length} /><Stat label="Razorpay unmatched" value={data.unmatchedRazorpayOrders.length + data.pendingRazorpayEvents.length} /><Stat label="Possible duplicates" value={data.possibleDuplicates.length} /></div>
 
@@ -56,7 +59,7 @@ export default function ReconciliationPage() {
       {data.unmatchedBmc.map((transaction) => <Row key={transaction.id} title={`${transaction.currency} ${Number(transaction.amount).toLocaleString()} · ${transaction.bmcWebhookEvents[0]?.supporterName || "Unknown supporter"}`} detail={`${transaction.description} · ${new Date(transaction.date).toLocaleString()}`}><Link href={`/admin/transactions?transactionId=${encodeURIComponent(transaction.id)}&reconcile=1`} className="pill">Assign donor</Link></Row>)}
     </Section>
     <Section title="Unmatched Razorpay orders" empty="No paid Razorpay orders are missing ledger entries.">
-      {data.unmatchedRazorpayOrders.map((order) => <Row key={order.id} title={`${order.currency} ${(order.amount / 100).toLocaleString()} · ${order.user?.name || "Unlinked payer"}`} detail={`${order.razorpayOrderId} · ${order.paymentId || "No payment ID"}`}><button disabled={working === order.id || !order.paymentId} onClick={() => captureOrder(order.id)} className="pill text-lime disabled:opacity-40">Create ledger entry</button></Row>)}
+      {data.unmatchedRazorpayOrders.map((order) => <Row key={order.id} title={<span className="inline-flex items-center gap-2">{order.currency} {(order.amount / 100).toLocaleString()} · {order.user ? <TgUser name={order.user.name} photoUrl={order.user.photoUrl} telegramUser={order.user.telegramUser} size={20} /> : "Unlinked payer"}</span>} detail={`${order.razorpayOrderId} · ${order.paymentId || "No payment ID"}`}><button disabled={working === order.id || !order.paymentId} onClick={() => captureOrder(order.id)} className="pill text-lime disabled:opacity-40">Create ledger entry</button></Row>)}
     </Section>
     <Section title="Incomplete Razorpay webhooks" empty="No incomplete Razorpay webhook events.">
       {data.pendingRazorpayEvents.map((event) => <Row key={event.id} title={event.eventType} detail={`${event.resourceId || "Unknown resource"} · ${event.status} · ${new Date(event.createdAt).toLocaleString()}`} />)}
@@ -69,4 +72,4 @@ export default function ReconciliationPage() {
 
 function Stat({ label, value }: { label: string; value: number }) { return <div className="card p-4"><p className="font-mono text-[9px] uppercase tracking-[.1em] text-text-tertiary">{label}</p><p className={`mt-2 text-2xl font-bold ${value ? "text-coral" : "text-mint"}`}>{value}</p></div>; }
 function Section({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) { const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children); return <section className="card mb-5 p-5"><h2 className="mb-2 font-mono text-xs uppercase tracking-[.1em] text-text-secondary">{title}</h2>{hasChildren ? children : <p className="py-4 text-sm text-text-tertiary">{empty}</p>}</section>; }
-function Row({ title, detail, children }: { title: string; detail: string; children?: React.ReactNode }) { return <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] py-4 last:border-0"><div><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-xs text-text-tertiary">{detail}</p></div>{children}</div>; }
+function Row({ title, detail, children }: { title: React.ReactNode; detail: string; children?: React.ReactNode }) { return <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] py-4 last:border-0"><div><div className="text-sm font-semibold">{title}</div><p className="mt-1 text-xs text-text-tertiary">{detail}</p></div>{children}</div>; }

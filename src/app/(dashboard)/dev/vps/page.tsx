@@ -38,6 +38,22 @@ interface Server {
     devPublicKey: string | null;
   };
   lastSeen: string; // ISO timestamp
+  alertsEnabled: boolean;
+  canManageAlerts: boolean;
+  telegramAlertsAvailable: boolean;
+  alertPreference: VpsAlertPreference;
+}
+
+interface VpsAlertPreference {
+  enabled: boolean;
+  notifyOffline: boolean;
+  notifyCpu: boolean;
+  notifyMemory: boolean;
+  notifyDisk: boolean;
+  notifyLoad: boolean;
+  notifyProcess: boolean;
+  inApp: boolean;
+  telegram: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -300,6 +316,122 @@ function SshAccessPanel({ server, onChanged }: { server: Server; onChanged: () =
   );
 }
 
+const ALERT_CHOICES = [
+  ["notifyOffline", "Offline", "Heartbeat stops"],
+  ["notifyCpu", "CPU", "CPU reaches 90%"],
+  ["notifyMemory", "Memory", "RAM reaches 90%"],
+  ["notifyDisk", "Disk", "Disk reaches 90%"],
+  ["notifyLoad", "Load", "1-minute load reaches 5"],
+  ["notifyProcess", "Processes", "A reported PM2 process is unhealthy"],
+] as const;
+
+function VpsAlertPreferences({ server }: { server: Server }) {
+  const [preference, setPreference] = useState(server.alertPreference);
+  const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!server.canManageAlerts) return null;
+
+  async function update(patch: Partial<VpsAlertPreference>) {
+    const previous = preference;
+    const next = { ...preference, ...patch };
+    setPreference(next);
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/vps/${server.id}/alerts`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not save alert preferences");
+      setPreference(data.preference);
+    } catch (updateError) {
+      setPreference(previous);
+      setError(updateError instanceof Error ? updateError.message : "Could not save alert preferences");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-deep)] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <button type="button" onClick={() => setExpanded((open) => !open)} className="min-w-0 flex-1 text-left">
+          <span className="flex items-center gap-2 text-xs font-semibold text-[var(--text-primary)]">
+            VPS alerts
+            <span className={`rounded-full px-2 py-0.5 font-mono text-[8px] uppercase ${preference.enabled && server.alertsEnabled ? "bg-mint/10 text-mint" : "bg-white/[.04] text-[var(--text-tertiary)]"}`}>
+              {preference.enabled && server.alertsEnabled ? "On" : "Off"}
+            </span>
+          </span>
+          <span className="mt-1 block text-[11px] leading-4 text-[var(--text-secondary)]">
+            {!server.alertsEnabled ? "Monitoring is disabled by an admin." : "Choose incidents and delivery channels."}
+          </span>
+        </button>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={preference.enabled}
+          disabled={!server.alertsEnabled || saving}
+          onClick={() => void update({ enabled: !preference.enabled })}
+          className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${preference.enabled ? "border-mint/50 bg-mint/30" : "border-[var(--border)] bg-[var(--bg-elevated)]"}`}
+        >
+          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full transition-transform ${preference.enabled ? "translate-x-5 bg-mint" : "translate-x-0 bg-[var(--text-tertiary)]"}`} />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="mt-3 border-t border-[var(--border)] pt-3">
+          <div className="grid grid-cols-2 gap-2">
+            {ALERT_CHOICES.map(([field, label, description]) => {
+              const active = preference[field];
+              return (
+                <button
+                  key={field}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={saving}
+                  onClick={() => void update({ [field]: !active })}
+                  className={`rounded-lg border p-2 text-left transition-colors ${active ? "border-violet/40 bg-violet/10" : "border-[var(--border)] bg-white/[.015]"}`}
+                >
+                  <span className={`block text-[11px] font-semibold ${active ? "text-violet" : "text-[var(--text-secondary)]"}`}>{label}</span>
+                  <span className="mt-0.5 block text-[9px] leading-3 text-[var(--text-tertiary)]">{description}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-pressed={preference.inApp}
+              disabled={saving}
+              onClick={() => void update({ inApp: !preference.inApp })}
+              className={`rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase ${preference.inApp ? "border-lime/40 bg-lime/10 text-lime" : "border-[var(--border)] text-[var(--text-tertiary)]"}`}
+            >
+              In-app {preference.inApp ? "on" : "off"}
+            </button>
+            <button
+              type="button"
+              aria-pressed={preference.telegram}
+              disabled={saving || !server.telegramAlertsAvailable}
+              onClick={() => void update({ telegram: !preference.telegram })}
+              className={`rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase disabled:opacity-40 ${preference.telegram ? "border-sky-400/40 bg-sky-400/10 text-sky-300" : "border-[var(--border)] text-[var(--text-tertiary)]"}`}
+              title={server.telegramAlertsAvailable ? "Telegram direct messages" : "Link Telegram from your profile first"}
+            >
+              Telegram {preference.telegram ? "on" : "off"}
+            </button>
+          </div>
+          {saving && <p className="mt-2 font-mono text-[9px] text-[var(--text-tertiary)]">Saving…</p>}
+          {error && <p className="mt-2 text-[10px] text-coral">{error}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Server card component                                              */
 /* ------------------------------------------------------------------ */
@@ -430,6 +562,8 @@ function ServerCard({ server, onChanged }: { server: Server; onChanged: () => vo
 
       {/* SSH access — request / pending / granted (per-dev) */}
       <SshAccessPanel server={server} onChanged={onChanged} />
+
+      <VpsAlertPreferences server={server} />
 
       {specEntries.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

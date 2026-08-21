@@ -38,6 +38,77 @@
 
 ---
 
+# Financial/admin workflow consolidation (decision review before implementation)
+
+The implementation starts only after the product choices below are confirmed. Transactions are the financial source of truth; Services, VPS, Credentials, Reminders, and provider reconciliation are contextual records/workflows around them.
+
+## Decisions to confirm
+
+- [ ] Confirm navigation grouping: Transactions → Ledger, Pending approvals, Reconciliation, Record transaction; Services → Catalogue, VPS, Credentials, Operational alerts.
+- [ ] Confirm one service billing ledger based on linked transactions, with the first transaction optionally labelled “Initial payment”; retire separate UI treatment of `paidTxId` versus transaction history.
+- [ ] Confirm composite workflow/correlation IDs so one expandable audit event can group the transaction, service, reminder, credential, receipt, and notification records created by one action.
+- [ ] Select the initial Service templates and fields; keep the generic key/label/type column builder under “Advanced fields”.
+
+## Canonical transaction and purchase flow
+
+- [ ] Make one guided “Record transaction” flow the canonical entry point for donation/income, purchase/expense, recurring service, renewal, refund/reversal, and balance adjustment.
+- [ ] In the expense branch, support no service, link an existing service, or create a service; reveal service/renewal/credential fields only when applicable.
+- [ ] Preserve atomic creation of transaction + optional service + reminder + credentials + documents using one shared server-side `recordFinancialEvent` domain operation.
+- [x] Remove duplicate admin creation logic: `/api/financial-events` is canonical, `/api/transactions` POST is donor-only manual proof submission, and `/api/services` POST is service-only catalogue creation. Deprecated purchase/upload routes were removed rather than retained as wrappers.
+- [ ] Remove Record Purchase as a standalone Services subpage; make any “Record purchase” shortcut open the canonical transaction flow with the purchase mode preselected.
+- [ ] Replace New Service → Record payment now with the canonical transaction/payment step; allow service-only creation for free, unpaid, trial, or pre-existing services.
+- [ ] Add “Record payment / renewal” on Service details and prefill the canonical transaction flow with that service.
+- [ ] Make the VPS billing form invoke the same service/payment workflow instead of maintaining separate financial behavior.
+
+## Receipts and documents
+
+- [ ] Rename the generic payment attachment prompt to “Receipt / invoice”, with a separate supporting-documents option and clear accepted-size/count guidance.
+- [ ] Add receipt/invoice upload to every payment path, including New Service and renewal payments.
+- [ ] Show clickable receipt filenames/previews in the transaction ledger and Service billing history instead of only an attachment count.
+- [ ] Add “Upload missing receipt” / “Add receipt later” without requiring unrelated transaction edits.
+- [ ] Classify documents as receipt, invoice, contract, licence, proof, or other; record uploader, upload time, related transaction/service, archive status, and audit history.
+- [ ] Replace URL-array-only attachments with durable database document records while preserving existing links during migration.
+- [ ] Clean up uploaded files abandoned when a form is cancelled or expires.
+- [ ] Add an optional admin-configurable policy requiring receipts above a chosen expense amount.
+
+## Transaction integrity and approvals
+
+- [ ] Move Reconciliation under Transactions and keep “Sync Razorpay now”, unmatched BMC assignment, incomplete provider payments, and duplicate review in that workspace.
+- [ ] Clearly distinguish provider-verified Razorpay/BMC payments from manual entries in forms, badges, filters, exports, and details.
+- [ ] Do not offer verified provider methods as ordinary manual payment sources; route them through checkout/import/reconciliation or mark them explicitly unverified.
+- [ ] Use the same approval/rejection dialog and review-note experience from Dashboard, Transactions, renewals, and Reconciliation; remove browser `prompt` approval actions.
+- [ ] Keep auto-renewal deductions pending until approved; advance the service billing cycle only after approval and disable/review auto-renew on rejection.
+- [ ] Present refunds as linked reversals rather than rejected payments, and keep financial lifecycle separate from administrative review state.
+- [ ] Add configurable approval rules/thresholds for large expenses and optionally require a second admin when policy demands it.
+
+## Services, credentials, reminders, and attention inbox
+
+- [ ] Provide friendly Service templates and familiar labelled sections by default; collapse the generic custom schema builder into Advanced fields.
+- [ ] Keep the global Credential Vault, but use one shared credential editor from Service, VPS, and purchase contexts with the related object preselected.
+- [ ] Add a credential-delete confirmation dialog that identifies the credential and warns about linked access.
+- [ ] After credential deletion, show a five-second Undo action; implement recoverable deferred/soft deletion so Undo genuinely restores the credential and access relationships, then audit delete/undo/final purge.
+- [ ] Manage renewal reminder configuration from the related Service; make the global Reminders page an inbox/calendar rather than a second competing configuration flow.
+- [ ] Create a unified “Needs attention” inbox for pending transaction/renewal approvals, unmatched payments, possible duplicates, missing receipts, overdue services, credential expiry, and operational alerts.
+- [ ] Keep dashboard cards as summaries that deep-link to the corresponding filtered attention/transaction view instead of implementing separate action logic.
+- [ ] Archive Services instead of hard-deleting them so billing, receipt, reminder, credential, and audit context remains recoverable.
+- [ ] Use the shared avatar + name component everywhere a donor, creator, uploader, approver, maintainer, reminder owner, or credential accessor is shown.
+
+## Audit and data-model cleanup
+
+- [ ] Add a workflow/correlation ID to composite financial operations and all resulting audit records.
+- [ ] Render composite audit events as a concise parent event with expandable child records and links to each affected entity.
+- [ ] Consolidate Service billing around linked transactions; migrate `paidTxId` into an optional “initial payment” marker or derive it without maintaining two competing histories.
+- [ ] Audit receipt upload/view/remove, approval/rejection, credential delete/undo, service archive/restore, reconciliation, and every child action in a composite workflow.
+
+## Later enhancements after consolidation
+
+- [ ] Add vendor/payee records, project/cost-centre allocation, budgets, receipt duplicate detection, and optional OCR-assisted receipt field extraction.
+- [ ] Add drafts/autosave for longer purchase/subscription workflows.
+- [ ] Add service duplicate detection/merge tools and managed category/template administration.
+- [ ] QA the complete one-time purchase, new subscription, existing renewal, unpaid service, VPS billing, refund/reversal, receipt-later, reconciliation, and credential-delete undo journeys on desktop and mobile.
+
+---
+
 # VPS↔Credentials sharing (active feature)
 
 Plan: `C:\Users\varad\.claude\plans\credentials-and-vps-stats-expressive-tower.md` · Working protocol: `superclaude.md`

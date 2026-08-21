@@ -10,6 +10,7 @@ import { dmThanks } from "@/lib/donation-thanks";
 import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
+import { nextCycleDate } from "@/lib/vps-subscription";
 
 export async function POST(
   req: NextRequest,
@@ -37,11 +38,50 @@ export async function POST(
     return NextResponse.json({ error: "Transaction is not pending" }, { status: 400 });
   }
 
-  const updated = await prisma.transaction.update({
-    where: { id },
-    data: { status: "APPROVED", reviewedById: user.id },
-    include: { fromUser: true, createdBy: true },
+  const now = new Date();
+  const updated = await prisma.$transaction(async (db) => {
+    const claimed = await db.transaction.updateMany({
+      where: { id, status: "PENDING", voidedAt: null },
+      data: { status: "APPROVED", reviewedById: user.id },
+    });
+    if (claimed.count !== 1) return null;
+    const approved = await db.transaction.findUniqueOrThrow({
+      where: { id },
+      include: { fromUser: true, createdBy: true },
+    });
+
+    if ((approved.isAutomatedRenewal || approved.advancesServiceCycle) && approved.serviceId) {
+      const service = await db.service.findUnique({ where: { id: approved.serviceId } });
+      if (!service || !service.frequency || service.frequency === "ONE_TIME" || service.frequency === "LIFETIME") {
+        throw new Error("The linked recurring service no longer exists");
+      }
+      const base = service.expiryDate && service.expiryDate > now ? service.expiryDate : now;
+      const nextExpiry = nextCycleDate(base, service.frequency);
+      await db.service.update({
+        where: { id: service.id },
+        data: {
+          paidTxId: approved.id,
+          lastRenewalDate: now,
+          expiryDate: nextExpiry,
+          status: "ACTIVE",
+        },
+      });
+      await db.reminder.updateMany({
+        where: { serviceId: service.id, active: true },
+        data: { nextFire: nextExpiry },
+      });
+    } else if (approved.serviceId) {
+      await db.service.updateMany({
+        where: { id: approved.serviceId, paidTxId: approved.id, lastRenewalDate: null },
+        data: { lastRenewalDate: now, status: "ACTIVE" },
+      });
+    }
+
+    return approved;
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Transaction was already reviewed" }, { status: 409 });
+  }
   const identityUser = updated.fromUser || updated.createdBy;
 
   await logAudit({
@@ -50,8 +90,9 @@ export async function POST(
     entityType: "Transaction",
     entityId: id,
     transactionId: id,
+    workflowId: updated.workflowId || undefined,
     before: { status: "PENDING" },
-    after: { status: "APPROVED" },
+    after: { status: "APPROVED", serviceCycleAdvanced: updated.isAutomatedRenewal || updated.advancesServiceCycle },
     userName: user.name,
   });
 

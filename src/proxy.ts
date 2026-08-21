@@ -20,14 +20,8 @@ const roleRoutes: Record<string, Role> = {
   "/dev": "DEV",
 };
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
-  // The Gantt feature is archived. Keep its source intact, but remove the
-  // public route until it is intentionally restored.
-  if (pathname === "/dev/gantt" || pathname.startsWith("/dev/gantt/")) {
-    return NextResponse.redirect(new URL("/dev", req.url));
-  }
 
   // Public pages
   if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"))) {

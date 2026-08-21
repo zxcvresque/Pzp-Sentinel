@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Dropdown from "@/components/Dropdown";
+import TgUser from "@/components/TgUser";
 
 interface AuditEntry {
   id: string;
@@ -9,6 +10,7 @@ interface AuditEntry {
   action: string;
   entityType: string;
   entityId: string;
+  workflowId: string | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   timestamp: string;
@@ -42,7 +44,7 @@ function JsonDiff({
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+    <div className="grid grid-cols-1 gap-4 text-xs font-mono sm:grid-cols-2">
       <div>
         <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
           Before
@@ -53,7 +55,7 @@ function JsonDiff({
               const val = before[key];
               const changed = JSON.stringify(val) !== JSON.stringify(after?.[key]);
               return (
-                <div key={key} className={changed ? "text-coral" : "text-text-tertiary"}>
+                <div key={key} className={`break-all ${changed ? "text-coral" : "text-text-tertiary"}`}>
                   <span className="text-text-secondary">{key}:</span>{" "}
                   {val === undefined ? <span className="italic">--</span> : JSON.stringify(val)}
                 </div>
@@ -74,7 +76,7 @@ function JsonDiff({
               const val = after[key];
               const changed = JSON.stringify(val) !== JSON.stringify(before?.[key]);
               return (
-                <div key={key} className={changed ? "text-mint" : "text-text-tertiary"}>
+                <div key={key} className={`break-all ${changed ? "text-mint" : "text-text-tertiary"}`}>
                   <span className="text-text-secondary">{key}:</span>{" "}
                   {val === undefined ? <span className="italic">--</span> : JSON.stringify(val)}
                 </div>
@@ -94,11 +96,11 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [userMap, setUserMap] = useState<Record<string, string>>({});
+  const [userMap, setUserMap] = useState<Record<string, { id: string; name: string; photoUrl: string | null; telegramUser: string | null }>>({});
   const [actions, setActions] = useState<string[]>([]);
   const [entityTypes, setEntityTypes] = useState<string[]>([]);
 
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string; photoUrl?: string | null; telegramUser?: string | null }[]>([]);
 
   const [filterAction, setFilterAction] = useState("");
   const [filterEntity, setFilterEntity] = useState("");
@@ -158,6 +160,19 @@ export default function AuditPage() {
     setLoadingMore(false);
   }
 
+  const auditGroups = useMemo(() => {
+    const groups = new Map<string, AuditEntry[]>();
+    for (const log of logs) {
+      const key = log.workflowId || log.id;
+      groups.set(key, [...(groups.get(key) || []), log]);
+    }
+    return [...groups.entries()].map(([id, entries]) => ({
+      id,
+      entries,
+      parent: entries.find((entry) => entry.action === "FINANCIAL_EVENT_RECORDED") || entries[0],
+    }));
+  }, [logs]);
+
   if (loading) {
     return (
       <div>
@@ -215,7 +230,7 @@ export default function AuditPage() {
             value={filterUser}
             options={[
               { value: "", label: "All users" },
-              ...users.map((u) => ({ value: u.id, label: u.name })),
+              ...users.map((u) => ({ value: u.id, label: u.name, avatar: u.photoUrl || null })),
             ]}
             onChange={setFilterUser}
             placeholder="All users"
@@ -273,13 +288,15 @@ export default function AuditPage() {
         </div>
       ) : (
         <div className="space-y-1">
-          {logs.map((log) => {
-            const expanded = expandedId === log.id;
+          {auditGroups.map((group) => {
+            const log = group.parent;
+            const expanded = expandedId === group.id;
+            const actor = userMap[log.userId];
             return (
-              <div key={log.id}>
+              <div key={group.id}>
                 <button
                   type="button"
-                  onClick={() => setExpandedId(expanded ? null : log.id)}
+                  onClick={() => setExpandedId(expanded ? null : group.id)}
                   className="card px-4 py-3 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between w-full text-left hover:border-[var(--lime)]/20 transition-colors"
                 >
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
@@ -294,15 +311,14 @@ export default function AuditPage() {
                     <span className="text-text-tertiary text-xs font-mono shrink-0">
                       {log.entityId.substring(0, 8)}
                     </span>
+                    {group.entries.length > 1 && <span className="rounded-full bg-lime/8 px-2 py-0.5 font-mono text-[8px] uppercase text-lime">{group.entries.length} linked actions</span>}
                     {/* Chevron sits at the end of the first line on mobile */}
                     <span className="text-text-tertiary text-xs ml-auto shrink-0 sm:hidden">
                       {expanded ? "▲" : "▼"}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 sm:gap-4 text-xs w-full justify-between sm:w-auto sm:justify-end shrink-0 sm:pl-4">
-                    <span className="text-text-secondary truncate">
-                      {userMap[log.userId] || log.userId.substring(0, 8)}
-                    </span>
+                    {actor ? <TgUser name={actor.name} photoUrl={actor.photoUrl} telegramUser={actor.telegramUser} size={20} /> : <span className="text-text-secondary">{log.userId.substring(0, 8)}</span>}
                     <span className="text-text-tertiary whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleString()}
                     </span>
@@ -312,8 +328,9 @@ export default function AuditPage() {
                   </div>
                 </button>
                 {expanded && (
-                  <div className="card px-5 py-4 mt-px border-t-0 rounded-t-none">
+                  <div className="card mt-px rounded-t-none border-t-0 px-4 py-4 sm:px-5">
                     <JsonDiff before={log.before} after={log.after} />
+                    {group.entries.length > 1 && <div className="mt-5 border-t border-[var(--border)] pt-4"><p className="mb-3 font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Linked workflow actions</p><div className="space-y-2">{group.entries.filter((entry) => entry.id !== log.id).map((entry) => <div key={entry.id} className="flex min-w-0 flex-col gap-1 rounded-xl border border-[var(--border)] bg-bg-deep p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><span className={`inline-block rounded px-2 py-0.5 font-mono text-[8px] uppercase ${actionColor(entry.action)}`}>{entry.action}</span><p className="mt-1 break-words text-xs text-text-secondary">{entry.entityType} · {entry.entityId.slice(0, 8)}</p></div><span className="text-[10px] text-text-tertiary">{new Date(entry.timestamp).toLocaleTimeString()}</span></div>)}</div></div>}
                   </div>
                 )}
               </div>

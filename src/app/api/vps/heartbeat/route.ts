@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
+import { notifyVpsAlertSubscribers } from "@/lib/vps-alerts";
 
 function numberFromBody(value: unknown, fallback = 0) {
   const n = Number(value);
@@ -34,10 +34,10 @@ function processHealth(value: unknown) {
   });
 }
 
-async function syncMetricAlert(server: { id: string; name: string }, kind: string, title: string, message: string, active: boolean) {
+async function syncMetricAlert(server: { id: string; name: string; alertsEnabled: boolean }, kind: string, title: string, message: string, active: boolean) {
   const fingerprint = `vps:${server.id}:${kind}`;
   const existing = await prisma.operationalAlert.findUnique({ where: { fingerprint } });
-  if (!active) {
+  if (!active || !server.alertsEnabled) {
     if (existing?.status === "OPEN") await prisma.operationalAlert.update({ where: { id: existing.id }, data: { status: "RESOLVED", resolvedAt: new Date() } });
     return;
   }
@@ -48,7 +48,7 @@ async function syncMetricAlert(server: { id: string; name: string }, kind: strin
     update: { status: "OPEN", resolvedAt: null, title, message, severity: "HIGH" },
   });
   if (shouldNotify) {
-    await notifyAdmins({ type: "SYSTEM", title, message, entityId: server.id, priority: "HIGH", actionUrl: "/admin/vps", telegramMessage: formatTgMessage("VPS Alert", title, message) });
+    await notifyVpsAlertSubscribers({ vpsServerId: server.id, kind, title, message });
   }
 }
 

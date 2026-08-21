@@ -10,6 +10,20 @@ export interface ServiceTemplate {
 
 export const SERVICE_TEMPLATES: ServiceTemplate[] = [
   {
+    id: "SAAS_API",
+    label: "SaaS / API subscription",
+    category: "Software & APIs",
+    name: "SaaS subscription",
+    frequency: "MONTHLY",
+    credentialLabels: ["Account email", "API key or access token"],
+    metadata: [
+      { key: "provider", label: "Provider", type: "text" },
+      { key: "plan", label: "Product / plan", type: "text" },
+      { key: "workspace", label: "Workspace / account", type: "text" },
+      { key: "usageLimit", label: "Usage limit", type: "text" },
+    ],
+  },
+  {
     id: "SUPABASE",
     label: "Supabase",
     category: "Infrastructure",
@@ -23,7 +37,7 @@ export const SERVICE_TEMPLATES: ServiceTemplate[] = [
   },
   {
     id: "VPS",
-    label: "VPS / server",
+    label: "Cloud hosting / VPS plan",
     category: "Infrastructure",
     name: "VPS",
     frequency: "MONTHLY",
@@ -31,6 +45,35 @@ export const SERVICE_TEMPLATES: ServiceTemplate[] = [
     metadata: [
       { key: "provider", label: "Provider", type: "text" },
       { key: "region", label: "Region", type: "text" },
+      { key: "allowance", label: "CPU / RAM / storage allowance", type: "text" },
+    ],
+  },
+  {
+    id: "DATABASE_STORAGE",
+    label: "Database / storage",
+    category: "Infrastructure",
+    name: "Database or storage",
+    frequency: "MONTHLY",
+    credentialLabels: ["Dashboard login", "Connection string / API key"],
+    metadata: [
+      { key: "provider", label: "Provider", type: "text" },
+      { key: "project", label: "Project / database", type: "text" },
+      { key: "region", label: "Region", type: "text" },
+      { key: "usageLimit", label: "Storage / usage limit", type: "text" },
+    ],
+  },
+  {
+    id: "SOFTWARE_LICENCE",
+    label: "Software licence",
+    category: "Software & APIs",
+    name: "Software licence",
+    frequency: "YEARLY",
+    credentialLabels: ["Account login", "Licence key"],
+    metadata: [
+      { key: "product", label: "Product", type: "text" },
+      { key: "tier", label: "Licence tier", type: "text" },
+      { key: "seats", label: "Seat count", type: "number" },
+      { key: "assignedUsers", label: "Assigned users", type: "text" },
     ],
   },
   {

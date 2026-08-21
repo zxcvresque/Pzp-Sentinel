@@ -35,15 +35,37 @@ export async function POST(
     return NextResponse.json({ error: "Transaction is not pending" }, { status: 400 });
   }
 
-  const updated = await prisma.transaction.update({
-    where: { id },
-    data: {
-      status: "REJECTED",
-      reviewedById: user.id,
-      reviewNote: reason || null,
-    },
-    include: { fromUser: true, createdBy: true },
+  const updated = await prisma.$transaction(async (db) => {
+    const claimed = await db.transaction.updateMany({
+      where: { id, status: "PENDING", voidedAt: null },
+      data: {
+        status: "REJECTED",
+        reviewedById: user.id,
+        reviewNote: reason || null,
+      },
+    });
+    if (claimed.count !== 1) return null;
+    const rejected = await db.transaction.findUniqueOrThrow({
+      where: { id },
+      include: { fromUser: true, createdBy: true },
+    });
+    if ((rejected.isAutomatedRenewal || rejected.advancesServiceCycle) && rejected.serviceId) {
+      await db.service.updateMany({
+        where: { id: rejected.serviceId },
+        data: { autoRenew: false },
+      });
+    }
+    if (rejected.serviceId) {
+      await db.service.updateMany({
+        where: { id: rejected.serviceId, paidTxId: rejected.id, lastRenewalDate: null },
+        data: { status: "CANCELLED", autoRenew: false },
+      });
+    }
+    return rejected;
   });
+  if (!updated) {
+    return NextResponse.json({ error: "Transaction was already reviewed" }, { status: 409 });
+  }
   const identityUser = updated.fromUser || updated.createdBy;
 
   await logAudit({
@@ -52,8 +74,9 @@ export async function POST(
     entityType: "Transaction",
     entityId: id,
     transactionId: id,
+    workflowId: updated.workflowId || undefined,
     before: { status: "PENDING" },
-    after: { status: "REJECTED", reviewNote: reason },
+    after: { status: "REJECTED", reviewNote: reason, autoRenewDisabled: updated.isAutomatedRenewal || updated.advancesServiceCycle },
     userName: user.name,
   });
 

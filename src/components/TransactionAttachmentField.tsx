@@ -24,10 +24,14 @@ export default function TransactionAttachmentField({
   value,
   onChange,
   onUploadingChange,
+  kind = "RECEIPT",
+  label = "Receipt / invoice",
 }: {
   value: string[];
   onChange: (attachments: string[]) => void;
   onUploadingChange?: (uploading: boolean) => void;
+  kind?: "RECEIPT" | "INVOICE" | "CONTRACT" | "LICENCE" | "PROOF" | "OTHER";
+  label?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -55,6 +59,7 @@ export default function TransactionAttachmentField({
       for (const file of files) {
         const formData = new FormData();
         formData.append("files", file);
+        formData.append("kind", kind);
         const response = await fetch("/api/attachments", { method: "POST", body: formData });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -76,7 +81,7 @@ export default function TransactionAttachmentField({
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <label className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">Attachments</label>
+        <label className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-secondary">{label}</label>
         <span className="text-[10px] text-text-tertiary">Any file type · 20 MB each · up to 10 files</span>
       </div>
       <input
@@ -101,8 +106,8 @@ export default function TransactionAttachmentField({
         className={`flex min-h-28 w-full flex-col items-center justify-center rounded-xl border border-dashed px-4 py-5 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${dragging ? "border-lime/60 bg-lime/[.06]" : "border-[var(--border)] bg-bg-deep hover:border-lime/30 hover:bg-lime/[.03]"}`}
       >
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="mb-2 h-6 w-6 text-text-tertiary"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" /><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
-        <span className="text-sm font-semibold text-text-secondary">{uploading ? "Uploading attachments…" : "Choose files or drop them here"}</span>
-        <span className="mt-1 text-[11px] text-text-tertiary">Images, PDFs, documents, archives, or any other file</span>
+        <span className="text-sm font-semibold text-text-primary">{uploading ? "Uploading files…" : "Upload receipt, invoice or payment confirmation"}</span>
+        <span className="mt-1 text-[11px] text-text-tertiary">Images, PDFs or supporting documents · you can add missing receipts later</span>
       </button>
 
       {error && <p role="alert" className="mt-2 text-xs text-coral">{error}</p>}

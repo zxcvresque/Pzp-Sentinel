@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import SpotlightTour from "@/components/SpotlightTour";
+import RoleOnboarding from "@/components/RoleOnboarding";
 import { getTourSteps } from "@/lib/tour-steps";
 import type { Role } from "@/generated/prisma/enums";
 
@@ -14,6 +15,9 @@ interface UserData {
   telegramUser: string;
   photoUrl: string | null;
   themeColor?: string;
+  formLayout?: "SECTION_CARDS" | "ACCENT_RAILS" | "NUMBERED_WORKFLOW" | "INFORMATION_BANDS";
+  onboardingVersion: number;
+  githubUsername?: string | null;
   roles: Role[];
 }
 
@@ -52,6 +56,7 @@ export default function DashboardLayout({
   const [user, setUser] = useState<UserData | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("ADMIN");
   const [tourActive, setTourActive] = useState(false);
+  const [introActive, setIntroActive] = useState(false);
   const [tourToast, setTourToast] = useState(false);
 
   // Load the user, then keep it fresh by re-fetching on tab focus and on a short
@@ -71,6 +76,7 @@ export default function DashboardLayout({
         if (data.user.themeColor) {
           applyThemeColor(data.user.themeColor);
         }
+        document.documentElement.dataset.formLayout = data.user.formLayout || "SECTION_CARDS";
       } catch {
         if (!cancelled) router.push("/login");
       }
@@ -95,13 +101,34 @@ export default function DashboardLayout({
   // Show tour on first visit
   useEffect(() => {
     if (!user) return;
+    if ((user.onboardingVersion || 0) < 1) {
+      const timer = window.setTimeout(() => setIntroActive(true), 0);
+      return () => window.clearTimeout(timer);
+    }
     const key = `sentinel_tour_seen_${user.id}`;
-    if (!localStorage.getItem(key)) {
+    if (!localStorage.getItem(key) && !localStorage.getItem(`sentinel_page_tours_disabled_${user.id}`)) {
       // Small delay so the page renders first
       const timer = setTimeout(() => setTourActive(true), 800);
       return () => clearTimeout(timer);
     }
   }, [user]);
+
+  async function completeIntro(startTours: boolean, githubUsername?: string) {
+    if (!user) return false;
+    const response = await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 1, ...(user.roles.includes("DEV") ? { githubUsername } : {}) }) });
+    if (!response.ok) return false;
+    setUser((current) => current ? { ...current, onboardingVersion: 1, ...(githubUsername ? { githubUsername } : {}) } : current);
+    setIntroActive(false);
+    if (startTours) {
+      localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
+      localStorage.removeItem(`sentinel_tour_seen_${user.id}`);
+      window.setTimeout(() => setTourActive(true), 300);
+    } else {
+      localStorage.setItem(`sentinel_tour_seen_${user.id}`, "1");
+      localStorage.setItem(`sentinel_page_tours_disabled_${user.id}`, "1");
+    }
+    return true;
+  }
 
   function handleTourFinish() {
     setTourActive(false);
@@ -153,6 +180,10 @@ export default function DashboardLayout({
   const breadcrumbMap: Record<string, string> = {
     "/admin": "Admin / Dashboard",
     "/admin/transactions": "Admin / Transactions",
+    "/admin/transactions/new": "Admin / Transactions / Record transaction",
+    "/admin/reconciliation": "Admin / Transactions / Reconciliation",
+    "/admin/attention": "Admin / Needs Attention",
+    "/admin/alerts": "Admin / Services / Operational alerts",
     "/admin/services": "Admin / Services",
     "/admin/donors": "Admin / Donors",
     "/admin/broadcasts": "Admin / Broadcasts",
@@ -190,6 +221,12 @@ export default function DashboardLayout({
       </div>
     );
   }
+
+  const onboardingRole: Role = pathname.startsWith("/dev") && user.roles.includes("DEV")
+    ? "DEV"
+    : pathname.startsWith("/donor") && user.roles.includes("DONOR")
+      ? "DONOR"
+      : user.roles.includes(activeRole) ? activeRole : user.roles[0];
 
   return (
     <div className="flex min-h-screen">
@@ -239,6 +276,7 @@ export default function DashboardLayout({
         active={tourActive}
         onFinish={handleTourFinish}
       />
+      {introActive && <RoleOnboarding role={onboardingRole} name={user.name} photoUrl={user.photoUrl} githubUsername={user.githubUsername} requireGithub={user.roles.includes("DEV")} onComplete={completeIntro} />}
 
       {/* Tour reminder toast */}
       {tourToast && (

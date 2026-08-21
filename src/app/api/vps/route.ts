@@ -3,14 +3,16 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { syncVpsCredentials } from "@/lib/vps-credentials";
-import { syncVpsSubscription, nextCycleDate, type VpsDuration } from "@/lib/vps-subscription";
+import { syncVpsSubscription, type VpsDuration } from "@/lib/vps-subscription";
 import { Prisma } from "@/generated/prisma/client";
 import { encryptSecret, decryptSecret } from "@/lib/secret-crypto";
-import { notify, formatTgMessage } from "@/lib/notifications";
+import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { logCredentialAction } from "@/lib/github-log";
-import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { logAudit } from "@/lib/audit";
+import { recordFinancialEvent } from "@/lib/record-financial-event";
+import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { projectAccessFor } from "@/lib/project-access";
+import { DEFAULT_VPS_ALERT_PREFERENCE, promptNewVpsMaintainers } from "@/lib/vps-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +137,11 @@ export async function GET() {
     }
   }
 
+  const alertPreferences = servers.length ? await prisma.vpsAlertPreference.findMany({
+    where: { userId: user.id, vpsServerId: { in: servers.map((server) => server.id) } },
+  }) : [];
+  const alertPreferenceByServer = new Map(alertPreferences.map((preference) => [preference.vpsServerId, preference]));
+
   const now = Date.now();
   const serverIds = servers.map((server) => server.id);
   const [weekSummaries, monthSummaries] = await Promise.all([
@@ -188,6 +195,14 @@ export async function GET() {
     maintainers: s.maintainers,
     alerts: s.alerts,
     approved: s.approved,
+    alertsEnabled: s.alertsEnabled,
+    alertPreference: alertPreferenceByServer.get(s.id) ?? {
+      ...DEFAULT_VPS_ALERT_PREFERENCE,
+      userId: user.id,
+      vpsServerId: s.id,
+    },
+    telegramAlertsAvailable: Boolean(user.chatId),
+    canManageAlerts: isAdmin || s.maintainers.some((maintainer) => maintainer.id === user.id),
     addedById: s.addedById,
     status: !s.approved ? "pending" : (now - s.lastSeen.getTime() > 120_000 ? "offline" : "online"),
     uptime: s.uptime,
@@ -239,6 +254,7 @@ export async function POST(req: NextRequest) {
     maintainerIds,
     planLink,
     duration,
+    alertsEnabled,
   } = await req.json();
   const cleanName = String(name ?? "").trim();
   const cleanIp = String(ip ?? "").trim();
@@ -291,6 +307,7 @@ export async function POST(req: NextRequest) {
       planLink: cleanPlanLink || null,
       token,
       approved: isAdmin,
+      alertsEnabled: isAdmin && alertsEnabled === true,
       addedById: user.id,
       projects: linkedProjectIds.length ? { connect: linkedProjectIds.map((id) => ({ id })) } : undefined,
       maintainers: { connect: [...new Set([user.id, ...linkedMaintainerIds])].map((id) => ({ id })) },
@@ -307,12 +324,22 @@ export async function POST(req: NextRequest) {
       ip: server.ip,
       provider: server.provider,
       approved: server.approved,
+      alertsEnabled: server.alertsEnabled,
       projectIds: linkedProjectIds,
       maintainerIds: [...new Set([user.id, ...linkedMaintainerIds])],
     },
     userName: user.name,
     request: req,
   });
+
+  if (server.approved) {
+    await promptNewVpsMaintainers({
+      vpsServerId: server.id,
+      serverName: server.name,
+      userIds: [...new Set([user.id, ...linkedMaintainerIds])],
+      assignedBy: user.name,
+    }).catch((error) => console.error("[vps] maintainer alert prompt failed:", error));
+  }
 
   // Mirror secrets into the vault as access-controlled credentials (admin-created
   // servers only; dev-requested servers sync on approval). Pass PLAINTEXT —
@@ -376,8 +403,8 @@ export async function POST(req: NextRequest) {
       console.error("[vps] syncVpsCredentials failed:", e);
     }
 
-    // Mirror the plan into the Services tab + deduct the price now (admin only;
-    // finances are admin-controlled). No-op when no priced duration was given.
+    // Mirror the plan into Services and create a pending approval request for
+    // its first charge. No-op when no priced duration was given.
     try {
       await syncVpsSubscription(
         { id: server.id, name: server.name, planLink: cleanPlanLink },
@@ -411,7 +438,10 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
 
   if (action === "update") {
-    const existingServer = await prisma.vpsServer.findUnique({ where: { id } });
+    const existingServer = await prisma.vpsServer.findUnique({
+      where: { id },
+      include: { maintainers: { select: { id: true } } },
+    });
     if (!existingServer) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const newPassword = String(body.password ?? "").trim();
@@ -444,6 +474,7 @@ export async function PATCH(req: NextRequest) {
       tags: normalizeTags(body.tags),
       notes: String(body.notes ?? "").trim(),
       planLink: cleanPlanLink || null,
+      ...(typeof body.alertsEnabled === "boolean" ? { alertsEnabled: body.alertsEnabled } : {}),
       ...(projectIds ? { projects: { set: projectIds.map((projectId) => ({ id: projectId })) } } : {}),
       ...(maintainerIds ? { maintainers: { set: maintainerIds.map((maintainerId) => ({ id: maintainerId })) } } : {}),
     };
@@ -455,6 +486,25 @@ export async function PATCH(req: NextRequest) {
     }
 
     const server = await prisma.vpsServer.update({ where: { id }, data });
+    const previousMaintainerIds = existingServer.maintainers.map((maintainer) => maintainer.id);
+    const nextMaintainerIds = maintainerIds ?? previousMaintainerIds;
+    const newMaintainerIds = nextMaintainerIds.filter((maintainerId) => !previousMaintainerIds.includes(maintainerId));
+    const monitoringJustEnabled = !existingServer.alertsEnabled && server.alertsEnabled;
+    const promptIds = monitoringJustEnabled ? nextMaintainerIds : newMaintainerIds;
+    if (server.approved && promptIds.length) {
+      await promptNewVpsMaintainers({
+        vpsServerId: server.id,
+        serverName: server.name,
+        userIds: promptIds,
+        assignedBy: user.name,
+      }).catch((error) => console.error("[vps] maintainer alert prompt failed:", error));
+    }
+    if (existingServer.alertsEnabled && !server.alertsEnabled) {
+      await prisma.operationalAlert.updateMany({
+        where: { vpsServerId: server.id, status: "OPEN" },
+        data: { status: "RESOLVED", resolvedAt: new Date() },
+      });
+    }
 
     // Keep the vault mirror + the Services row in sync (decrypt to plaintext for
     // the credential helper, which re-encrypts).
@@ -487,8 +537,8 @@ export async function PATCH(req: NextRequest) {
       action: "VPS_UPDATE",
       entityType: "VpsServer",
       entityId: id,
-      before: { name: existingServer.name, ip: existingServer.ip, provider: existingServer.provider },
-      after: { name: server.name, ip: server.ip, provider: server.provider, projectIds, maintainerIds, secretChanged: Boolean(newPassword || newSshKeyFileUrl) },
+      before: { name: existingServer.name, ip: existingServer.ip, provider: existingServer.provider, alertsEnabled: existingServer.alertsEnabled },
+      after: { name: server.name, ip: server.ip, provider: server.provider, projectIds, maintainerIds, alertsEnabled: server.alertsEnabled, secretChanged: Boolean(newPassword || newSshKeyFileUrl) },
       userName: user.name,
       request: req,
     });
@@ -497,42 +547,19 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === "renew") {
-    // Manually log one more billing cycle: deduct the rate now + push the expiry
-    // forward one cycle. Only valid for a linked, recurring, priced subscription.
     const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
-    if (!sub || sub.price == null || !sub.frequency || sub.frequency === "ONE_TIME") {
+    if (!sub || sub.price == null || !sub.frequency || sub.frequency === "ONE_TIME" || sub.frequency === "LIFETIME") {
       return NextResponse.json({ error: "No recurring subscription to renew" }, { status: 400 });
     }
     const price = Number(sub.price);
     if (!(price > 0)) return NextResponse.json({ error: "Subscription has no rate" }, { status: 400 });
-
-    const now = new Date();
-    const base = sub.expiryDate && sub.expiryDate > now ? sub.expiryDate : now;
-    const tx = await prisma.transaction.create({
-      data: {
-        amount: new Prisma.Decimal(price),
-        currency: sub.currency ?? "INR",
-        method: "OTHER",
-        direction: "OUT",
-        type: "SUBSCRIPTION",
-        description: `VPS plan renewal: ${sub.name}`,
-        status: "APPROVED",
-        date: now,
-        createdById: user.id,
-      },
-    });
-    await prisma.service.update({
-      where: { id: sub.id },
-      data: {
-        paidTxId: tx.id,
-        lastRenewalDate: now,
-        expiryDate: nextCycleDate(base, sub.frequency),
-        status: "ACTIVE",
-      },
-    });
-    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: tx.id, sendBackup: true });
-    await logAudit({ userId: user.id, action: "VPS_RENEW", entityType: "VpsServer", entityId: id, transactionId: tx.id, after: { serviceId: sub.id }, userName: user.name, request: req });
-    return NextResponse.json({ ok: true });
+    const alreadyPending = await prisma.transaction.findFirst({ where: { serviceId: sub.id, status: "PENDING", advancesServiceCycle: true, voidedAt: null }, select: { id: true } });
+    if (alreadyPending) return NextResponse.json({ error: "A renewal is already awaiting approval", transactionId: alreadyPending.id }, { status: 409 });
+    const result = await recordFinancialEvent({ actorId: user.id, amount: price, currency: sub.currency ?? "INR", method: "OTHER", direction: "OUT", type: "SUBSCRIPTION", description: `VPS plan renewal: ${sub.name}`, date: new Date(), status: "PENDING", service: { action: "LINK", id: sub.id }, advancesServiceCycle: true });
+    await logAudit({ userId: user.id, action: "VPS_RENEWAL_APPROVAL_REQUESTED", entityType: "VpsServer", entityId: id, transactionId: result.transaction.id, workflowId: result.workflowId, after: { serviceId: sub.id }, userName: user.name, request: req });
+    const symbol = (sub.currency ?? "INR") === "INR" ? "₹" : "$";
+    await notifyAdmins({ type: "TX_PENDING", title: "VPS renewal approval required", message: `${sub.name}: approve ${symbol}${price} before the renewal is recorded.`, entityId: result.transaction.id, priority: "HIGH", actionUrl: `/admin/transactions?status=PENDING&transactionId=${result.transaction.id}`, telegramMessage: formatTgMessage("🖥 VPS renewal approval", `${symbol}${price} · ${sub.name}`, "No funds or billing dates change until approval.") });
+    return NextResponse.json({ ok: true, pending: true, transactionId: result.transaction.id });
   }
 
   if (action === "refund") {
@@ -544,25 +571,15 @@ export async function PATCH(req: NextRequest) {
     const price = Number(sub.price);
     if (!(price > 0)) return NextResponse.json({ error: "Subscription has no rate" }, { status: 400 });
 
-    const refundTx = await prisma.transaction.create({
-      data: {
-        amount: new Prisma.Decimal(price),
-        currency: sub.currency ?? "INR",
-        method: "OTHER",
-        direction: "IN",
-        type: "OTHER",
-        description: `VPS plan refund: ${sub.name}`,
-        status: "APPROVED",
-        date: new Date(),
-        createdById: user.id,
-      },
-    });
+    const original = await prisma.transaction.findFirst({ where: { serviceId: sub.id, direction: "OUT", status: "APPROVED", voidedAt: null, reversals: { none: { voidedAt: null } } }, orderBy: { date: "desc" } });
+    if (!original) return NextResponse.json({ error: "No approved active charge to reverse" }, { status: 400 });
+    const result = await recordFinancialEvent({ actorId: user.id, amount: price, currency: sub.currency ?? "INR", method: "OTHER", direction: "IN", type: "OTHER", description: `VPS plan refund: ${sub.name}`, date: new Date(), status: "APPROVED", reversalOfId: original.id, service: { action: "LINK", id: sub.id } });
+    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: result.transaction.id, sendBackup: true });
     await prisma.service.update({
       where: { id: sub.id },
       data: { status: "CANCELLED", autoRenew: false },
     });
-    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: refundTx.id, sendBackup: true });
-    await logAudit({ userId: user.id, action: "VPS_REFUND", entityType: "VpsServer", entityId: id, transactionId: refundTx.id, userName: user.name, request: req });
+    await logAudit({ userId: user.id, action: "VPS_REFUND", entityType: "VpsServer", entityId: id, transactionId: result.transaction.id, workflowId: result.workflowId, before: { originalTransactionId: original.id }, userName: user.name, request: req });
     return NextResponse.json({ ok: true });
   }
 
@@ -570,6 +587,7 @@ export async function PATCH(req: NextRequest) {
     const server = await prisma.vpsServer.update({
       where: { id },
       data: { approved: true },
+      include: { maintainers: { select: { id: true } } },
     });
     // Now that it's approved, mirror its secrets into the vault (decrypt the
     // stored columns to plaintext for the sync helper, which re-encrypts).
@@ -587,6 +605,12 @@ export async function PATCH(req: NextRequest) {
     } catch (e) {
       console.error("[vps] syncVpsCredentials failed:", e);
     }
+    await promptNewVpsMaintainers({
+      vpsServerId: server.id,
+      serverName: server.name,
+      userIds: server.maintainers.map((maintainer) => maintainer.id),
+      assignedBy: user.name,
+    }).catch((error) => console.error("[vps] maintainer alert prompt failed:", error));
     await logAudit({ userId: user.id, action: "VPS_APPROVE", entityType: "VpsServer", entityId: id, before: { approved: false }, after: { approved: true }, userName: user.name, request: req });
     // Return the token so admin can set up the agent
     return NextResponse.json({ server: { id: server.id, name: server.name, token: server.token } });
@@ -622,24 +646,16 @@ export async function DELETE(req: NextRequest) {
   // expense behind (mirrors the manual Refund action). Skips already-cancelled subs.
   const sub = await prisma.service.findUnique({ where: { vpsServerId: id } });
   if (sub && sub.status === "ACTIVE" && sub.price != null && Number(sub.price) > 0) {
-    const refundTx = await prisma.transaction.create({
-      data: {
-        amount: new Prisma.Decimal(Number(sub.price)),
-        currency: sub.currency ?? "INR",
-        method: "OTHER",
-        direction: "IN",
-        type: "OTHER",
-        description: `VPS plan refund (server deleted): ${sub.name}`,
-        status: "APPROVED",
-        date: new Date(),
-        createdById: user.id,
-      },
-    });
+    const original = await prisma.transaction.findFirst({ where: { serviceId: sub.id, direction: "OUT", status: "APPROVED", voidedAt: null, reversals: { none: { voidedAt: null } } }, orderBy: { date: "desc" } });
+    if (original) {
+      const result = await recordFinancialEvent({ actorId: user.id, amount: Number(sub.price), currency: sub.currency ?? "INR", method: "OTHER", direction: "IN", type: "OTHER", description: `VPS plan refund (server deleted): ${sub.name}`, date: new Date(), status: "APPROVED", reversalOfId: original.id, service: { action: "LINK", id: sub.id } });
+      scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: result.transaction.id, sendBackup: true });
+      await logAudit({ userId: user.id, action: "VPS_DELETE_REFUND", entityType: "VpsServer", entityId: id, transactionId: result.transaction.id, workflowId: result.workflowId, before: { originalTransactionId: original.id }, userName: user.name, request: req });
+    }
     await prisma.service.update({
       where: { id: sub.id },
       data: { status: "CANCELLED", autoRenew: false },
     });
-    scheduleFinanceAutomation({ action: "CREATED", actorName: user.name, transactionId: refundTx.id, sendBackup: true });
   }
 
   await prisma.vpsServer.delete({ where: { id } });

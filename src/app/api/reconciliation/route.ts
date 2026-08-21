@@ -36,7 +36,7 @@ export async function GET() {
     prisma.razorpayOrder.findMany({
       where: { status: "PAID", transactionId: null },
       orderBy: { createdAt: "desc" },
-      include: { user: { select: { id: true, name: true } } },
+      include: { user: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
     }),
     prisma.razorpayWebhookEvent.findMany({
       where: { status: { not: "PROCESSED" } },

@@ -96,6 +96,10 @@ export default function AdminDashboard() {
   const [bmcCurrency, setBmcCurrency] = useState<DisplayCurrency>("USD");
   const bmcEventPageRef = useRef(1);
   const [bmcEventLoading, setBmcEventLoading] = useState(false);
+  const [reviewAction, setReviewAction] = useState<{ id: string; kind: "APPROVE" | "REJECT" } | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   useEffect(() => {
     currencyRef.current = currency;
@@ -179,23 +183,24 @@ export default function AdminDashboard() {
     }
   }
 
-  async function handleApprove(id: string) {
-    await fetch(`/api/transactions/${id}/approve`, { method: "POST" });
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: "APPROVED" } : t))
-    );
-  }
-
-  async function handleReject(id: string) {
-    const reason = prompt("Rejection reason (optional):");
-    await fetch(`/api/transactions/${id}/reject`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    });
-    setTransactions((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: "REJECTED" } : t))
-    );
+  async function submitReview() {
+    if (!reviewAction) return;
+    setReviewLoading(true); setReviewError("");
+    try {
+      const response = await fetch(`/api/transactions/${reviewAction.id}/${reviewAction.kind === "APPROVE" ? "approve" : "reject"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reviewNote.trim() || null }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Review failed");
+      setTransactions((previous) => previous.map((transaction) => transaction.id === reviewAction.id ? { ...transaction, status: reviewAction.kind === "APPROVE" ? "APPROVED" : "REJECTED" } : transaction));
+      setReviewAction(null); setReviewNote("");
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : "Review failed");
+    } finally {
+      setReviewLoading(false);
+    }
   }
 
   if (loading) {
@@ -227,6 +232,7 @@ export default function AdminDashboard() {
 
   return (
     <div>
+      {reviewAction && <div className="fixed inset-0 z-[9998] grid place-items-center bg-black/65 p-4 backdrop-blur-sm" onClick={() => !reviewLoading && setReviewAction(null)}><form onSubmit={(event) => { event.preventDefault(); void submitReview(); }} onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-bg-card p-5 shadow-2xl sm:p-6"><h2 className="text-lg font-bold">{reviewAction.kind === "APPROVE" ? "Approve" : "Reject"} transaction?</h2><p className="mt-1 text-xs leading-5 text-text-tertiary">The decision and review note are retained in the audit trail and donor notification.</p><label className="mt-4 block"><span className="font-mono text-[9px] uppercase text-text-tertiary">Review note {reviewAction.kind === "APPROVE" ? "(optional)" : ""}</span><textarea required={reviewAction.kind === "REJECT"} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={4} maxLength={500} className="mt-2 w-full rounded-xl border border-[var(--border)] bg-bg-deep p-3 text-sm outline-none focus:border-lime/30" placeholder={reviewAction.kind === "APPROVE" ? "Context for this approval" : "Why is this being rejected?"} /></label>{reviewError && <p className="mt-2 text-xs text-coral">{reviewError}</p>}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" disabled={reviewLoading} onClick={() => setReviewAction(null)} className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-text-secondary">Cancel</button><button disabled={reviewLoading || (reviewAction.kind === "REJECT" && !reviewNote.trim())} className={`rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-40 ${reviewAction.kind === "APPROVE" ? "bg-mint/10 text-mint" : "bg-coral/10 text-coral"}`}>{reviewLoading ? "Saving…" : reviewAction.kind === "APPROVE" ? "Approve" : "Reject"}</button></div></form></div>}
       <div className="flex items-start justify-between mb-8 gap-2">
         <h1 className="text-3xl font-extrabold">
           Treasury <span className="font-display text-lime">Overview</span>
@@ -560,22 +566,21 @@ export default function AdminDashboard() {
           </h2>
           <div className="space-y-3">
             {pending.map((tx) => (
-              <div key={tx.id} className="card p-4 flex items-center justify-between">
-                <div>
+              <div key={tx.id} className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
                   <div className="text-sm font-medium">{tx.description}</div>
-                  <div className="text-text-secondary text-xs mt-1">
-                    {tx.fromUser?.name || "Unknown"} · {tx.currency} {tx.amount} · {tx.method}
-                  </div>
+                  <div className="mt-2"><TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={24} /></div>
+                  <div className="mt-1 text-xs text-text-secondary">{tx.currency} {tx.amount} · {tx.method}</div>
                 </div>
-                <div className="flex gap-2">
+                <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
                   <button
-                    onClick={() => handleApprove(tx.id)}
+                    onClick={() => { setReviewNote(""); setReviewError(""); setReviewAction({ id: tx.id, kind: "APPROVE" }); }}
                     className="px-4 py-1.5 rounded-full text-xs font-semibold bg-mint/10 text-mint hover:bg-mint/20 transition-colors"
                   >
                     Approve
                   </button>
                   <button
-                    onClick={() => handleReject(tx.id)}
+                    onClick={() => { setReviewNote(""); setReviewError(""); setReviewAction({ id: tx.id, kind: "REJECT" }); }}
                     className="px-4 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
                   >
                     Reject
@@ -739,7 +744,8 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="divide-y divide-[var(--border)] sm:hidden">{transactions.map((tx) => <article key={tx.id} className="min-w-0 p-4"><div className="flex min-w-0 items-start justify-between gap-3"><p className="min-w-0 break-words text-sm font-semibold">{tx.description}</p><span className={`shrink-0 text-sm font-bold ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}>{tx.direction === "IN" ? "+" : "-"}{tx.currency === "INR" ? "₹" : "$"}{Number(tx.amount).toLocaleString()}</span></div><div className="mt-2"><TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={24} /></div><div className="mt-3 flex items-center justify-between gap-2"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span><span className="text-xs text-text-tertiary">{new Date(tx.date).toLocaleDateString()}</span></div></article>)}</div>
+            <div className="hidden sm:block">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-[var(--border)]">

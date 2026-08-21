@@ -36,7 +36,7 @@ interface ScheduledBroadcast {
   nextFire: string;
   lastFiredAt?: string | null;
   lastError?: string | null;
-  createdBy: { name: string };
+  createdBy: { name: string; photoUrl?: string | null; telegramUser?: string | null };
 }
 
 interface DeliveryResults {
@@ -712,7 +712,7 @@ export default function BroadcastsPage() {
                   <p className="truncate text-sm font-semibold text-text-primary">{schedule.title}</p>
                   <p className="mt-1 text-xs text-text-tertiary">
                     {schedule.audience.toLowerCase()} · every {schedule.repeatEvery} {schedule.repeatUnit.toLowerCase()}{schedule.repeatEvery === 1 ? "" : "s"}
-                    {" · "}next {new Date(schedule.nextFire).toLocaleString()} · by {schedule.createdBy.name}
+                    {" · "}next {new Date(schedule.nextFire).toLocaleString()} · by <TgUser name={schedule.createdBy.name} photoUrl={schedule.createdBy.photoUrl} telegramUser={schedule.createdBy.telegramUser} size={18} nameClassName="!text-xs !text-text-tertiary" />
                   </p>
                   {schedule.lastError && <p className="mt-1 text-xs text-coral">Last delivery: {schedule.lastError}</p>}
                 </div>

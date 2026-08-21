@@ -6,6 +6,7 @@ import FormExample from "@/components/FormExample";
 import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
 import Dropdown from "@/components/Dropdown";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type AccessLevel = "PUBLIC_KEY" | "FULL";
 
@@ -147,6 +148,21 @@ export default function CredentialsPage() {
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
   const [serviceId, setServiceId] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Credential | null>(null);
+  const [undoDelete, setUndoDelete] = useState<{ credential: Credential; until: number } | null>(null);
+  const [undoSeconds, setUndoSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!undoDelete) return;
+    const update = () => {
+      const seconds = Math.max(0, Math.ceil((undoDelete.until - Date.now()) / 1000));
+      setUndoSeconds(seconds);
+      if (seconds === 0) setUndoDelete(null);
+    };
+    update();
+    const interval = window.setInterval(update, 200);
+    return () => window.clearInterval(interval);
+  }, [undoDelete]);
 
   async function refresh() {
     const fresh = await fetch("/api/credentials").then((r) => r.json());
@@ -284,11 +300,23 @@ export default function CredentialsPage() {
     if (res.ok) await refresh();
   }
 
-  async function handleDelete(id: string) {
-    const res = await fetch(`/api/credentials/${id}`, { method: "DELETE" });
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    const credential = deleteTarget;
+    const res = await fetch(`/api/credentials/${credential.id}`, { method: "DELETE" });
     if (res.ok) {
-      setCredentials((prev) => prev.filter((c) => c.id !== id));
+      const data = await res.json();
+      setCredentials((prev) => prev.filter((c) => c.id !== credential.id));
+      setUndoDelete({ credential, until: new Date(data.undoUntil).getTime() });
     }
+    setDeleteTarget(null);
+  }
+
+  async function restoreDeletedCredential() {
+    if (!undoDelete) return;
+    const response = await fetch(`/api/credentials/${undoDelete.credential.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "RESTORE" }) });
+    if (response.ok) await refresh();
+    setUndoDelete(null);
   }
 
   async function handleReview(revisionId: string, action: "approve" | "reject", credId: string) {
@@ -328,6 +356,8 @@ export default function CredentialsPage() {
   return (
     <div>
       <ServicesNav role="ADMIN" />
+      <ConfirmDialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} title={deleteTarget ? `Delete “${deleteTarget.label}”?` : "Delete credential?"} message={deleteTarget ? `${deleteTarget.platform}${deleteTarget.vpsServer ? ` · VPS ${deleteTarget.vpsServer.name}` : ""}${deleteTarget.service ? ` · Service ${deleteTarget.service.name}` : ""}. ${deleteTarget.accesses.length} developer access grant${deleteTarget.accesses.length === 1 ? "" : "s"} will also be removed after the undo window.` : "This credential will be deleted."} confirmLabel="Delete credential" variant="danger" />
+      {undoDelete && <div role="status" className="fixed inset-x-3 bottom-20 z-[100] mx-auto flex max-w-md flex-col gap-3 rounded-2xl border border-amber/25 bg-bg-card p-4 shadow-[0_20px_70px_rgba(0,0,0,.55)] sm:inset-x-auto sm:bottom-6 sm:right-6 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="text-sm font-semibold">Credential deleted</p><p className="mt-1 truncate text-xs text-text-tertiary">{undoDelete.credential.platform} · {undoDelete.credential.label} · permanent in {undoSeconds}s</p></div><button onClick={() => void restoreDeletedCredential()} className="rounded-full bg-amber px-4 py-2 text-sm font-bold text-bg-void">Undo</button></div>}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
           Credential <span className="font-display text-lime">Vault</span>
@@ -561,7 +591,7 @@ export default function CredentialsPage() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(cred.id)}
+                          onClick={() => setDeleteTarget(cred)}
                           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20 transition-colors"
                         >
                           Delete

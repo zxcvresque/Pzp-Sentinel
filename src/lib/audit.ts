@@ -18,6 +18,7 @@ export async function logAudit(params: {
   entityType: string;
   entityId: string;
   transactionId?: string;
+  workflowId?: string;
   before?: unknown;
   after?: unknown;
   userName?: string;
@@ -34,6 +35,7 @@ export async function logAudit(params: {
       entityType: params.entityType,
       entityId: params.entityId,
       transactionId: params.transactionId,
+      workflowId: params.workflowId,
       before: params.before ? JSON.parse(JSON.stringify(params.before)) : undefined,
       after: params.after ? JSON.parse(JSON.stringify(params.after)) : undefined,
       ...context,

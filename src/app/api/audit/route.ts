@@ -45,9 +45,9 @@ export async function GET(req: NextRequest) {
     where: { id: { in: userIds } },
     select: { id: true, name: true, photoUrl: true, telegramUser: true },
   });
-  const userMap: Record<string, string> = {};
+  const userMap: Record<string, { id: string; name: string; photoUrl: string | null; telegramUser: string | null }> = {};
   for (const u of users) {
-    userMap[u.id] = u.name;
+    userMap[u.id] = u;
   }
 
   // Collect distinct action, entityType, and userId values for filter options
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   const allAuditUserIds = distinctUserIds.map((d) => d.userId);
   const auditUsers = await prisma.user.findMany({
     where: { id: { in: allAuditUserIds } },
-    select: { id: true, name: true },
+    select: { id: true, name: true, photoUrl: true, telegramUser: true },
   });
 
   return NextResponse.json({

@@ -57,10 +57,13 @@ export async function notify(data: {
   actionUrl?: string;
   /** Override the button label (default: "Open Sentinel") */
   actionLabel?: string;
+  /** Explicit per-resource channel decisions. These take precedence over global preferences and priority. */
+  inAppOverride?: boolean;
+  telegramOverride?: boolean;
 }) {
   const {
     userId, type, title, message, entityId, priority = "NORMAL", telegramMessage,
-    telegramReplyMarkup, actionUrl, actionLabel,
+    telegramReplyMarkup, actionUrl, actionLabel, inAppOverride, telegramOverride,
   } = data;
 
   const user = await prisma.user.findUnique({
@@ -68,7 +71,8 @@ export async function notify(data: {
     select: { chatId: true, dmPreferences: true, inAppPreferences: true },
   });
   const isHighPriority = priority === "HIGH";
-  const notification = (user?.inAppPreferences.includes(type) || isHighPriority)
+  const shouldCreateInApp = inAppOverride ?? (user?.inAppPreferences.includes(type) || isHighPriority);
+  const notification = shouldCreateInApp
     ? await prisma.notification.create({ data: { userId, type, title, message, entityId, priority } })
     : null;
 
@@ -76,9 +80,10 @@ export async function notify(data: {
   try {
     const dmBot = getBot();
     const hasPref = user?.dmPreferences.includes(type);
+    const shouldSendTelegram = telegramOverride ?? (hasPref || isHighPriority);
 
-    // HIGH priority notifications (approvals, etc.) always send DM regardless of preference
-    if (user?.chatId && dmBot && (hasPref || isHighPriority)) {
+    // Explicit resource-level preferences can suppress even high-priority DMs.
+    if (user?.chatId && dmBot && shouldSendTelegram) {
       if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SENDING", telegramAttempts: { increment: 1 }, telegramLastError: null } });
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";

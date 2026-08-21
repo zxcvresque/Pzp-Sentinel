@@ -185,6 +185,33 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     },
   ],
 
+  "admin-record-transaction": [
+    {
+      target: "[data-tour='financial-event-form']",
+      title: "Record It Once",
+      body: "Start by choosing what happened. The form reveals only the financial, service, access and receipt details relevant to that event.",
+      placement: "bottom",
+    },
+  ],
+
+  "admin-attention": [
+    {
+      target: "[data-tour='attention-summary']",
+      title: "Your Action Queue",
+      body: "Approvals, unmatched payments, missing receipts and operational incidents are prioritised here. Each card opens the exact filtered workflow.",
+      placement: "bottom",
+    },
+  ],
+
+  "admin-alerts": [
+    {
+      target: "[data-tour='operational-alert-list']",
+      title: "Operational Signals",
+      body: "Resolve service renewals, credential expiry and VPS incidents here. Links take you directly to the affected service, credential or server.",
+      placement: "bottom",
+    },
+  ],
+
   "admin-users": [
     {
       target: "[data-tour='add-user']",

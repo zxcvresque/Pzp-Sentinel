@@ -7,6 +7,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
 import Link from "next/link";
+import { SERVICE_TEMPLATES } from "@/lib/service-templates";
 
 interface ColumnDef {
   key: string;
@@ -78,9 +79,6 @@ export default function ServicesPage() {
   const [planUrl, setPlanUrl] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [subStatus, setSubStatus] = useState("ACTIVE");
-  const [recordPayment, setRecordPayment] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("OTHER");
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -114,9 +112,6 @@ export default function ServicesPage() {
     setPlanUrl("");
     setExpiryDate("");
     setSubStatus("ACTIVE");
-    setRecordPayment(false);
-    setPaymentMethod("OTHER");
-    setPaymentDate(new Date().toISOString().slice(0, 10));
     setFormError("");
   };
 
@@ -139,8 +134,18 @@ export default function ServicesPage() {
     setPlanUrl(svc.planUrl || "");
     setExpiryDate(svc.expiryDate ? svc.expiryDate.slice(0, 10) : "");
     setSubStatus(svc.status || "ACTIVE");
-    setRecordPayment(false);
     setShowForm(true);
+  };
+
+  const applyTemplate = (templateId: string) => {
+    const template = SERVICE_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    setCategory(template.category);
+    setName(template.name);
+    setColumns(template.metadata.length ? template.metadata : [emptyColumn()]);
+    setEntries([]);
+    setTrackCost(true);
+    setFrequency(template.frequency);
   };
 
   const handleSubmit = async () => {
@@ -163,11 +168,6 @@ export default function ServicesPage() {
       payload.planUrl = planUrl || null;
       payload.expiryDate = expiryDate || null;
       payload.status = subStatus;
-      if (!editingId && recordPayment) {
-        payload.recordPayment = true;
-        payload.paymentMethod = paymentMethod;
-        payload.paymentDate = paymentDate || null;
-      }
     } else {
       // Clear subscription fields if cost tracking is off
       payload.price = null;
@@ -281,21 +281,21 @@ export default function ServicesPage() {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Delete this service?"
-        message="This cannot be undone"
-        confirmLabel="Delete"
+        title="Archive this service?"
+        message="It will leave the active catalogue without deleting billing history, receipts, credentials or audits."
+        confirmLabel="Archive"
         variant="danger"
         loading={deleting}
       />
 
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-extrabold">
           Service <span className="font-display text-lime">Catalog</span>
         </h1>
         {!showForm && (
-          <div className="flex gap-2">
-            <Link href="/admin/purchases" className="rounded-full border border-lime/25 px-4 py-2.5 text-sm font-semibold text-lime">Record purchase</Link>
-            <button onClick={openCreateForm} className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90">Add Service</button>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Link href="/admin/transactions/new?mode=SUBSCRIPTION" className="rounded-full border border-lime/25 px-4 py-2.5 text-center text-sm font-semibold text-lime">Record paid service</Link>
+            <button onClick={openCreateForm} className="rounded-full bg-lime px-5 py-2.5 text-sm font-semibold text-bg-void hover:bg-lime/90">Add service only</button>
           </div>
         )}
       </div>
@@ -317,13 +317,15 @@ export default function ServicesPage() {
       </div>
 
       {showForm && (
-        <div className="card p-6 mb-8">
+        <form className="card mb-8 p-4 sm:p-6" onSubmit={(event) => { event.preventDefault(); void handleSubmit(); }}>
           <h2 className="text-sm font-semibold mb-4">
             {editingId ? "Edit Service" : "New Service"}
           </h2>
           <FormExample lines={["Category: Infrastructure · Name: Supabase", "Enable 'Track recurring cost' for subscriptions", "Price: 2500 · Frequency: Monthly · Expiry: next renewal date"]} />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          {!editingId && <section data-form-section className="mb-5"><div className="mb-3"><h3 className="text-sm font-bold text-text-primary">Start with a familiar template</h3><p className="mt-1 text-xs leading-5 text-text-tertiary">Templates prefill the normal fields. You can change everything afterward.</p></div><div className="grid grid-cols-2 gap-2 lg:grid-cols-4">{SERVICE_TEMPLATES.map((template) => <button key={template.id} type="button" onClick={() => applyTemplate(template.id)} className="min-w-0 rounded-xl border border-[var(--border)] bg-bg-deep p-3 text-left transition hover:border-lime/25 hover:bg-lime/[.03]"><span className="block truncate text-xs font-bold text-text-primary">{template.label}</span><span className="mt-1 block truncate font-mono text-[8px] uppercase text-text-tertiary">{template.category} · {template.frequency.toLowerCase()}</span></button>)}</div></section>}
+
+          <section data-form-section className="mb-5"><div className="mb-3"><h3 className="text-sm font-bold text-text-primary">Service identity</h3><p className="mt-1 text-xs text-text-tertiary">What the community uses and where it belongs.</p></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
                 Category
@@ -346,36 +348,39 @@ export default function ServicesPage() {
                 className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
               />
             </div>
-          </div>
+          </div></section>
 
           {/* Columns */}
-          <div className="mb-4">
+          <details data-form-section className="mb-5">
+            <summary className="cursor-pointer list-none text-sm font-bold text-text-primary">Advanced fields <span className="ml-2 font-normal text-text-tertiary">Custom metadata and repeated entries</span></summary>
+          <div className="mt-4">
             <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Columns
             </label>
             <div className="space-y-2">
               {columns.map((col, idx) => (
-                <div key={idx} className="flex items-center gap-2">
+                <div key={idx} className="grid grid-cols-1 gap-2 rounded-xl border border-[var(--border)] bg-bg-deep p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto] sm:items-center sm:border-0 sm:bg-transparent sm:p-0">
                   <input
                     value={col.key}
                     onChange={(e) => updateColumn(idx, "key", e.target.value)}
                     placeholder="key"
-                    className="flex-1 bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                    className="min-w-0 w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
                   />
                   <input
                     value={col.label}
                     onChange={(e) => updateColumn(idx, "label", e.target.value)}
                     placeholder="label"
-                    className="flex-1 bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                    className="min-w-0 w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
                   />
                   <input
                     value={col.type}
                     onChange={(e) => updateColumn(idx, "type", e.target.value)}
                     placeholder="type"
-                    className="w-24 bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-lime/30"
                   />
                   {columns.length > 1 && (
                     <button
+                      type="button"
                       onClick={() => removeColumn(idx)}
                       className="text-xs text-coral hover:text-coral/80"
                     >
@@ -385,8 +390,9 @@ export default function ServicesPage() {
                 </div>
               ))}
             </div>
-            <button
-              onClick={addColumn}
+              <button
+                type="button"
+                onClick={addColumn}
               className="text-xs text-lime hover:text-lime/80 mt-2"
             >
               + Add column
@@ -400,8 +406,8 @@ export default function ServicesPage() {
                 Entries
               </label>
               {entries.length > 0 && (
-                <div className="overflow-x-auto mb-2">
-                  <table className="w-full text-sm">
+                <><div className="mb-2 hidden sm:block">
+                  <table className="w-full table-fixed text-sm">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
                         {validColumnsForEntries.map((col) => (
@@ -425,12 +431,13 @@ export default function ServicesPage() {
                                 onChange={(e) =>
                                   updateEntry(rowIdx, col.key, e.target.value)
                                 }
-                                className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
+                                className="min-w-0 w-full bg-bg-deep border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-lime/30"
                               />
                             </td>
                           ))}
                           <td className="px-2 py-1.5">
                             <button
+                              type="button"
                               onClick={() => removeEntry(rowIdx)}
                               className="text-xs text-coral hover:text-coral/80"
                             >
@@ -441,9 +448,10 @@ export default function ServicesPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </div><div className="mb-2 space-y-3 sm:hidden">{entries.map((entry, rowIdx) => <div key={rowIdx} className="rounded-xl border border-[var(--border)] bg-bg-deep p-3"><div className="space-y-3">{validColumnsForEntries.map((col) => <label key={col.key} className="block"><span className="mb-1 block font-mono text-[9px] uppercase text-text-tertiary">{col.label}</span><input value={entry[col.key] || ""} onChange={(event) => updateEntry(rowIdx, col.key, event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-card px-3 py-2 text-sm" /></label>)}</div><button type="button" onClick={() => removeEntry(rowIdx)} className="mt-3 text-xs text-coral">Remove entry</button></div>)}</div></>
               )}
               <button
+                type="button"
                 onClick={addEntry}
                 className="text-xs text-lime hover:text-lime/80"
               >
@@ -451,14 +459,17 @@ export default function ServicesPage() {
               </button>
             </div>
           )}
+          </details>
 
           {/* Cost tracking toggle + fields */}
-          <div className="mb-4 pt-3 border-t border-[var(--border)]">
+          <section data-form-section className="mb-5"><div>
+            <h3 className="text-sm font-bold text-text-primary">Billing relationship</h3><p className="mt-1 text-xs leading-5 text-text-tertiary">Track price and renewal dates here. Payments and receipts belong in Transactions.</p>
+          </div><div className="mt-4">
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={trackCost}
-                onChange={(e) => { setTrackCost(e.target.checked); if (!e.target.checked) setRecordPayment(false); }}
+                onChange={(e) => setTrackCost(e.target.checked)}
                 className="w-4 h-4 rounded accent-[var(--lime)]"
               />
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
@@ -548,61 +559,27 @@ export default function ServicesPage() {
               </div>
             )}
 
-            {trackCost && !editingId && (
-              <div className="mt-4 rounded-xl border border-mint/15 bg-mint/[.035] p-4">
-                <label className="flex cursor-pointer items-start gap-2.5 select-none">
-                  <input
-                    type="checkbox"
-                    checked={recordPayment}
-                    onChange={(event) => setRecordPayment(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded accent-[var(--lime)]"
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-text-primary">Record payment now</span>
-                    <span className="mt-0.5 block text-xs leading-5 text-text-tertiary">Create and link an approved expense transaction for this service price.</span>
-                  </span>
-                </label>
-                {recordPayment && (
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Payment source</label>
-                      <Dropdown
-                        value={paymentMethod}
-                        options={[
-                          { value: "OTHER", label: "Admin noted / card / other" },
-                          { value: "BANK", label: "Bank transfer" },
-                          { value: "UPI", label: "Direct UPI" },
-                        ]}
-                        onChange={setPaymentMethod}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">Payment date</label>
-                      <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-4 py-3 text-text-primary outline-none focus:border-lime/30" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            {trackCost && !editingId && <div className="mt-4 rounded-xl border border-lime/15 bg-lime/[.035] p-4 text-xs leading-5 text-text-secondary">Creating this service does not record a payment. To record its first payment and upload a receipt, use <Link href="/admin/transactions/new?mode=SUBSCRIPTION" className="font-semibold text-lime hover:underline">Record paid service</Link>.</div>}
+          </div></section>
 
           {formError && <p role="alert" className="mb-3 text-sm text-coral">{formError}</p>}
           <div className="flex items-center gap-3 pt-2">
             <button
-              onClick={handleSubmit}
-              disabled={saving || !category.trim() || !name.trim() || (recordPayment && !price)}
+              type="submit"
+              disabled={saving || !category.trim() || !name.trim()}
               className="bg-lime text-bg-void font-semibold px-5 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-50"
             >
               {saving ? "Saving..." : editingId ? "Update Service" : "Create Service"}
             </button>
             <button
+              type="button"
               onClick={resetForm}
               className="px-5 py-2.5 rounded-full text-sm text-text-secondary hover:text-text-primary"
             >
               Cancel
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {services.length === 0 && !showForm ? (
@@ -705,13 +682,13 @@ export default function ServicesPage() {
                             onClick={() => setDeleteTarget(svc.id)}
                             className="px-3 py-1.5 rounded-full text-xs font-semibold bg-coral/10 text-coral hover:bg-coral/20"
                           >
-                            Delete
+                            Archive
                           </button>
                         </div>
                       </div>
                       {svc.columns && svc.entries && svc.entries.length > 0 && (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
+                        <><div className="hidden sm:block">
+                          <table className="w-full table-fixed text-sm">
                             <thead>
                               <tr className="border-b border-[var(--border)]">
                                 {svc.columns.map((col) => (
@@ -742,7 +719,7 @@ export default function ServicesPage() {
                               ))}
                             </tbody>
                           </table>
-                        </div>
+                        </div><div className="space-y-2 sm:hidden">{svc.entries.map((entry, index) => <div key={index} className="grid grid-cols-1 gap-2 rounded-xl border border-[var(--border)] bg-bg-deep p-3">{svc.columns!.map((column) => <div key={column.key} className="min-w-0"><p className="font-mono text-[8px] uppercase text-text-tertiary">{column.label}</p><p className="mt-1 break-words text-xs text-text-secondary">{entry[column.key] || "—"}</p></div>)}</div>)}</div></>
                       )}
                     </div>
                   );

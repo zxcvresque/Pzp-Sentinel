@@ -50,7 +50,7 @@ export async function GET() {
   const schedules = await prisma.scheduledBroadcast.findMany({
     where: { active: true },
     orderBy: { nextFire: "asc" },
-    include: { createdBy: { select: { name: true } } },
+    include: { createdBy: { select: { name: true, photoUrl: true, telegramUser: true } } },
   });
 
   return NextResponse.json({
@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
         repeatUnit: repeatUnit!,
         nextFire: firstSend,
       },
-      include: { createdBy: { select: { name: true } } },
+      include: { createdBy: { select: { name: true, photoUrl: true, telegramUser: true } } },
     });
 
     await logAudit({

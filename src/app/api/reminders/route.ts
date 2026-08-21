@@ -19,7 +19,7 @@ export async function GET() {
   const reminders = await prisma.reminder.findMany({
     where: { active: true },
     orderBy: { nextFire: "asc" },
-    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, owner: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, acknowledgedBy: { select: { id: true, name: true } } },
+    include: { createdBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, owner: { select: { id: true, name: true, photoUrl: true, telegramUser: true } }, acknowledgedBy: { select: { id: true, name: true, photoUrl: true, telegramUser: true } } },
   });
 
   return NextResponse.json({ reminders });

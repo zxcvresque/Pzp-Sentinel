@@ -178,6 +178,7 @@ function roleLabelsForHome(role: Role) {
 const navByRole: Record<string, NavItem[]> = {
   ADMIN: [
     { label: "Dashboard",     shortLabel: "Home",    href: "/admin",                icon: "", Icon: IconDashboardGrid },
+    { label: "Needs Attention", shortLabel: "Inbox", href: "/admin/attention",      icon: "", Icon: IconBell },
     { label: "Transactions",  shortLabel: "Txns",    href: "/admin/transactions",   icon: "", Icon: IconTransactions },
     { label: "Services",      shortLabel: "Svc",     href: "/admin/services",       icon: "", Icon: IconServer },
     { label: "Donors",        shortLabel: "Donors",  href: "/admin/donors",         icon: "", Icon: IconTrophy },
@@ -185,7 +186,6 @@ const navByRole: Record<string, NavItem[]> = {
     { label: "Users",         shortLabel: "Users",   href: "/admin/users",          icon: "", Icon: IconUsers },
     { label: "Reminders",     shortLabel: "Remind",  href: "/admin/reminders",      icon: "", Icon: IconBell },
     { label: "Repos",         shortLabel: "Repos",   href: "/admin/repos",          icon: "", Icon: IconGitRepo },
-    { label: "Reconciliation", shortLabel: "Match",   href: "/admin/reconciliation", icon: "", Icon: IconTransactions },
   ],
   DONOR: [
     { label: "My Donations", shortLabel: "Donate", href: "/donor", icon: "", Icon: IconChart },
@@ -236,8 +236,9 @@ export default function Sidebar({
   function isItemActive(item: NavItem) {
     if (pathname === item.href) return true;
     if (item.label === "Services") {
-      return pathname.endsWith("/credentials") || pathname.endsWith("/vps");
+      return pathname.endsWith("/credentials") || pathname.endsWith("/vps") || pathname.endsWith("/alerts");
     }
+    if (item.label === "Transactions") return pathname.startsWith("/admin/transactions") || pathname === "/admin/reconciliation";
     return false;
   }
 

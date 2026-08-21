@@ -30,13 +30,20 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
+  if (body?.action === "RESTORE") {
+    const deleted = await prisma.credential.findFirst({ where: { id, deletedAt: { not: null }, purgeAfter: { gt: new Date() } } });
+    if (!deleted) return NextResponse.json({ error: "The undo window has expired" }, { status: 410 });
+    const credential = await prisma.credential.update({ where: { id }, data: { deletedAt: null, purgeAfter: null, deletedById: null } });
+    await logAudit({ userId: user.id, action: "CREDENTIAL_DELETE_UNDONE", entityType: "Credential", entityId: id, before: { deletedAt: deleted.deletedAt, purgeAfter: deleted.purgeAfter }, after: { restored: true }, userName: user.name, request: req });
+    return NextResponse.json({ credential: { ...credential, value: undefined, hasValue: true } });
+  }
   const { platform, label, value, accesses, serviceId, expiresAt } = body;
 
   const existing = await prisma.credential.findUnique({
     where: { id },
     include: { accesses: true },
   });
-  if (!existing) {
+  if (!existing || existing.deletedAt) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -216,20 +223,21 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const existing = await prisma.credential.findUnique({ where: { id } });
-  // Revisions (parentId) and CredentialAccess rows cascade on delete.
-  await prisma.credential.deleteMany({ where: { parentId: id } });
-  await prisma.credential.delete({ where: { id } });
+  const existing = await prisma.credential.findUnique({ where: { id }, include: { accesses: true, revisions: { select: { id: true } } } });
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: "Credential not found" }, { status: 404 });
+  const deletedAt = new Date();
+  const purgeAfter = new Date(deletedAt.getTime() + 5_000);
+  await prisma.credential.update({ where: { id }, data: { deletedAt, purgeAfter, deletedById: user.id } });
 
   logCredentialAction({
-    action: "DELETED",
+    action: "DELETE_SCHEDULED",
     userId: user.id,
     userName: user.name,
     entityId: id,
     platform: existing?.platform || "unknown",
-    details: `Deleted: ${existing?.label || id}`,
+    details: `Delete scheduled: ${existing.label}`,
   });
-  await logAudit({ userId: user.id, action: "CREDENTIAL_DELETE", entityType: "Credential", entityId: id, before: existing ? { platform: existing.platform, label: existing.label } : null, userName: user.name, request: req });
+  await logAudit({ userId: user.id, action: "CREDENTIAL_DELETE_SCHEDULED", entityType: "Credential", entityId: id, before: { platform: existing.platform, label: existing.label, accessCount: existing.accesses.length, revisionCount: existing.revisions.length }, after: { deletedAt, purgeAfter }, userName: user.name, request: req });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, undoUntil: purgeAfter.toISOString(), credential: { id, platform: existing.platform, label: existing.label, accessCount: existing.accesses.length } });
 }

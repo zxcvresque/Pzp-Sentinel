@@ -8,6 +8,8 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
 import TransactionAttachmentField from "@/components/TransactionAttachmentField";
+import TransactionsNav from "@/components/TransactionsNav";
+import Link from "next/link";
 import TransactionAttribution from "@/components/TransactionAttribution";
 
 interface Person {
@@ -27,6 +29,8 @@ interface Transaction {
   type: string;
   description: string;
   status: string;
+  providerVerified?: boolean;
+  providerState?: string | null;
   date: string;
   attachments: string[];
   reviewNote?: string | null;
@@ -44,7 +48,7 @@ interface Transaction {
   linkedService?: { id: string; name: string } | null;
 }
 
-interface UserOption { id: string; name: string; telegramUser: string | null }
+interface UserOption { id: string; name: string; telegramUser: string | null; photoUrl?: string | null }
 interface ServiceOption { id: string; name: string; category: string }
 type ActionKind = "APPROVE" | "REJECT" | "VOID";
 
@@ -138,9 +142,11 @@ export default function TransactionsPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [receiptTargetId, setReceiptTargetId] = useState<string | null>(null);
+  const [newReceiptFiles, setNewReceiptFiles] = useState<string[]>([]);
+  const [savingReceipts, setSavingReceipts] = useState(false);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [action, setAction] = useState<{ kind: ActionKind; ids: string[] } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -194,7 +200,7 @@ export default function TransactionsPage() {
   function updateFilter(key: keyof typeof defaultFilters, value: string) { setFilters((current) => ({ ...current, [key]: value })); setPage(1); setSelected(new Set()); }
   function resetForm() {
     setForm({ amount: "", currency: "INR", method: "OTHER", direction: "OUT", type: "EXPENSE", description: "", date: "", fromUserId: "", serviceAction: "NONE", serviceId: "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [] });
-    setUploadingAttachments(false); setEditingId(null); setShowCreate(false);
+    setUploadingAttachments(false); setEditingId(null);
     if (targetTransactionId) {
       setTargetTransactionId("");
       openedTargetRef.current = "";
@@ -206,7 +212,7 @@ export default function TransactionsPage() {
   }
   const startEdit = useCallback((tx: Transaction) => {
     if (tx.voidedAt) return;
-    setShowCreate(false); setEditingId(tx.id);
+    setEditingId(tx.id);
     setForm({ amount: String(Number(tx.amount)), currency: tx.currency, method: tx.method, direction: tx.direction, type: tx.type, description: tx.description, date: tx.date.slice(0, 10), fromUserId: tx.fromUser?.id || "", serviceAction: tx.linkedService ? "LINK" : "NONE", serviceId: tx.linkedService?.id || "", newServiceName: "", newServiceCategory: "", newServiceFrequency: "MONTHLY", newServiceRenewal: "", attachments: [...tx.attachments] });
     setTimeout(() => document.getElementById(`editor-${tx.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
   }, []);
@@ -235,21 +241,35 @@ export default function TransactionsPage() {
   }
 
   async function submitForm(confirmReviewedEdit = false) {
+    if (!editingId) return;
     setSaving(true); setFeedback(null);
     try {
       const editing = transactions.find((tx) => tx.id === editingId);
       const payload = { ...form, fromUserId: form.direction === "IN" ? form.fromUserId || null : null, serviceId: form.serviceAction === "LINK" ? form.serviceId || null : null, createService: form.serviceAction === "CREATE" ? { name: form.newServiceName, category: form.newServiceCategory, frequency: form.newServiceFrequency, nextRenewal: form.newServiceRenewal } : undefined, confirmReviewedEdit };
-      const response = await fetch(editingId ? `/api/transactions/${editingId}` : "/api/transactions", { method: editingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch(`/api/transactions/${editingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json();
       if (response.status === 409 && editing && editing.status !== "PENDING" && !confirmReviewedEdit) { setPendingReviewedSubmit(true); setReviewedEditConfirm(true); return; }
       if (!response.ok) throw new Error(data.error || "Could not save transaction");
       const archiveFailures = (data.attachmentArchive || []).filter((result: { archived: boolean }) => !result.archived);
       setFeedback(archiveFailures.length > 0
         ? { tone: "error", text: `Transaction saved, but ${archiveFailures.length} attachment${archiveFailures.length === 1 ? "" : "s"} could not be copied to Telegram. Saving the transaction again will retry.` }
-        : { tone: "success", text: editingId ? "Transaction updated, audited, and attachments archived." : "Transaction created and attachments archived." });
+        : { tone: "success", text: "Transaction updated, audited, and attachments archived." });
       resetForm(); await load();
     } catch (e) { setFeedback({ tone: "error", text: e instanceof Error ? e.message : "Could not save transaction" }); }
     finally { setSaving(false); }
+  }
+
+  async function addReceipts(transactionId: string) {
+    if (!newReceiptFiles.length) return;
+    setSavingReceipts(true); setFeedback(null);
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/documents`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attachments: newReceiptFiles }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not add receipt");
+      setFeedback({ tone: "success", text: "Receipt added and archived." });
+      setReceiptTargetId(null); setNewReceiptFiles([]); await load();
+    } catch (error) { setFeedback({ tone: "error", text: error instanceof Error ? error.message : "Could not add receipt" }); }
+    finally { setSavingReceipts(false); }
   }
 
   async function runAction(reason: string) {
@@ -292,10 +312,10 @@ export default function TransactionsPage() {
         <SelectField label="Currency" value={form.currency} options={[["INR", "INR (₹)"], ["USD", "USD ($)"]]} onChange={(v) => setForm({ ...form, currency: v })} />
         <SelectField label="Direction" value={form.direction} options={[["IN", "Income (IN)"], ["OUT", "Expense (OUT)"]]} onChange={(v) => setForm({ ...form, direction: v, fromUserId: v === "OUT" ? "" : form.fromUserId })} />
         <SelectField label="Type" value={form.type} options={[["DONATION", "Donation"], ["EXPENSE", "Expense"], ["SUBSCRIPTION", "Subscription"], ["OTHER", "Other"]]} onChange={(v) => setForm({ ...form, type: v })} />
-        <SelectField label="Payment source" value={form.method} options={[["OTHER", "Admin noted / unknown"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["UPI", "Confirmed direct UPI"]]} onChange={(v) => setForm({ ...form, method: v })} />
+        {editing && (editing.method === "RAZORPAY" || editing.method === "BMC") ? <Field label="Payment source"><div className="input flex items-center text-sm text-text-secondary">{editing.method === "RAZORPAY" ? "Razorpay · provider controlled" : "Buy Me a Coffee · provider controlled"}</div></Field> : <SelectField label="Payment source" value={form.method} options={[["OTHER", "Admin noted / unknown"], ["BANK", "Bank Transfer"], ["UPI", "Confirmed direct UPI"]]} onChange={(v) => setForm({ ...form, method: v })} />}
         <Field label="Description"><input required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" /></Field>
         <Field label="Date"><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="input" /></Field>
-        {form.direction === "IN" && <SelectField label="Donor / source user" value={form.fromUserId} options={[["", "External / unlinked"], ...users.map((u) => [u.id, `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`])]} onChange={(v) => setForm({ ...form, fromUserId: v })} />}
+        {form.direction === "IN" && <Field label="Donor / source user"><Dropdown value={form.fromUserId} options={[{ value: "", label: "External / unlinked" }, ...users.map((u) => ({ value: u.id, label: `${u.name}${u.telegramUser ? ` (@${u.telegramUser})` : ""}`, avatar: u.photoUrl ?? null }))]} onChange={(v) => setForm({ ...form, fromUserId: v })} /></Field>}
         {form.direction === "OUT" && form.type === "SUBSCRIPTION" && <SelectField label="Service record" value={form.serviceAction} options={[["NONE", "No service"], ["LINK", "Link existing service"], ["CREATE", "Create service from transaction"]]} onChange={(v) => setForm({ ...form, serviceAction: v, serviceId: v === "LINK" ? form.serviceId : "" })} />}
         {form.direction === "OUT" && form.type === "SUBSCRIPTION" && form.serviceAction === "LINK" && <SelectField label="Existing service" value={form.serviceId} options={[["", "Choose service"], ...services.map((service) => [service.id, `${service.name} · ${service.category}`])]} onChange={(v) => setForm({ ...form, serviceId: v })} />}
       </div>
@@ -311,11 +331,10 @@ export default function TransactionsPage() {
     <ConfirmDialog open={reviewedEditConfirm} onClose={() => { setReviewedEditConfirm(false); setPendingReviewedSubmit(false); }} onConfirm={() => { setReviewedEditConfirm(false); if (pendingReviewedSubmit) void submitForm(true); }} title="Edit a reviewed transaction?" message="This can change historical balances. The before/after values will remain in the audit and Telegram logs." confirmLabel="Save reviewed edit" variant="default" loading={saving} />
     <ActionDialog open={Boolean(action)} action={action?.kind || "APPROVE"} count={action?.ids.length || 0} loading={actionLoading} onClose={() => setAction(null)} onConfirm={runAction} />
 
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-extrabold">All <span className="font-display text-lime">Transactions</span></h1><p className="mt-1 text-xs text-text-tertiary">{total.toLocaleString()} matching ledger entries</p></div><div className="flex flex-wrap gap-2"><button onClick={() => window.open(`/api/transactions/export?${filterQuery}`, "_blank")} className="rounded-full border border-[var(--border)] px-4 py-2.5 font-mono text-[10px] uppercase text-text-secondary">Export filtered CSV</button><button onClick={() => { resetForm(); setShowCreate(true); }} className="rounded-full bg-lime px-5 py-2.5 text-sm font-semibold text-bg-void">Log transaction</button></div></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-extrabold">All <span className="font-display text-lime">Transactions</span></h1><p className="mt-1 text-xs text-text-tertiary">{total.toLocaleString()} matching ledger entries</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><button onClick={() => window.open(`/api/transactions/export?${filterQuery}`, "_blank")} className="rounded-full border border-[var(--border)] px-4 py-2.5 font-mono text-[10px] uppercase text-text-secondary">Export filtered CSV</button><Link data-tour="log-transaction" href="/admin/transactions/new" className="rounded-full bg-lime px-5 py-2.5 text-center text-sm font-semibold text-bg-void">Record transaction</Link></div></div>
+    <TransactionsNav />
     {feedback && <div role="status" className={`mb-4 rounded-xl border p-4 text-sm ${feedback.tone === "success" ? "border-mint/20 bg-mint/8 text-mint" : "border-coral/20 bg-coral/8 text-coral"}`}>{feedback.text}</div>}
     {error && <div className="mb-4 rounded-xl border border-coral/20 bg-coral/8 p-4 text-sm text-coral">{error} <button className="underline" onClick={() => void load()}>Retry</button></div>}
-    {showCreate && editor()}
-
     <div className="mb-3 flex flex-wrap items-center gap-2" aria-label="Quick provider view">
       <span className="mr-1 font-mono text-[9px] uppercase tracking-[0.12em] text-text-tertiary">Quick view</span>
       <button
@@ -421,21 +440,23 @@ export default function TransactionsPage() {
             </div>
             <div className="mt-1.5 flex min-h-5 flex-wrap items-center gap-1.5 text-[10px] text-text-tertiary">
               <span>{tx.type}</span>
+              {(tx.method === "BMC" || tx.method === "RAZORPAY") && <span className={`rounded-full px-2 py-1 font-mono text-[8px] font-bold uppercase ${tx.providerVerified === false ? "bg-coral/10 text-coral" : "bg-mint/10 text-mint"}`}>{tx.providerVerified === false ? "Provider unverified" : "Provider verified"}</span>}
               {tx.linkedService && <><span>·</span><a href={`/admin/services/${tx.linkedService.id}`} className="text-lime hover:underline">Service: {tx.linkedService.name}</a></>}
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
               {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
-              {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length}</span></>}
+              {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length} receipt{tx.attachments.length === 1 ? "" : "s"}</span></>}
             </div>
             <div className="mt-2.5">
               <TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={28} />
             </div>
+            {tx.attachments.length > 0 && <div className="mt-2 flex max-w-full flex-wrap gap-1.5">{tx.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 text-[10px] text-violet">{decodeURIComponent(url.split("/").pop() || "Receipt")}</a>)}</div>}
             {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
           </div>
           <div role="cell" className={`flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-sm font-semibold lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span><span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></span></div>
           <div role="cell" className="flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap"><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Status</span><span><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</span></div>
           <div role="cell" className="flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-xs text-text-secondary lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap"><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Date</span><span>{formatDate(tx.date)}</span></div>
-          <div role="cell" className={`${selectionMode ? "col-span-2 lg:col-span-1" : ""} min-w-0 lg:p-3`}><span className="mb-2 block font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Actions</span><div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-2 lg:gap-1">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></div>
-        </div>{editingId === tx.id && <div className="border-b border-[var(--border)]">{editor()}</div>}</Fragment>)}
+          <div role="cell" className={`${selectionMode ? "col-span-2 lg:col-span-1" : ""} min-w-0 lg:p-3`}><span className="mb-2 block font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Actions</span><div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-2 lg:gap-1">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button><button disabled={Boolean(tx.voidedAt)} onClick={() => { setReceiptTargetId(receiptTargetId === tx.id ? null : tx.id); setNewReceiptFiles([]); }} className="pill text-violet disabled:opacity-30">{receiptTargetId === tx.id ? "Close receipts" : tx.attachments.length ? "Add receipt" : "Upload receipt"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}</div></div>
+        </div>{receiptTargetId === tx.id && <div className="border-b border-[var(--border)] bg-violet/[.025] p-4 sm:p-6"><div className="mb-2"><h3 className="text-sm font-bold">Add receipt or invoice</h3><p className="mt-1 text-xs text-text-tertiary">Add missing documentation without editing the financial record.</p></div><TransactionAttachmentField value={newReceiptFiles} onChange={setNewReceiptFiles} onUploadingChange={setUploadingAttachments} /><div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => { setReceiptTargetId(null); setNewReceiptFiles([]); }} className="rounded-full border border-[var(--border)] px-4 py-2 text-sm text-text-secondary">Cancel</button><button type="button" disabled={savingReceipts || uploadingAttachments || !newReceiptFiles.length} onClick={() => void addReceipts(tx.id)} className="rounded-full bg-lime px-5 py-2 text-sm font-semibold text-bg-void disabled:opacity-40">{savingReceipts ? "Saving…" : "Attach receipt"}</button></div></div>}{editingId === tx.id && <div className="border-b border-[var(--border)]">{editor()}</div>}</Fragment>)}
       </div></div>}
     </div>
 

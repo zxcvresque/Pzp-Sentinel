@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getCurrentUser, signToken, verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { NotifType, DonateCadence, ReminderUnit } from "@/generated/prisma/enums";
+import { NotifType, DonateCadence, FormLayout, ReminderUnit } from "@/generated/prisma/enums";
 import type { Role } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,8 @@ export async function GET() {
       telegramUser: user.telegramUser,
       photoUrl: user.photoUrl,
       themeColor: user.themeColor,
+      formLayout: user.formLayout,
+      onboardingVersion: user.onboardingVersion,
       savedColors: user.savedColors,
       chatId: user.chatId,
       roles: user.roles,
@@ -91,6 +93,12 @@ export async function PATCH(req: NextRequest) {
     dmPreferences,
     inAppPreferences,
     preferredCurrency,
+    formLayout,
+    onboardingVersion,
+    githubUsername,
+    name,
+    themeColor,
+    savedColors,
     donateReminderCadence,
     donateReminderEveryN,
     donateReminderUnit,
@@ -102,6 +110,12 @@ export async function PATCH(req: NextRequest) {
     dmPreferences?: string[];
     inAppPreferences?: string[];
     preferredCurrency?: "INR" | "USD";
+    formLayout?: FormLayout;
+    onboardingVersion?: number;
+    githubUsername?: string;
+    name?: string;
+    themeColor?: string;
+    savedColors?: string[];
     donateReminderCadence?: DonateCadence;
     donateReminderEveryN?: number | null;
     donateReminderUnit?: ReminderUnit | null;
@@ -133,6 +147,51 @@ export async function PATCH(req: NextRequest) {
   if (preferredCurrency !== undefined) {
     if (preferredCurrency !== "INR" && preferredCurrency !== "USD") return NextResponse.json({ error: "Invalid preferred currency" }, { status: 400 });
     data.preferredCurrency = preferredCurrency;
+  }
+  if (formLayout !== undefined) {
+    const validLayouts = Object.values(FormLayout) as string[];
+    if (!validLayouts.includes(formLayout)) {
+      return NextResponse.json({ error: "Invalid form layout" }, { status: 400 });
+    }
+    data.formLayout = formLayout as FormLayout;
+  }
+  if (onboardingVersion !== undefined) {
+    if (!Number.isInteger(onboardingVersion) || onboardingVersion < 0 || onboardingVersion > 10) {
+      return NextResponse.json({ error: "Invalid onboarding version" }, { status: 400 });
+    }
+    data.onboardingVersion = onboardingVersion;
+  }
+  if (githubUsername !== undefined) {
+    const username = typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") : "";
+    const valid = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(username)
+      && !username.includes("--");
+    if (!valid) {
+      return NextResponse.json(
+        { error: "Enter a valid GitHub username (without the @)." },
+        { status: 400 },
+      );
+    }
+    data.githubUsername = username;
+  }
+  if (name !== undefined) {
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    if (!normalizedName || normalizedName.length > 100) {
+      return NextResponse.json({ error: "Name must be between 1 and 100 characters" }, { status: 400 });
+    }
+    data.name = normalizedName;
+  }
+  if (themeColor !== undefined) {
+    const color = typeof themeColor === "string" ? themeColor.trim() : "";
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+      return NextResponse.json({ error: `Invalid hex color: "${color}"` }, { status: 400 });
+    }
+    data.themeColor = color;
+  }
+  if (savedColors !== undefined) {
+    if (!Array.isArray(savedColors) || savedColors.length > 3 || savedColors.some((color) => typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color))) {
+      return NextResponse.json({ error: "savedColors must contain up to 3 hex colors" }, { status: 400 });
+    }
+    data.savedColors = savedColors;
   }
 
   if (donateReminderCadence !== undefined) {
@@ -217,6 +276,12 @@ export async function PATCH(req: NextRequest) {
       dmPreferences: true,
       inAppPreferences: true,
       preferredCurrency: true,
+      formLayout: true,
+      onboardingVersion: true,
+      githubUsername: true,
+      name: true,
+      themeColor: true,
+      savedColors: true,
       donateReminderCadence: true,
       donateReminderEveryN: true,
       donateReminderUnit: true,

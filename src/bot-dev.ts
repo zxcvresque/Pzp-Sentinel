@@ -10,7 +10,7 @@ import {
   monthlyDonationReminderGroupMessage,
 } from "./lib/donation-thanks";
 import { reminderDue } from "./lib/donation-reminders";
-import { drainFinanceAutomationQueue, scheduleFinanceAutomation } from "./lib/finance-sheets";
+import { drainFinanceAutomationQueue } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
 import { registerRazorpayFeedbackHandlers } from "./lib/razorpay-feedback-bot";
@@ -21,6 +21,7 @@ import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "./lib/br
 import { serviceReminderRepeat } from "./lib/service-templates";
 import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
 import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
+import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -949,11 +950,15 @@ async function checkVpsAvailability() {
     const cutoff = new Date(Date.now() - 120_000);
     const servers = await dbRetry(() => prisma.vpsServer.findMany({
       where: { approved: true },
-      select: { id: true, name: true, lastSeen: true },
+      select: { id: true, name: true, lastSeen: true, alertsEnabled: true },
     }));
     for (const server of servers) {
       const fingerprint = `vps:${server.id}:VPS_OFFLINE`;
       const existing = await dbRetry(() => prisma.operationalAlert.findUnique({ where: { fingerprint } }));
+      if (!server.alertsEnabled) {
+        if (existing?.status === "OPEN") await dbRetry(() => prisma.operationalAlert.update({ where: { id: existing.id }, data: { status: "RESOLVED", resolvedAt: new Date() } }));
+        continue;
+      }
       const offline = server.lastSeen < cutoff;
       if (!offline) {
         if (existing?.status === "OPEN") await dbRetry(() => prisma.operationalAlert.update({ where: { id: existing.id }, data: { status: "RESOLVED", resolvedAt: new Date() } }));
@@ -965,13 +970,11 @@ async function checkVpsAvailability() {
         create: { fingerprint, kind: "VPS_OFFLINE", severity: "HIGH", title: `${server.name} is offline`, message: `No heartbeat since ${server.lastSeen.toISOString()}.`, vpsServerId: server.id },
         update: { status: "OPEN", resolvedAt: null, title: `${server.name} is offline`, message: `No heartbeat since ${server.lastSeen.toISOString()}.` },
       }));
-      if (shouldNotify) await notifyAdminsFromBot(prisma, bot, {
-        type: "SYSTEM",
+      if (shouldNotify) await notifyVpsAlertSubscribers({
+        vpsServerId: server.id,
+        kind: "VPS_OFFLINE",
         title: `${server.name} is offline`,
         message: `No heartbeat since ${server.lastSeen.toLocaleString()}.`,
-        entityId: server.id,
-        priority: "HIGH",
-        telegramMessage: `<blockquote><b>⚠️ VPS offline</b></blockquote>\n${escapeBotHtml(server.name)} has stopped reporting.`,
       });
     }
   } catch (error) {
@@ -1148,20 +1151,8 @@ async function checkDonateReminders() {
 // ── VPS subscription auto-renewals ─────────────────────────────────────
 const SUB_RENEWAL_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // daily
 
-// Advance a date by one billing cycle (mirrors lib/vps-subscription nextCycleDate;
-// inlined so the bot stays free of the web app's @/-aliased imports).
-function advanceCycle(from: Date, frequency: string | null): Date {
-  const d = new Date(from);
-  if (frequency === "WEEKLY") d.setDate(d.getDate() + 7);
-  else if (frequency === "MONTHLY") d.setMonth(d.getMonth() + 1);
-  else if (frequency === "YEARLY") d.setFullYear(d.getFullYear() + 1);
-  return d;
-}
-
-// Auto-renewing VPS subscriptions (autoRenew + recurring + due) → log an APPROVED
-// OUT expense for the rate and push the expiry forward one cycle. The expiry is
-// based on `now`, so each due renewal charges exactly once (no catch-up avalanche
-// if the bot was down).
+// Auto-renewing VPS subscriptions create a PENDING expense. An admin must approve
+// it before the expense counts and the service billing cycle advances.
 async function checkSubscriptionRenewals() {
   console.log("[sub-renewal] Running subscription auto-renewal check...");
   try {
@@ -1186,16 +1177,25 @@ async function checkSubscriptionRenewals() {
           price: { not: null },
           expiryDate: { not: null, lte: now },
         },
-        select: { id: true, name: true, price: true, currency: true, frequency: true },
+        select: { id: true, name: true, price: true, currency: true, frequency: true, expiryDate: true },
       }),
     );
 
-    let renewed = 0;
+    let requested = 0;
     for (const sub of due) {
       const price = sub.price != null ? Number(sub.price) : 0;
       if (!(price > 0)) continue;
       try {
-        const nextExpiry = advanceCycle(now, sub.frequency);
+        const pending = await dbRetry(() => prisma.transaction.findFirst({
+          where: {
+            serviceId: sub.id,
+            isAutomatedRenewal: true,
+            status: "PENDING",
+            voidedAt: null,
+          },
+          select: { id: true },
+        }));
+        if (pending) continue;
         const tx = await dbRetry(() =>
           prisma.transaction.create({
             data: {
@@ -1204,40 +1204,34 @@ async function checkSubscriptionRenewals() {
               method: "OTHER",
               direction: "OUT",
               type: "SUBSCRIPTION",
-              description: `VPS plan auto-renewal: ${sub.name}`,
-              status: "APPROVED",
+              description: `VPS plan renewal approval: ${sub.name}`,
+              status: "PENDING",
               date: now,
               createdById: admin.id,
               serviceId: sub.id,
+              isAutomatedRenewal: true,
+              automatedRenewalKey: `${sub.id}:${sub.expiryDate!.toISOString()}`,
             },
           }),
         );
-        await dbRetry(() =>
-          prisma.service.update({
-            where: { id: sub.id },
-            data: {
-              paidTxId: tx.id,
-              lastRenewalDate: now,
-              expiryDate: nextExpiry,
-            },
-          }),
-        );
-        await dbRetry(() => prisma.reminder.updateMany({
-          where: { serviceId: sub.id, active: true },
-          data: { nextFire: nextExpiry },
-        }));
-        scheduleFinanceAutomation({
-          action: "CREATED",
-          actorName: "Sentinel Auto-Renewal",
-          transactionId: tx.id,
-          sendBackup: true,
+        const currency = sub.currency ?? "INR";
+        await notifyAdminsFromBot(prisma, bot, {
+          type: "TX_PENDING",
+          title: "Subscription renewal needs approval",
+          message: `${sub.name} is due for ${currency} ${price}. Approve the pending transaction to deduct it and advance the billing cycle.`,
+          entityId: tx.id,
+          priority: "HIGH",
+          telegramMessage:
+            `<blockquote><b>Subscription renewal needs approval</b></blockquote>\n` +
+            `<b>${escapeBotHtml(sub.name)}</b> is due for <b>${currency} ${price}</b>.\n` +
+            `Open Sentinel Transactions to approve or reject it.`,
         });
-        renewed++;
+        requested++;
       } catch (e) {
         console.error(`[sub-renewal] Renewal failed for ${sub.id}:`, (e as Error).message);
       }
     }
-    console.log(`[sub-renewal] Done. ${renewed} renewal(s) of ${due.length} due.`);
+    console.log(`[sub-renewal] Done. ${requested} approval request(s) created of ${due.length} due.`);
   } catch (err) {
     console.error("[sub-renewal] Check failed:", err);
   }

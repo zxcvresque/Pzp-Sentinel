@@ -836,8 +836,8 @@ export default function UsersPage() {
               <h2 className="font-mono text-[11px] uppercase tracking-[0.1em] text-text-tertiary mb-4">
                 Active Members ({activeUsers.length})
               </h2>
-              <div className="card overflow-hidden hidden sm:block">
-                <div className="overflow-x-auto">
+              <div className="card hidden overflow-hidden lg:block">
+                <div>
                   <table className="w-full min-w-[680px]">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
@@ -855,7 +855,7 @@ export default function UsersPage() {
                   </table>
                 </div>
               </div>
-              <div className="space-y-3 sm:hidden">
+              <div className="space-y-3 lg:hidden">
                 {activeUsers.map((u) => renderUserCard(u, false))}
               </div>
             </div>
@@ -867,8 +867,8 @@ export default function UsersPage() {
                 <span className="w-2 h-2 rounded-full bg-text-tertiary" />
                 Inactive ({inactiveUsers.length})
               </h2>
-              <div className="card overflow-hidden hidden sm:block">
-                <div className="overflow-x-auto">
+              <div className="card hidden overflow-hidden lg:block">
+                <div>
                   <table className="w-full min-w-[680px]">
                     <thead>
                       <tr className="border-b border-[var(--border)]">
@@ -886,7 +886,7 @@ export default function UsersPage() {
                   </table>
                 </div>
               </div>
-              <div className="space-y-3 sm:hidden">
+              <div className="space-y-3 lg:hidden">
                 {inactiveUsers.map((u) => renderUserCard(u, true))}
               </div>
             </div>

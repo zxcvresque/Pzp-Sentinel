@@ -161,6 +161,89 @@ body {
   transform: translateY(-1px);
 }
 
+/* ═══════════════ User-selectable form hierarchy ═══════════════
+   Forms opt into semantic groups with fieldset or data-form-section. The
+   dashboard sets data-form-layout on <html> from the signed-in user's setting. */
+html[data-form-layout] form :is(fieldset, [data-form-section]) {
+  --form-section-accent: var(--lime);
+  min-width: 0;
+  position: relative;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+
+html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 1) { --form-section-accent: var(--lime); }
+html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 2) { --form-section-accent: var(--violet); }
+html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 3) { --form-section-accent: var(--amber); }
+html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n) { --form-section-accent: var(--mint); }
+
+html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section]) {
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--form-section-accent) 22%, var(--border));
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--form-section-accent) 5%, transparent), rgba(255,255,255,0.012) 58%);
+}
+
+html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section])::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, var(--form-section-accent), transparent 72%);
+  opacity: 0.85;
+}
+
+html[data-form-layout="ACCENT_RAILS"] form :is(fieldset, [data-form-section]) {
+  padding: 10px 12px 10px 18px;
+  border-left: 3px solid var(--form-section-accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 8%, transparent), transparent 40%);
+}
+
+html[data-form-layout="NUMBERED_WORKFLOW"] form {
+  counter-reset: sentinel-form-step;
+}
+
+html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section]) {
+  counter-increment: sentinel-form-step;
+  padding: 16px 16px 16px 54px;
+  border-bottom: 1px solid var(--border);
+}
+
+html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section])::before {
+  content: counter(sentinel-form-step, decimal-leading-zero);
+  position: absolute;
+  top: 14px;
+  left: 10px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--form-section-accent) 42%, transparent);
+  border-radius: 999px;
+  color: var(--form-section-accent);
+  background: color-mix(in srgb, var(--form-section-accent) 8%, var(--bg-deep));
+  font: 600 9px/1 var(--font-ibm-plex-mono), monospace;
+  letter-spacing: 0.05em;
+}
+
+html[data-form-layout="INFORMATION_BANDS"] form :is(fieldset, [data-form-section]) {
+  margin-inline: -1px;
+  padding: 18px 20px;
+  border-block: 1px solid color-mix(in srgb, var(--form-section-accent) 15%, var(--border));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 7%, transparent), rgba(255,255,255,0.01) 50%, transparent);
+}
+
+@media (max-width: 640px) {
+  html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section]),
+  html[data-form-layout="INFORMATION_BANDS"] form :is(fieldset, [data-form-section]) {
+    padding: 14px;
+  }
+  html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section]) {
+    padding: 14px 12px 14px 48px;
+  }
+}
+
 /* Stat card — glass with subtle top accent */
 .stat-card {
   background: rgba(26,26,34,0.50);

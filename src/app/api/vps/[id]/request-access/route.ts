@@ -42,7 +42,7 @@ export async function POST(
 
   // Attach to the server's primary linked credential (SSH key > password > first).
   const linked = await prisma.credential.findMany({
-    where: { vpsServerId: id, parentId: null },
+    where: { vpsServerId: id, parentId: null, deletedAt: null },
     select: { id: true, credKind: true },
   });
   if (!linked.length) {

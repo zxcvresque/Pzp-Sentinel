@@ -21,6 +21,7 @@ export function usePageTour(userId: string | undefined, pageKey: string, version
 
     // Don't trigger if the main tour hasn't been seen yet (let that run first)
     const mainTourKey = `sentinel_tour_seen_${userId}`;
+    if (localStorage.getItem(`sentinel_page_tours_disabled_${userId}`)) return;
     if (!localStorage.getItem(mainTourKey)) return;
 
     // Small delay so page content renders and data-tour elements are in the DOM
