@@ -163,84 +163,178 @@ body {
 
 /* ═══════════════ User-selectable form hierarchy ═══════════════
    Forms opt into semantic groups with fieldset or data-form-section. The
-   dashboard sets data-form-layout on <html> from the signed-in user's setting. */
-html[data-form-layout] form :is(fieldset, [data-form-section]) {
+   dashboard sets data-form-layout on <html>; the profile preview sets it on
+   its sample form so every option uses the exact same layout rules. */
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(fieldset, [data-form-section]) {
   --form-section-accent: var(--lime);
   min-width: 0;
   position: relative;
-  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+  isolation: isolate;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, padding 180ms ease;
 }
 
-html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 1) { --form-section-accent: var(--lime); }
-html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 2) { --form-section-accent: var(--violet); }
-html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n + 3) { --form-section-accent: var(--amber); }
-html[data-form-layout] form :is(fieldset, [data-form-section]):nth-child(4n) { --form-section-accent: var(--mint); }
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(fieldset, [data-form-section]):nth-child(4n + 1) { --form-section-accent: var(--lime); }
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(fieldset, [data-form-section]):nth-child(4n + 2) { --form-section-accent: var(--violet); }
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(fieldset, [data-form-section]):nth-child(4n + 3) { --form-section-accent: var(--amber); }
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(fieldset, [data-form-section]):nth-child(4n) { --form-section-accent: var(--mint); }
 
-html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section]) {
+/* Form section titles are deliberately colour-invariant. Accents communicate
+   hierarchy around a heading; they never reduce heading contrast. */
+:is(html[data-form-layout] form:not([data-form-layout]), form[data-form-layout]) :is(h1, h2, h3, h4, legend, summary) {
+  color: #fff !important;
+}
+
+/* A — independent elevated cards, each with its own accent edge. */
+:is(html[data-form-layout="SECTION_CARDS"] form:not([data-form-layout]), form[data-form-layout="SECTION_CARDS"]) :is(fieldset, [data-form-section]) {
   overflow: hidden;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--form-section-accent) 22%, var(--border));
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--form-section-accent) 5%, transparent), rgba(255,255,255,0.012) 58%);
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--form-section-accent) 25%, var(--border));
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--form-section-accent) 10%, transparent), transparent 38%),
+    linear-gradient(145deg, rgba(255,255,255,0.025), rgba(255,255,255,0.008));
+  box-shadow: 0 14px 34px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.025);
 }
 
-html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section])::before {
+:is(html[data-form-layout="SECTION_CARDS"] form:not([data-form-layout]), form[data-form-layout="SECTION_CARDS"]) :is(fieldset, [data-form-section])::before {
   content: "";
   position: absolute;
   inset: 0 0 auto;
-  height: 2px;
-  background: linear-gradient(90deg, var(--form-section-accent), transparent 72%);
-  opacity: 0.85;
+  height: 3px;
+  background: linear-gradient(90deg, var(--form-section-accent), color-mix(in srgb, var(--form-section-accent) 28%, transparent) 58%, transparent);
 }
 
-html[data-form-layout="ACCENT_RAILS"] form :is(fieldset, [data-form-section]) {
-  padding: 10px 12px 10px 18px;
-  border-left: 3px solid var(--form-section-accent);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 8%, transparent), transparent 40%);
+/* B — a compact document flow with a continuous-looking guide rail. */
+:is(html[data-form-layout="ACCENT_RAILS"] form:not([data-form-layout]), form[data-form-layout="ACCENT_RAILS"]) :is(fieldset, [data-form-section]) {
+  padding: 12px 8px 24px 28px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-html[data-form-layout="NUMBERED_WORKFLOW"] form {
+:is(html[data-form-layout="ACCENT_RAILS"] form:not([data-form-layout]), form[data-form-layout="ACCENT_RAILS"]) :is(fieldset, [data-form-section])::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--form-section-accent), color-mix(in srgb, var(--form-section-accent) 22%, transparent));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--form-section-accent) 16%, transparent);
+}
+
+:is(html[data-form-layout="ACCENT_RAILS"] form:not([data-form-layout]), form[data-form-layout="ACCENT_RAILS"]) :is(fieldset, [data-form-section])::after {
+  content: "";
+  position: absolute;
+  top: 16px;
+  left: 0;
+  width: 13px;
+  height: 13px;
+  border: 3px solid var(--bg-card);
+  border-radius: 999px;
+  background: var(--form-section-accent);
+}
+
+/* C — an explicit sequence with numbered steps and a connecting timeline. */
+:is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) {
   counter-reset: sentinel-form-step;
 }
 
-html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section]) {
+:is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section]) {
   counter-increment: sentinel-form-step;
-  padding: 16px 16px 16px 54px;
-  border-bottom: 1px solid var(--border);
+  margin-left: 18px;
+  padding: 18px 18px 28px 64px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section])::before {
+:is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section])::before {
   content: counter(sentinel-form-step, decimal-leading-zero);
   position: absolute;
-  top: 14px;
-  left: 10px;
+  z-index: 2;
+  top: 12px;
+  left: 0;
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--form-section-accent) 42%, transparent);
-  border-radius: 999px;
-  color: var(--form-section-accent);
-  background: color-mix(in srgb, var(--form-section-accent) 8%, var(--bg-deep));
-  font: 600 9px/1 var(--font-ibm-plex-mono), monospace;
+  border: 1px solid color-mix(in srgb, var(--form-section-accent) 48%, transparent);
+  border-radius: 13px;
+  color: #fff;
+  background: color-mix(in srgb, var(--form-section-accent) 18%, var(--bg-deep));
+  box-shadow: 0 0 0 6px var(--bg-card);
+  font: 700 10px/1 var(--font-ibm-plex-mono), monospace;
   letter-spacing: 0.05em;
 }
 
-html[data-form-layout="INFORMATION_BANDS"] form :is(fieldset, [data-form-section]) {
-  margin-inline: -1px;
-  padding: 18px 20px;
-  border-block: 1px solid color-mix(in srgb, var(--form-section-accent) 15%, var(--border));
-  background: linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 7%, transparent), rgba(255,255,255,0.01) 50%, transparent);
+:is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section]):not(:last-of-type)::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 56px;
+  bottom: -14px;
+  left: 20px;
+  width: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--form-section-accent) 45%, transparent), var(--border));
+}
+
+/* D — wide, flat information bands with a strong labelled header zone. */
+:is(html[data-form-layout="INFORMATION_BANDS"] form:not([data-form-layout]), form[data-form-layout="INFORMATION_BANDS"]) :is(fieldset, [data-form-section]) {
+  overflow: hidden;
+  padding: 24px 24px 26px;
+  border: 0;
+  border-block: 1px solid color-mix(in srgb, var(--form-section-accent) 28%, var(--border));
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 13%, var(--bg-card)), color-mix(in srgb, var(--form-section-accent) 3%, var(--bg-card)) 38%, rgba(255,255,255,0.006));
+}
+
+:is(html[data-form-layout="INFORMATION_BANDS"] form:not([data-form-layout]), form[data-form-layout="INFORMATION_BANDS"]) :is(fieldset, [data-form-section])::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7px;
+  background: var(--form-section-accent);
+}
+
+:is(html[data-form-layout="INFORMATION_BANDS"] form:not([data-form-layout]), form[data-form-layout="INFORMATION_BANDS"]) :is(fieldset, [data-form-section])::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 auto;
+  height: 68px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--form-section-accent) 12%, transparent), transparent 75%);
+  border-bottom: 1px solid color-mix(in srgb, var(--form-section-accent) 12%, transparent);
+  pointer-events: none;
+}
+
+:is(html[data-form-layout="INFORMATION_BANDS"] form:not([data-form-layout]), form[data-form-layout="INFORMATION_BANDS"]) :is(fieldset, [data-form-section]) > * {
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 640px) {
-  html[data-form-layout="SECTION_CARDS"] form :is(fieldset, [data-form-section]),
-  html[data-form-layout="INFORMATION_BANDS"] form :is(fieldset, [data-form-section]) {
-    padding: 14px;
+  :is(html[data-form-layout="SECTION_CARDS"] form:not([data-form-layout]), form[data-form-layout="SECTION_CARDS"]) :is(fieldset, [data-form-section]) {
+    padding: 17px;
   }
-  html[data-form-layout="NUMBERED_WORKFLOW"] form :is(fieldset, [data-form-section]) {
-    padding: 14px 12px 14px 48px;
+  :is(html[data-form-layout="ACCENT_RAILS"] form:not([data-form-layout]), form[data-form-layout="ACCENT_RAILS"]) :is(fieldset, [data-form-section]) {
+    padding: 10px 4px 20px 24px;
+  }
+  :is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section]) {
+    margin-left: 0;
+    padding: 14px 4px 22px 52px;
+  }
+  :is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section])::before {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+  }
+  :is(html[data-form-layout="NUMBERED_WORKFLOW"] form:not([data-form-layout]), form[data-form-layout="NUMBERED_WORKFLOW"]) :is(fieldset, [data-form-section]):not(:last-of-type)::after {
+    top: 50px;
+    left: 17px;
+  }
+  :is(html[data-form-layout="INFORMATION_BANDS"] form:not([data-form-layout]), form[data-form-layout="INFORMATION_BANDS"]) :is(fieldset, [data-form-section]) {
+    padding: 18px 15px 20px 20px;
   }
 }
 

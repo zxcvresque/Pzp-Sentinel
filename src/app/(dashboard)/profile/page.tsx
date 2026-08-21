@@ -441,10 +441,10 @@ export default function ProfilePage() {
                       className={`min-w-0 rounded-xl border p-3 text-left transition-all ${active ? "bg-lime/[0.06]" : "bg-bg-deep hover:bg-bg-elevated"}`}
                       style={{ borderColor: active ? accents[index] : "var(--border)" }}
                     >
-                      <span className="flex items-center gap-2">
-                        <span className="h-6 w-1 rounded-full" style={{ background: accents[index] }} />
-                        <span className="min-w-0">
-                          <span className="block truncate text-[11px] font-semibold text-text-primary">{layout.label}</span>
+                      <span className="block">
+                        <FormLayoutOptionVisual layout={layout.value} accent={accents[index]} />
+                        <span className="mt-2 block min-w-0">
+                          <span className="block truncate text-[11px] font-semibold text-white">{layout.label}</span>
                           <span className="mt-0.5 block text-[9px] leading-4 text-text-tertiary">{layout.description}</span>
                         </span>
                       </span>
@@ -734,17 +734,29 @@ export default function ProfilePage() {
   );
 }
 
+function FormLayoutOptionVisual({ layout, accent }: { layout: FormLayout; accent: string }) {
+  if (layout === "ACCENT_RAILS") {
+    return <span aria-hidden="true" className="grid h-10 gap-1.5 py-0.5">
+      {[0, 1, 2].map((item) => <span key={item} className="flex items-center gap-2"><span className="h-full w-0.5 rounded-full" style={{ background: accent }} /><span className="h-1.5 rounded-full bg-white/10" style={{ width: `${82 - item * 13}%` }} /></span>)}
+    </span>;
+  }
+  if (layout === "NUMBERED_WORKFLOW") {
+    return <span aria-hidden="true" className="relative grid h-10 gap-1.5 py-0.5 pl-6 before:absolute before:bottom-1 before:left-[7px] before:top-1 before:w-px before:bg-white/10">
+      {[1, 2, 3].map((item) => <span key={item} className="relative flex items-center"><span className="absolute -left-6 grid h-3.5 w-3.5 place-items-center rounded-[4px] border bg-bg-deep font-mono text-[6px] text-white" style={{ borderColor: accent }}>{item}</span><span className="h-1.5 rounded-full bg-white/10" style={{ width: `${72 - item * 7}%` }} /></span>)}
+    </span>;
+  }
+  if (layout === "INFORMATION_BANDS") {
+    return <span aria-hidden="true" className="grid h-10 content-center gap-1">
+      {[0, 1, 2].map((item) => <span key={item} className="relative h-2 overflow-hidden border-y border-white/[.06] bg-white/[.025]"><span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} /><span className="absolute left-3 top-[3px] h-0.5 rounded-full bg-white/15" style={{ width: `${48 + item * 8}%` }} /></span>)}
+    </span>;
+  }
+  return <span aria-hidden="true" className="grid h-10 grid-cols-2 gap-1.5">
+    {[0, 1].map((item) => <span key={item} className="relative overflow-hidden rounded-md border border-white/[.08] bg-white/[.025]"><span className="absolute inset-x-0 top-0 h-0.5" style={{ background: accent }} /><span className="absolute left-2 top-3 h-1 w-1/2 rounded-full bg-white/15" /><span className="absolute bottom-2 left-2 h-1 w-2/3 rounded-full bg-white/[.07]" /></span>)}
+  </span>;
+}
+
 function FormLayoutPreview({ layout, active, saving, onClose, onApply }: { layout: FormLayout; active: boolean; saving: boolean; onClose: () => void; onApply: () => void }) {
   const details = FORM_LAYOUTS.find((item) => item.value === layout)!;
-  const accents = ["var(--lime)", "var(--violet)", "var(--amber)"];
-
-  function sectionStyle(index: number): React.CSSProperties {
-    const accent = accents[index];
-    if (layout === "ACCENT_RAILS") return { borderLeft: `3px solid ${accent}`, background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 9%, transparent), transparent 55%)` };
-    if (layout === "INFORMATION_BANDS") return { borderBlock: `1px solid color-mix(in srgb, ${accent} 20%, var(--border))`, background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 8%, transparent), transparent)` };
-    if (layout === "NUMBERED_WORKFLOW") return { borderBottom: "1px solid var(--border)", paddingLeft: 52 };
-    return { border: `1px solid color-mix(in srgb, ${accent} 24%, var(--border))`, borderTop: `2px solid ${accent}`, background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 6%, transparent), rgba(255,255,255,.01))` };
-  }
 
   const sections = [
     { title: "Purchase details", description: "What was purchased and why.", fields: [["Description", "Supabase Pro · community database"], ["Amount", "₹2,500"]] },
@@ -755,13 +767,12 @@ function FormLayoutPreview({ layout, active, saving, onClose, onApply }: { layou
   return (
     <div className="fixed inset-0 z-[10020] grid place-items-center bg-black/70 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-label={`${details.label} preview`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl">
-        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] p-4 sm:p-5"><div><p className="font-mono text-[9px] uppercase tracking-[.16em] text-lime">Form layout preview</p><h2 className="mt-1 text-lg font-bold text-text-primary">{details.label}</h2><p className="mt-1 text-xs text-text-tertiary">{details.description}</p></div><button type="button" onClick={onClose} aria-label="Close preview" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[var(--border)] text-text-tertiary hover:text-text-primary">×</button></header>
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] p-4 sm:p-5"><div><p className="font-mono text-[9px] uppercase tracking-[.16em] text-lime">Form layout preview</p><h2 className="mt-1 text-lg font-bold text-white">{details.label}</h2><p className="mt-1 text-xs text-text-tertiary">{details.description}</p></div><button type="button" onClick={onClose} aria-label="Close preview" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[var(--border)] text-text-tertiary hover:text-white">×</button></header>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-          <form className="space-y-3" onSubmit={(event) => event.preventDefault()}>
-            {sections.map((section, index) => (
-              <fieldset key={section.title} className={`relative rounded-xl p-3 sm:p-4 ${layout === "INFORMATION_BANDS" ? "rounded-none" : ""}`} style={sectionStyle(index)}>
-                {layout === "NUMBERED_WORKFLOW" && <span className="absolute left-3 top-4 grid h-7 w-7 place-items-center rounded-lg border text-[9px] font-bold" style={{ color: accents[index], borderColor: accents[index] }}>0{index + 1}</span>}
-                <legend className="px-1 text-xs font-bold text-text-primary">{section.title}</legend>
+          <form data-form-layout={layout} className={layout === "SECTION_CARDS" ? "space-y-3" : "space-y-1"} onSubmit={(event) => event.preventDefault()}>
+            {sections.map((section) => (
+              <fieldset key={section.title}>
+                <legend className="px-1 text-xs font-bold text-white">{section.title}</legend>
                 <p className="mb-3 mt-1 text-[10px] text-text-tertiary">{section.description}</p>
                 <div className="grid gap-2 sm:grid-cols-2">{section.fields.map(([label, value]) => <label key={label} className="block"><span className="mb-1 block font-mono text-[8px] uppercase tracking-wider text-text-tertiary">{label}</span><input readOnly value={value} className="input h-10 text-xs" /></label>)}</div>
               </fieldset>
