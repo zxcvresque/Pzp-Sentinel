@@ -55,11 +55,12 @@ git pull --ff-only origin main
 step "Installing dependencies…"
 npm ci
 
-step "Normalizing project tags before schema constraints…"
+step "Normalizing legacy data before schema constraints…"
 # Older builds allowed duplicate tag names within one project. Merge their
 # implicit Task↔Tag links into the oldest tag before adding the composite
-# unique constraint. This is idempotent and leaves global (projectId NULL)
-# tags untouched because PostgreSQL permits multiple NULL values.
+# unique constraint. Older renewal jobs could also reuse an idempotency key;
+# retain every transaction but clear that key from all except the best active
+# record before adding its unique constraint. This cleanup is idempotent.
 npx prisma db execute --stdin <<'SQL'
 DO $$
 DECLARE
@@ -87,6 +88,28 @@ BEGIN
     DELETE FROM "Tag" WHERE id = duplicate.duplicate_id;
   END LOOP;
 END $$;
+
+WITH ranked_renewals AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY "automatedRenewalKey"
+      ORDER BY
+        CASE
+          WHEN "voidedAt" IS NULL AND status IN ('PENDING', 'APPROVED') THEN 0
+          ELSE 1
+        END,
+        "createdAt",
+        id
+    ) AS duplicate_position
+  FROM "Transaction"
+  WHERE "automatedRenewalKey" IS NOT NULL
+)
+UPDATE "Transaction" AS tx
+SET "automatedRenewalKey" = NULL
+FROM ranked_renewals
+WHERE tx.id = ranked_renewals.id
+  AND ranked_renewals.duplicate_position > 1;
 SQL
 
 step "Applying Prisma schema…"
