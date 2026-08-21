@@ -466,6 +466,14 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+function refreshAvatarAfterReply(userId: string, telegramId: string, firstName: string) {
+  void (async () => {
+    const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
+    if (!photoUrl) return;
+    await dbRetry(() => prisma.user.update({ where: { id: userId }, data: { photoUrl } }));
+  })().catch((error) => console.error(`[avatar] Background refresh failed for ${telegramId}:`, error));
+}
+
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
@@ -742,19 +750,16 @@ bot.command("start", async (ctx) => {
 
   const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
-  // Always refresh profile photo on /start
-  const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
-
   if (user) {
     const updates: Record<string, string | null> = { chatId };
-    if (photoUrl) updates.photoUrl = photoUrl;
     // Refresh the @username if it changed (telegramId is the stable key).
     // Leave `name` alone so a user's edited profile name isn't clobbered.
     if (username && username !== user.telegramUser) updates.telegramUser = username;
-    await dbRetry(() => prisma.user.update({
+    // Profile persistence and lossless avatar archival must never delay /start.
+    void dbRetry(() => prisma.user.update({
       where: { id: user!.id },
       data: updates,
-    }));
+    })).catch((error) => console.error(`[start] Background profile sync failed for ${telegramId}:`, error));
   }
 
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
@@ -766,7 +771,6 @@ bot.command("start", async (ctx) => {
         telegramUser: username,
         name: firstName,
         chatId,
-        photoUrl,
         roles: [],
       },
     }));
@@ -777,19 +781,6 @@ bot.command("start", async (ctx) => {
       entityId: created.id,
       userName: firstName,
       details: `@${username || telegramId} started the bot — awaiting role assignment`,
-    });
-
-    // Notify all admins — in-app + Telegram DM
-    await notifyAdminsFromBot(prisma, bot, {
-      type: "USER_REGISTERED",
-      title: "New User Started Bot",
-      message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
-      entityId: created.id,
-      priority: "HIGH",
-      telegramMessage:
-        `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
-        `<b>${firstName}</b> (@${username || telegramId})\n` +
-        `<i>Awaiting role assignment</i>`,
     });
 
     try {
@@ -806,6 +797,20 @@ bot.command("start", async (ctx) => {
     } catch (err) {
       console.error("Failed to reply to new user:", err);
     }
+    refreshAvatarAfterReply(created.id, telegramId, firstName);
+    // Admin fan-out is useful but may involve several Telegram calls, so it is
+    // deliberately queued after the user has received the /start response.
+    void notifyAdminsFromBot(prisma, bot, {
+      type: "USER_REGISTERED",
+      title: "New User Started Bot",
+      message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
+      entityId: created.id,
+      priority: "HIGH",
+      telegramMessage:
+        `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
+        `<b>${firstName}</b> (@${username || telegramId})\n` +
+        `<i>Awaiting role assignment</i>`,
+    }).catch((error) => console.error(`[start] Background admin notification failed for ${telegramId}:`, error));
     return;
   }
 
@@ -820,6 +825,7 @@ bot.command("start", async (ctx) => {
     } catch (err) {
       console.error("Failed to reply to deactivated user:", err);
     }
+    refreshAvatarAfterReply(user.id, telegramId, firstName);
     return;
   }
 
@@ -834,6 +840,7 @@ bot.command("start", async (ctx) => {
     } catch (err) {
       console.error("Failed to reply to unassigned user:", err);
     }
+    refreshAvatarAfterReply(user.id, telegramId, firstName);
     return;
   }
 
@@ -867,6 +874,7 @@ bot.command("start", async (ctx) => {
   } catch (err) {
     console.error("Failed to reply to returning user:", err);
   }
+  refreshAvatarAfterReply(user.id, telegramId, firstName);
 });
 
 // Detect bot blocked/unblocked — update chatId in real time

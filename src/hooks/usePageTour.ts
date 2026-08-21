@@ -11,23 +11,34 @@ import { useState, useEffect, useCallback } from "react";
  */
 export function usePageTour(userId: string | undefined, pageKey: string, version = 1) {
   const [active, setActive] = useState(false);
+  const [gateVersion, setGateVersion] = useState(0);
 
   const versionSuffix = version > 1 ? `_v${version}` : "";
   const storageKey = userId ? `sentinel_page_tour_${userId}_${pageKey}${versionSuffix}` : "";
+  const role = pageKey.startsWith("admin-") ? "ADMIN" : pageKey.startsWith("dev-") ? "DEV" : "DONOR";
+
+  useEffect(() => {
+    const refreshGate = () => setGateVersion((current) => current + 1);
+    window.addEventListener("sentinel-tour-gate-change", refreshGate);
+    return () => window.removeEventListener("sentinel-tour-gate-change", refreshGate);
+  }, []);
 
   useEffect(() => {
     if (!userId || !pageKey) return;
     if (localStorage.getItem(storageKey)) return;
 
-    // Don't trigger if the main tour hasn't been seen yet (let that run first)
-    const mainTourKey = `sentinel_tour_seen_${userId}`;
-    if (localStorage.getItem(`sentinel_page_tours_disabled_${userId}`)) return;
+    // Welcome, workspace and page tours are mutually exclusive. Page tours only
+    // begin after the active role's workspace tour has completed.
+    const mainTourKey = `sentinel_tour_seen_${userId}_${role}`;
+    if (document.documentElement.dataset.onboardingActive === "1") return;
+    if (document.documentElement.dataset.mainTourActive === "1") return;
+    if (localStorage.getItem(`sentinel_page_tours_disabled_${userId}_${role}`)) return;
     if (!localStorage.getItem(mainTourKey)) return;
 
     // Small delay so page content renders and data-tour elements are in the DOM
     const timer = setTimeout(() => setActive(true), 600);
     return () => clearTimeout(timer);
-  }, [userId, pageKey, storageKey]);
+  }, [userId, pageKey, role, storageKey, gateVersion]);
 
   const finish = useCallback(() => {
     setActive(false);

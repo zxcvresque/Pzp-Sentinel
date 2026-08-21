@@ -6,7 +6,7 @@ import { getPageTourSteps } from "@/lib/tour-steps";
 import { usePageTour } from "@/hooks/usePageTour";
 
 interface PageTourProps {
-  /** Unique key for this page, e.g. "admin-dashboard", "dev-board" */
+  /** Unique key for this page, e.g. "admin-dashboard", "dev-vps" */
   pageKey: string;
   /** Bump (>1) when the tour gains steps so it re-shows once for prior viewers. */
   version?: number;

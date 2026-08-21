@@ -45,60 +45,66 @@ export const adminTourSteps: TourStep[] = [
 
 export const devTourSteps: TourStep[] = [
   {
-    target: "[data-tour='brand']",
-    title: "Welcome to Sentinel",
-    body: "This is your project management hub. Track tasks, manage sprints, and stay in sync with the team.",
-    placement: "right",
+    target: "[data-tour='board-actions']",
+    title: "Projects and Tasks",
+    body: "Use the project board for shared context, then open My Tasks for everything assigned directly to you—including subtasks.",
+    placement: "bottom",
+  },
+  {
+    target: "[data-tour='kanban-board']",
+    title: "Move Work Forward",
+    body: "Tasks move through Backlog, To Do, In Progress, Review and Done. Open a card for project, assignee, tag and issue details.",
+    placement: "top",
+  },
+  {
+    target: "[data-tour='activity-panel']",
+    title: "Community GitHub Activity",
+    body: "Tracked organization commits and pull requests keep everyone’s delivery visible without exposing private repository access.",
+    placement: "left",
   },
   {
     target: "[data-tour='nav']",
-    title: "Your Workspace",
-    body: "Board and My Tasks keep project work focused, while Services groups VPS access and shared credentials in one place.",
+    title: "VPS and Credentials",
+    body: "Open Services to inspect VPS health, request SSH access, choose infrastructure alerts and use only credentials granted to you.",
     placement: "right",
   },
   {
-    target: "[data-tour='breadcrumb']",
-    title: "Where You Are",
-    body: "This breadcrumb shows your current page. It updates automatically as you navigate.",
-    placement: "bottom",
-  },
-  {
     target: "[data-tour='notifications']",
-    title: "Stay Updated",
-    body: "Task assignments, deadline reminders, and project updates all show up here.",
-    placement: "bottom",
-  },
-  {
-    target: "[data-tour='profile']",
-    title: "Your Profile",
-    body: "Settings, theme customization, and sign out are all here.",
+    title: "Your Updates",
+    body: "Task assignments, reminders, access decisions and the VPS alert types you opted into appear here.",
     placement: "bottom",
   },
 ];
 
 export const donorTourSteps: TourStep[] = [
   {
-    target: "[data-tour='brand']",
-    title: "Welcome to Sentinel",
-    body: "Thanks for supporting PzP! This is where you can track your donations and see how funds are being used.",
-    placement: "right",
-  },
-  {
-    target: "[data-tour='nav']",
-    title: "Your Dashboard",
-    body: "My Donations shows your contribution history and stats at a glance.",
-    placement: "right",
-  },
-  {
-    target: "[data-tour='notifications']",
-    title: "Donation Updates",
-    body: "When your donations are approved or need attention, you'll get notified here.",
+    target: "[data-tour='razorpay-donation']",
+    title: "Razorpay Checkout",
+    body: "Contribute once or enable monthly autopay through UPI, cards and supported wallets. Successful payments are recorded automatically under your name.",
     placement: "bottom",
   },
   {
-    target: "[data-tour='profile']",
-    title: "Your Profile",
-    body: "Manage your settings and personalize your theme color.",
+    target: "[data-tour='bmc-support']",
+    title: "Support Internationally",
+    body: "Buy Me a Coffee gives international donors a simple USD contribution option while preserving the original currency in your history.",
+    placement: "bottom",
+  },
+  {
+    target: "[data-tour='new-donation']",
+    title: "Record an Outside Contribution",
+    body: "If you paid another way, submit it with proof for review. You can edit or cancel a pending entry and add missing proof later.",
+    placement: "bottom",
+  },
+  {
+    target: "[data-tour='donation-history']",
+    title: "History, Status and Corrections",
+    body: "See provider, original currency, approval status and receipts together. Rejected contributions can be appealed with more context.",
+    placement: "top",
+  },
+  {
+    target: "[data-tour='donor-stats']",
+    title: "Your Contribution Totals",
+    body: "Your dashboard keeps approved, pending and comparable INR totals clear without replacing the amount you actually gave.",
     placement: "bottom",
   },
 ];
@@ -309,27 +315,6 @@ export const pageTourSteps: Record<string, TourStep[]> = {
     },
   ],
 
-  "dev-board": [
-    {
-      target: "[data-tour='board-actions']",
-      title: "Projects & Tasks",
-      body: "Create projects to organize work, then add tasks with priorities, tags, and assignees.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='kanban-board']",
-      title: "Kanban Board",
-      body: "Tasks are grouped by status columns: Backlog, To Do, In Progress, Review, and Done. Click any card for details.",
-      placement: "top",
-    },
-    {
-      target: "[data-tour='activity-panel']",
-      title: "Git Feed",
-      body: "Recent GitHub activity from your organization — pushes, PRs, branches, and releases streamed in real-time.",
-      placement: "left",
-    },
-  ],
-
   "dev-tasks": [
     {
       target: "[data-tour='task-summary']",
@@ -342,40 +327,6 @@ export const pageTourSteps: Record<string, TourStep[]> = {
       title: "Filter & Group",
       body: "Group by status or tag, filter by priority level. Helps you focus on what matters most right now.",
       placement: "bottom",
-    },
-  ],
-
-  /* ── Donor page ── */
-  "donor-overview": [
-    {
-      target: "[data-tour='razorpay-donation']",
-      title: "Pay Securely",
-      body: "Donate securely with Razorpay using UPI, QR, cards, wallets, or netbanking.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='bmc-support']",
-      title: "Support with BMC",
-      body: "Prefer Buy Me a Coffee? Choose it here to support Piratezparty.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='donor-stats']",
-      title: "Your Contributions",
-      body: "Total contributed, pending submissions, and approved donations — your giving history at a glance.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='new-donation']",
-      title: "Submit a Donation",
-      body: "Already paid elsewhere? Record that contribution with an optional proof screenshot for admin review.",
-      placement: "bottom",
-    },
-    {
-      target: "[data-tour='donation-history']",
-      title: "Donation History",
-      body: "All your submissions with status badges. Filter by Pending, Approved, or Rejected.",
-      placement: "top",
     },
   ],
 };

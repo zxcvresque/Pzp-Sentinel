@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
-import PageTour from "@/components/PageTour";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
@@ -717,7 +716,6 @@ export default function DevDashboard() {
         <div className="block lg:hidden mt-4">{activityPanel}</div>
         <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
         </div>
-        <PageTour pageKey="dev-board" />
       </div>
     );
   }
@@ -1405,7 +1403,6 @@ export default function DevDashboard() {
       </div>
       {/* Desktop Git Feed — sticky sidebar */}
       <div className="hidden lg:block shrink-0 sticky top-4">{activityPanel}</div>
-      <PageTour pageKey="dev-board" />
       </div>
     </>
   );

@@ -55,6 +55,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [user, setUser] = useState<UserData | null>(null);
   const [activeRole, setActiveRole] = useState<Role>("ADMIN");
+  const [tourRole, setTourRole] = useState<Role>("ADMIN");
   const [tourActive, setTourActive] = useState(false);
   const [introActive, setIntroActive] = useState(false);
   const [tourToast, setTourToast] = useState(false);
@@ -76,7 +77,17 @@ export default function DashboardLayout({
         if (!res.ok) throw new Error();
         const data = await res.json();
         if (cancelled) return;
-        setUser(data.user);
+        const loadedUser = data.user as UserData;
+        const pathRole: Role | null = pathname.startsWith("/admin") ? "ADMIN" : pathname.startsWith("/dev") ? "DEV" : pathname.startsWith("/donor") ? "DONOR" : null;
+        const storedRole = localStorage.getItem(`sentinel_active_role_${loadedUser.id}`) as Role | null;
+        const initialRole = pathRole && loadedUser.roles.includes(pathRole)
+          ? pathRole
+          : storedRole && loadedUser.roles.includes(storedRole)
+            ? storedRole
+            : loadedUser.roles[0] || "DONOR";
+        setActiveRole(initialRole);
+        setTourRole(initialRole);
+        setUser(loadedUser);
         if (data.user.themeColor) {
           applyThemeColor(data.user.themeColor);
         }
@@ -114,9 +125,10 @@ export default function DashboardLayout({
       return () => window.clearTimeout(timer);
     }
     const closeIntroTimer = window.setTimeout(() => setIntroActive(false), 0);
-    const key = `sentinel_tour_seen_${user.id}`;
-    if (!localStorage.getItem(key) && !localStorage.getItem(`sentinel_page_tours_disabled_${user.id}`)) {
+    const key = `sentinel_tour_seen_${user.id}_${onboardingRole}`;
+    if (!localStorage.getItem(key) && !localStorage.getItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`)) {
       // Small delay so the page renders first
+      setTourRole(onboardingRole);
       const timer = setTimeout(() => setTourActive(true), 800);
       return () => { window.clearTimeout(closeIntroTimer); clearTimeout(timer); };
     }
@@ -130,13 +142,14 @@ export default function DashboardLayout({
     localStorage.setItem(`sentinel_intro_seen_${user.id}_${onboardingRole}`, "1");
     setUser((current) => current ? { ...current, onboardingVersion: 1, ...(githubUsername ? { githubUsername } : {}) } : current);
     setIntroActive(false);
+    setTourRole(onboardingRole);
     if (startTours) {
-      localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
-      localStorage.removeItem(`sentinel_tour_seen_${user.id}`);
+      localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`);
+      localStorage.removeItem(`sentinel_tour_seen_${user.id}_${onboardingRole}`);
       window.setTimeout(() => setTourActive(true), 300);
     } else {
-      localStorage.setItem(`sentinel_tour_seen_${user.id}`, "1");
-      localStorage.setItem(`sentinel_page_tours_disabled_${user.id}`, "1");
+      localStorage.setItem(`sentinel_tour_seen_${user.id}_${onboardingRole}`, "1");
+      localStorage.setItem(`sentinel_page_tours_disabled_${user.id}_${onboardingRole}`, "1");
     }
     return true;
   }
@@ -144,7 +157,8 @@ export default function DashboardLayout({
   function handleTourFinish() {
     setTourActive(false);
     if (user) {
-      localStorage.setItem(`sentinel_tour_seen_${user.id}`, "1");
+      localStorage.setItem(`sentinel_tour_seen_${user.id}_${tourRole}`, "1");
+      window.dispatchEvent(new Event("sentinel-tour-gate-change"));
       setTourToast(true);
       setTimeout(() => setTourToast(false), 6000);
     }
@@ -169,6 +183,7 @@ export default function DashboardLayout({
       return;
     }
     if (isGated && user.roles.includes(roleFromPath)) {
+      localStorage.setItem(`sentinel_active_role_${user.id}`, roleFromPath);
       const timer = window.setTimeout(() => setActiveRole(roleFromPath), 0);
       return () => window.clearTimeout(timer);
     } else if (!isGated) {
@@ -178,7 +193,9 @@ export default function DashboardLayout({
   }, [pathname, user, router]);
 
   function handleRoleSwitch(role: Role) {
+    setTourActive(false);
     setActiveRole(role);
+    if (user) localStorage.setItem(`sentinel_active_role_${user.id}`, role);
     const routes: Record<string, string> = {
       ADMIN: "/admin",
       DEV: "/dev",
@@ -186,6 +203,16 @@ export default function DashboardLayout({
     };
     router.push(routes[role]);
   }
+
+  useEffect(() => {
+    document.documentElement.dataset.onboardingActive = introActive ? "1" : "0";
+    document.documentElement.dataset.mainTourActive = tourActive ? "1" : "0";
+    window.dispatchEvent(new Event("sentinel-tour-gate-change"));
+    return () => {
+      delete document.documentElement.dataset.onboardingActive;
+      delete document.documentElement.dataset.mainTourActive;
+    };
+  }, [introActive, tourActive]);
 
   // Dynamic breadcrumb from pathname
   const breadcrumbMap: Record<string, string> = {
@@ -277,7 +304,7 @@ export default function DashboardLayout({
       </div>
       <div className="grain" />
       <SpotlightTour
-        steps={getTourSteps(activeRole)}
+        steps={getTourSteps(tourRole)}
         active={tourActive}
         onFinish={handleTourFinish}
       />

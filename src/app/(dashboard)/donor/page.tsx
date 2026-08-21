@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
-import PageTour from "@/components/PageTour";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
 import BmcSupportCard from "@/components/BmcSupportCard";
 import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
@@ -651,7 +650,6 @@ export default function DonorDashboard() {
           <button className="btn-secondary px-4 py-2 text-xs" disabled={page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
         </div>
       )}
-      <PageTour pageKey="donor-overview" />
     </div>
   );
 }

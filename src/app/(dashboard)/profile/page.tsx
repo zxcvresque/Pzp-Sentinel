@@ -32,6 +32,12 @@ const FORM_LAYOUTS: Array<{ value: FormLayout; label: string; description: strin
   { value: "INFORMATION_BANDS", label: "Information bands", description: "Wide tonal bands with clear separation" },
 ];
 
+function currentWorkspace(user: UserProfile) {
+  const stored = localStorage.getItem(`sentinel_active_role_${user.id}`);
+  const role = stored && user.roles.includes(stored) ? stored : user.roles[0] || "DONOR";
+  return { role, route: `/${role.toLowerCase()}` };
+}
+
 const DM_CATEGORIES = [
   { label: "Transactions", types: ["TX_PENDING", "TX_APPROVED", "TX_REJECTED"], desc: "New donations, approvals & rejections" },
   { label: "Tasks", types: ["TASK_ASSIGNED"], desc: "Task assignments" },
@@ -682,18 +688,24 @@ export default function ProfilePage() {
             <p className="text-xs text-text-tertiary">Walk through Sentinel&apos;s interface step by step</p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <button onClick={async () => { if (user) { user.roles.forEach((role) => localStorage.removeItem(`sentinel_intro_seen_${user.id}_${role}`)); await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
+            <button onClick={async () => { if (user) { const workspace = currentWorkspace(user); localStorage.removeItem(`sentinel_intro_seen_${user.id}_${workspace.role}`); await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = workspace.route; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
             <button
               onClick={() => {
                 if (user) {
-                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
-                  // Clear all page-specific tours
+                  const workspace = currentWorkspace(user);
+                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${workspace.role}`);
+                  const pagePrefix = `${workspace.role.toLowerCase()}-`;
+                  // Clear page-specific tours only for the current workspace.
                   const keys = Object.keys(localStorage).filter(
-                    (k) => k.startsWith(`sentinel_page_tour_${user.id}_`)
+                    (k) => k.startsWith(`sentinel_page_tour_${user.id}_${pagePrefix}`)
                   );
                   keys.forEach((k) => localStorage.removeItem(k));
-                  // Redirect to trigger them again on next visit
-                  window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`;
+                  // Dev and donor landing guidance is intentionally consolidated
+                  // into the workspace tour instead of a second overlapping tour.
+                  if (workspace.role === "DEV" || workspace.role === "DONOR") {
+                    localStorage.removeItem(`sentinel_tour_seen_${user.id}_${workspace.role}`);
+                  }
+                  window.location.href = workspace.route;
                 }
               }}
               className="bg-violet/10 text-violet font-semibold px-4 py-2 rounded-lg text-xs hover:bg-violet/20 transition-colors"
@@ -703,9 +715,10 @@ export default function ProfilePage() {
             <button
               onClick={() => {
                 if (user) {
-                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}`);
-                  localStorage.removeItem(`sentinel_tour_seen_${user.id}`);
-                  window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`;
+                  const workspace = currentWorkspace(user);
+                  localStorage.removeItem(`sentinel_page_tours_disabled_${user.id}_${workspace.role}`);
+                  localStorage.removeItem(`sentinel_tour_seen_${user.id}_${workspace.role}`);
+                  window.location.href = workspace.route;
                 }
               }}
               className="bg-lime/10 text-lime font-semibold px-4 py-2 rounded-lg text-xs hover:bg-lime/20 transition-colors"
