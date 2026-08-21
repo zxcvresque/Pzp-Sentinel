@@ -58,6 +58,10 @@ export default function DashboardLayout({
   const [tourActive, setTourActive] = useState(false);
   const [introActive, setIntroActive] = useState(false);
   const [tourToast, setTourToast] = useState(false);
+  const routeRole: Role = pathname.startsWith("/dev") ? "DEV" : pathname.startsWith("/donor") ? "DONOR" : "ADMIN";
+  const onboardingRole: Role = user?.roles.includes(routeRole)
+    ? routeRole
+    : user?.roles.includes(activeRole) ? activeRole : user?.roles[0] || "DONOR";
 
   // Load the user, then keep it fresh by re-fetching on tab focus and on a short
   // interval. Each /api/auth/me call re-mints the auth cookie server-side with the
@@ -98,25 +102,32 @@ export default function DashboardLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show tour on first visit
+  // Every standalone user sees their own introduction once. Admins can hold all
+  // roles, so remember the introduction independently for each switched view.
   useEffect(() => {
     if (!user) return;
-    if ((user.onboardingVersion || 0) < 1) {
+    const introKey = `sentinel_intro_seen_${user.id}_${onboardingRole}`;
+    const roleIntroSeen = localStorage.getItem(introKey) === "1";
+    const shouldShowRoleIntro = !roleIntroSeen && ((user.onboardingVersion || 0) < 1 || user.roles.includes("ADMIN"));
+    if (shouldShowRoleIntro) {
       const timer = window.setTimeout(() => setIntroActive(true), 0);
       return () => window.clearTimeout(timer);
     }
+    const closeIntroTimer = window.setTimeout(() => setIntroActive(false), 0);
     const key = `sentinel_tour_seen_${user.id}`;
     if (!localStorage.getItem(key) && !localStorage.getItem(`sentinel_page_tours_disabled_${user.id}`)) {
       // Small delay so the page renders first
       const timer = setTimeout(() => setTourActive(true), 800);
-      return () => clearTimeout(timer);
+      return () => { window.clearTimeout(closeIntroTimer); clearTimeout(timer); };
     }
-  }, [user]);
+    return () => window.clearTimeout(closeIntroTimer);
+  }, [user, onboardingRole]);
 
   async function completeIntro(startTours: boolean, githubUsername?: string) {
     if (!user) return false;
-    const response = await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 1, ...(user.roles.includes("DEV") ? { githubUsername } : {}) }) });
+    const response = await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 1, ...(onboardingRole === "DEV" ? { githubUsername } : {}) }) });
     if (!response.ok) return false;
+    localStorage.setItem(`sentinel_intro_seen_${user.id}_${onboardingRole}`, "1");
     setUser((current) => current ? { ...current, onboardingVersion: 1, ...(githubUsername ? { githubUsername } : {}) } : current);
     setIntroActive(false);
     if (startTours) {
@@ -222,12 +233,6 @@ export default function DashboardLayout({
     );
   }
 
-  const onboardingRole: Role = pathname.startsWith("/dev") && user.roles.includes("DEV")
-    ? "DEV"
-    : pathname.startsWith("/donor") && user.roles.includes("DONOR")
-      ? "DONOR"
-      : user.roles.includes(activeRole) ? activeRole : user.roles[0];
-
   return (
     <div className="flex min-h-screen">
       <Sidebar
@@ -276,7 +281,7 @@ export default function DashboardLayout({
         active={tourActive}
         onFinish={handleTourFinish}
       />
-      {introActive && <RoleOnboarding role={onboardingRole} name={user.name} photoUrl={user.photoUrl} githubUsername={user.githubUsername} requireGithub={user.roles.includes("DEV")} onComplete={completeIntro} />}
+      {introActive && <RoleOnboarding key={onboardingRole} role={onboardingRole} name={user.name} photoUrl={user.photoUrl} githubUsername={user.githubUsername} requireGithub={onboardingRole === "DEV"} onComplete={completeIntro} />}
 
       {/* Tour reminder toast */}
       {tourToast && (

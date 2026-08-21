@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import ThemeColorPicker from "@/components/ThemeColorPicker";
 import { getRoleColor } from "@/lib/role-colors";
 import { useFormExamples } from "@/hooks/useFormExamples";
@@ -55,6 +56,7 @@ export default function ProfilePage() {
   const [inAppPrefs, setInAppPrefs] = useState<string[]>([]);
   const [dmSaving, setDmSaving] = useState(false);
   const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutPreview, setLayoutPreview] = useState<FormLayout | null>(null);
   const [hexDraft, setHexDraft] = useState<string | null>(null);
   const { showExamples, hideExamples, enableExamples } = useFormExamples();
 
@@ -139,8 +141,9 @@ export default function ProfilePage() {
     if (e.key === "Escape") cancelEditing();
   }
 
-  async function saveFormLayout(formLayout: FormLayout) {
-    if (!user || layoutSaving || user.formLayout === formLayout) return;
+  async function saveFormLayout(formLayout: FormLayout): Promise<boolean> {
+    if (!user || layoutSaving) return false;
+    if (user.formLayout === formLayout) return true;
     const previous = user.formLayout;
     setUser({ ...user, formLayout });
     setLayoutSaving(true);
@@ -151,8 +154,10 @@ export default function ProfilePage() {
         body: JSON.stringify({ formLayout }),
       });
       if (!response.ok) throw new Error("Could not save layout");
+      return true;
     } catch {
       setUser((current) => current ? { ...current, formLayout: previous } : current);
+      return false;
     } finally {
       setLayoutSaving(false);
     }
@@ -432,7 +437,7 @@ export default function ProfilePage() {
                       type="button"
                       disabled={layoutSaving}
                       aria-pressed={active}
-                      onClick={() => saveFormLayout(layout.value)}
+                      onClick={() => setLayoutPreview(layout.value)}
                       className={`min-w-0 rounded-xl border p-3 text-left transition-all ${active ? "bg-lime/[0.06]" : "bg-bg-deep hover:bg-bg-elevated"}`}
                       style={{ borderColor: active ? accents[index] : "var(--border)" }}
                     >
@@ -677,7 +682,7 @@ export default function ProfilePage() {
             <p className="text-xs text-text-tertiary">Walk through Sentinel&apos;s interface step by step</p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <button onClick={async () => { if (user) { await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
+            <button onClick={async () => { if (user) { user.roles.forEach((role) => localStorage.removeItem(`sentinel_intro_seen_${user.id}_${role}`)); await fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboardingVersion: 0 }) }); window.location.href = `/${(user.roles[0] || "dev").toLowerCase()}`; } }} className="rounded-lg bg-amber/10 px-4 py-2 text-xs font-semibold text-amber transition-colors hover:bg-amber/20">Replay Welcome</button>
             <button
               onClick={() => {
                 if (user) {
@@ -711,6 +716,60 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {layoutPreview && createPortal(
+        <FormLayoutPreview
+          layout={layoutPreview}
+          active={user.formLayout === layoutPreview}
+          saving={layoutSaving}
+          onClose={() => setLayoutPreview(null)}
+          onApply={async () => {
+            const saved = await saveFormLayout(layoutPreview);
+            if (saved) setLayoutPreview(null);
+          }}
+        />,
+        document.body,
+      )}
+
+    </div>
+  );
+}
+
+function FormLayoutPreview({ layout, active, saving, onClose, onApply }: { layout: FormLayout; active: boolean; saving: boolean; onClose: () => void; onApply: () => void }) {
+  const details = FORM_LAYOUTS.find((item) => item.value === layout)!;
+  const accents = ["var(--lime)", "var(--violet)", "var(--amber)"];
+
+  function sectionStyle(index: number): React.CSSProperties {
+    const accent = accents[index];
+    if (layout === "ACCENT_RAILS") return { borderLeft: `3px solid ${accent}`, background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 9%, transparent), transparent 55%)` };
+    if (layout === "INFORMATION_BANDS") return { borderBlock: `1px solid color-mix(in srgb, ${accent} 20%, var(--border))`, background: `linear-gradient(90deg, color-mix(in srgb, ${accent} 8%, transparent), transparent)` };
+    if (layout === "NUMBERED_WORKFLOW") return { borderBottom: "1px solid var(--border)", paddingLeft: 52 };
+    return { border: `1px solid color-mix(in srgb, ${accent} 24%, var(--border))`, borderTop: `2px solid ${accent}`, background: `linear-gradient(135deg, color-mix(in srgb, ${accent} 6%, transparent), rgba(255,255,255,.01))` };
+  }
+
+  const sections = [
+    { title: "Purchase details", description: "What was purchased and why.", fields: [["Description", "Supabase Pro · community database"], ["Amount", "₹2,500"]] },
+    { title: "Billing", description: "How this service renews.", fields: [["Frequency", "Monthly"], ["Next renewal", "21/09/2026"]] },
+    { title: "Ownership", description: "Who maintains and approves it.", fields: [["Maintainer", "Varad"], ["Project", "Sentinel"]] },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[10020] grid place-items-center bg-black/70 p-3 backdrop-blur-md" role="dialog" aria-modal="true" aria-label={`${details.label} preview`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] p-4 sm:p-5"><div><p className="font-mono text-[9px] uppercase tracking-[.16em] text-lime">Form layout preview</p><h2 className="mt-1 text-lg font-bold text-text-primary">{details.label}</h2><p className="mt-1 text-xs text-text-tertiary">{details.description}</p></div><button type="button" onClick={onClose} aria-label="Close preview" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[var(--border)] text-text-tertiary hover:text-text-primary">×</button></header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          <form className="space-y-3" onSubmit={(event) => event.preventDefault()}>
+            {sections.map((section, index) => (
+              <fieldset key={section.title} className={`relative rounded-xl p-3 sm:p-4 ${layout === "INFORMATION_BANDS" ? "rounded-none" : ""}`} style={sectionStyle(index)}>
+                {layout === "NUMBERED_WORKFLOW" && <span className="absolute left-3 top-4 grid h-7 w-7 place-items-center rounded-lg border text-[9px] font-bold" style={{ color: accents[index], borderColor: accents[index] }}>0{index + 1}</span>}
+                <legend className="px-1 text-xs font-bold text-text-primary">{section.title}</legend>
+                <p className="mb-3 mt-1 text-[10px] text-text-tertiary">{section.description}</p>
+                <div className="grid gap-2 sm:grid-cols-2">{section.fields.map(([label, value]) => <label key={label} className="block"><span className="mb-1 block font-mono text-[8px] uppercase tracking-wider text-text-tertiary">{label}</span><input readOnly value={value} className="input h-10 text-xs" /></label>)}</div>
+              </fieldset>
+            ))}
+          </form>
+        </div>
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--border)] p-3 sm:p-4"><button type="button" onClick={onClose} className="rounded-full border border-[var(--border)] px-4 py-2 text-xs font-semibold text-text-secondary">Close</button><button type="button" disabled={saving} onClick={onApply} className="rounded-full bg-lime px-5 py-2 text-xs font-bold text-bg-void disabled:opacity-50">{saving ? "Applying…" : active ? "Keep this layout" : "Apply layout"}</button></footer>
+      </section>
     </div>
   );
 }
