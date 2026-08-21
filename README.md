@@ -131,7 +131,7 @@ cd ~/Sentinel
 bash upgrade.sh
 ```
 
-The script fast-forwards `main`, installs locked dependencies, normalizes legacy duplicate project tags, applies the Prisma schema, regenerates the client, builds the app, restarts PM2, and verifies the agent installer endpoint. No separate migration SQL is required for the current schema update.
+The script fast-forwards `main`, installs locked dependencies, normalizes legacy uniqueness conflicts, applies the Prisma schema, regenerates the client, builds the app, restarts PM2, and verifies the agent installer endpoint. No separate migration SQL is required for the current schema update.
 
 For a small VPS, ensure enough RAM or swap for the production build. Override the default build heap when needed:
 
