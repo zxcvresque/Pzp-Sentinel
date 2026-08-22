@@ -22,6 +22,10 @@ import { serviceReminderRepeat } from "./lib/service-templates";
 import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
 import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
 import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
+import {
+  deliverTelegramWithRetry,
+  isPermanentTelegramRecipientError,
+} from "./lib/telegram-delivery";
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL!,
@@ -101,11 +105,12 @@ async function notifyAdminsFromBot(
 
     console.log(`[notifyAdmins] Found ${admins.length} admin(s) to notify for ${data.type}`);
 
-    for (const admin of admins) {
+    const deliveries = await Promise.allSettled(admins.map(async (admin) => {
+      let notificationId: string | null = null;
       // In-app notification
       if (data.channel !== "BOT") {
         try {
-          await dbRetry(() =>
+          const notification = await dbRetry(() =>
             db.notification.create({
               data: {
                 userId: admin.id,
@@ -117,6 +122,7 @@ async function notifyAdminsFromBot(
               },
             }),
           );
+          notificationId = notification.id;
           console.log(`[notifyAdmins] In-app notification created for admin ${admin.id}`);
         } catch (err) {
           console.error(`[notifyAdmins] Failed to create notification for admin ${admin.id}:`, err);
@@ -128,17 +134,64 @@ async function notifyAdminsFromBot(
         const hasPref = admin.dmPreferences.includes(data.type);
         console.log(`[notifyAdmins] Admin ${admin.id} chatId=${admin.chatId} hasPref=${hasPref}`);
         if (hasPref) {
-          try {
-            await botInstance.api.sendMessage(admin.chatId, data.telegramMessage, {
+          const result = await deliverTelegramWithRetry({
+            send: () => botInstance.api.sendMessage(admin.chatId!, data.telegramMessage!, {
               parse_mode: "HTML",
-            });
+            }),
+            onAttempt: notificationId
+              ? () => dbRetry(() => db.notification.update({
+                  where: { id: notificationId! },
+                  data: {
+                    telegramStatus: "SENDING",
+                    telegramAttempts: { increment: 1 },
+                    telegramLastError: null,
+                  },
+                })).then(() => undefined)
+              : undefined,
+            onSent: notificationId
+              ? () => dbRetry(() => db.notification.update({
+                  where: { id: notificationId! },
+                  data: { telegramStatus: "SENT", telegramSentAt: new Date(), telegramLastError: null },
+                })).then(() => undefined)
+              : undefined,
+            onFailed: notificationId
+              ? (_error, _attempts, errorMessage) => dbRetry(() => db.notification.update({
+                  where: { id: notificationId! },
+                  data: { telegramStatus: "FAILED", telegramLastError: errorMessage },
+                })).then(() => undefined)
+              : undefined,
+            onTrackingError: (error) => console.error(`[notifyAdmins] Could not persist DM state for admin ${admin.id}:`, error),
+          });
+          if (result.status === "SENT") {
             console.log(`[notifyAdmins] DM sent to admin ${admin.id}`);
-          } catch (err) {
-            console.error(`[notifyAdmins] DM failed for admin ${admin.id}:`, err);
+          } else {
+            console.error(`[notifyAdmins] DM failed for admin ${admin.id}:`, result.error);
+            if (isPermanentTelegramRecipientError(result.error)) {
+              await dbRetry(() => db.user.update({ where: { id: admin.id }, data: { chatId: null } }))
+                .catch((error) => console.error(`[notifyAdmins] Could not clear unreachable chat for admin ${admin.id}:`, error));
+            }
           }
+        } else if (notificationId) {
+          await dbRetry(() => db.notification.update({
+            where: { id: notificationId },
+            data: { telegramStatus: "SKIPPED_PREFERENCE" },
+          })).catch((error) => console.error(`[notifyAdmins] Could not persist skipped DM state for admin ${admin.id}:`, error));
         }
+      } else if (notificationId) {
+        const telegramStatus = data.channel === "WEB"
+          ? "NOT_REQUESTED"
+          : !admin.chatId
+            ? "SKIPPED_NO_CHAT"
+            : "SKIPPED_NO_MESSAGE";
+        await dbRetry(() => db.notification.update({ where: { id: notificationId }, data: { telegramStatus } }))
+          .catch((error) => console.error(`[notifyAdmins] Could not persist skipped DM state for admin ${admin.id}:`, error));
       }
-    }
+    }));
+    deliveries.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.error(`[notifyAdmins] Unexpected delivery failure for admin ${admins[index].id}:`, result.reason);
+      }
+    });
   } catch (err) {
     console.error("[notifyAdmins] Top-level failure:", err);
   }
@@ -740,7 +793,7 @@ bot.command("start", async (ctx) => {
           userName: firstName,
           details: `@${username || telegramId} registered via web login`,
         }).catch((error) => console.error(`[auth] Background registration audit failed for ${telegramId}:`, error));
-        void notifyAdminsFromBot(prisma, bot, {
+        await notifyAdminsFromBot(prisma, bot, {
           type: "USER_REGISTERED",
           title: "New User Started Bot",
           message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
@@ -748,7 +801,7 @@ bot.command("start", async (ctx) => {
           priority: "HIGH",
           telegramMessage:
             `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
-            `<b>${firstName}</b> (@${username || telegramId})\n` +
+            `<b>${escapeBotHtml(firstName)}</b> (@${escapeBotHtml(username || telegramId)})\n` +
             `<i>Registered via web login — awaiting role assignment</i>`,
         }).catch((error) => console.error(`[auth] Background admin notification failed for ${telegramId}:`, error));
       }
@@ -829,9 +882,9 @@ bot.command("start", async (ctx) => {
       details: `@${username || telegramId} started the bot — awaiting role assignment`,
     }).catch((error) => console.error(`[start] Background registration audit failed for ${telegramId}:`, error));
     refreshAvatarAfterReply(created.id, telegramId, firstName);
-    // Admin fan-out is useful but may involve several Telegram calls, so it is
-    // deliberately queued after the user has received the /start response.
-    void notifyAdminsFromBot(prisma, bot, {
+    // The user has already received the /start response. Keep the handler alive
+    // until the tracked admin fan-out completes so delivery cannot be abandoned.
+    await notifyAdminsFromBot(prisma, bot, {
       type: "USER_REGISTERED",
       title: "New User Started Bot",
       message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
@@ -839,7 +892,7 @@ bot.command("start", async (ctx) => {
       priority: "HIGH",
       telegramMessage:
         `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
-        `<b>${firstName}</b> (@${username || telegramId})\n` +
+        `<b>${escapeBotHtml(firstName)}</b> (@${escapeBotHtml(username || telegramId)})\n` +
         `<i>Awaiting role assignment</i>`,
     }).catch((error) => console.error(`[start] Background admin notification failed for ${telegramId}:`, error));
     return;

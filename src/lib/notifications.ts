@@ -2,6 +2,10 @@ import { prisma } from "@/lib/db";
 import { Bot } from "grammy";
 import type { InlineKeyboardMarkup } from "@grammyjs/types";
 import type { NotifType } from "@/generated/prisma/enums";
+import {
+  deliverTelegramWithRetry,
+  isPermanentTelegramRecipientError,
+} from "@/lib/telegram-delivery";
 
 // Lazy bot instance for sending DMs — avoids module-level throw
 let _bot: Bot | null = null;
@@ -84,7 +88,6 @@ export async function notify(data: {
 
     // Explicit resource-level preferences can suppress even high-priority DMs.
     if (user?.chatId && dmBot && shouldSendTelegram) {
-      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SENDING", telegramAttempts: { increment: 1 }, telegramLastError: null } });
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";
       // Derive a readable label from the destination path if none given
@@ -93,17 +96,46 @@ export async function notify(data: {
       const replyMarkup = telegramReplyMarkup ?? (actionUrl
         ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${actionUrl}` } }]] }
         : undefined);
-      await dmBot.api.sendMessage(user.chatId, tgText, {
-        parse_mode: "HTML",
-        reply_markup: replyMarkup,
+      const result = await deliverTelegramWithRetry({
+        send: () => dmBot.api.sendMessage(user.chatId!, tgText, {
+          parse_mode: "HTML",
+          reply_markup: replyMarkup,
+        }),
+        onAttempt: notification
+          ? () => prisma.notification.update({
+              where: { id: notification.id },
+              data: { telegramStatus: "SENDING", telegramAttempts: { increment: 1 }, telegramLastError: null },
+            }).then(() => undefined)
+          : undefined,
+        onSent: notification
+          ? () => prisma.notification.update({
+              where: { id: notification.id },
+              data: { telegramStatus: "SENT", telegramSentAt: new Date(), telegramLastError: null },
+            }).then(() => undefined)
+          : undefined,
+        onFailed: notification
+          ? (_error, _attempts, errorMessage) => prisma.notification.update({
+              where: { id: notification.id },
+              data: { telegramStatus: "FAILED", telegramLastError: errorMessage },
+            }).then(() => undefined)
+          : undefined,
+        onTrackingError: (error) => console.error(`[notify] Could not persist TG delivery state for user ${userId}:`, error),
       });
-      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SENT", telegramSentAt: new Date() } });
+      if (result.status === "FAILED") {
+        console.error(`[notify] TG DM failed for user ${userId}:`, result.error);
+        if (isPermanentTelegramRecipientError(result.error)) {
+          await prisma.user.update({ where: { id: userId }, data: { chatId: null } }).catch(() => undefined);
+        }
+      }
     } else if (!user?.chatId) {
       console.warn(`[notify] No chatId for user ${userId} — skipping TG DM`);
+      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SKIPPED_NO_CHAT" } });
     } else if (!dmBot) {
       console.warn(`[notify] BOT_TOKEN not set — skipping TG DM`);
+      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SKIPPED_NO_TOKEN" } });
     } else {
       console.log(`[notify] User ${userId} has no pref for ${type} (non-high priority) — skipping DM`);
+      if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramStatus: "SKIPPED_PREFERENCE" } });
     }
   } catch (err: unknown) {
     const desc = typeof err === "object" && err !== null && "description" in err

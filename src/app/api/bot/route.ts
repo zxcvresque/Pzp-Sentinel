@@ -7,6 +7,7 @@ import { webhookCallback } from "grammy";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
 import { registerRazorpayFeedbackHandlers } from "@/lib/razorpay-feedback-bot";
 import { registerBmcFeedbackHandlers } from "@/lib/bmc-feedback-bot";
+import { notifyAdmins } from "@/lib/notifications";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -45,6 +46,18 @@ bot.command("start", async (ctx) => {
           entityId: created.id,
           userName: firstName,
           details: `@${username || telegramId} started the bot — awaiting role assignment`,
+        }),
+        notifyAdmins({
+          type: "USER_REGISTERED",
+          title: "New User Started Bot",
+          message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
+          entityId: created.id,
+          priority: "HIGH",
+          actionUrl: "/admin/users",
+          telegramMessage:
+            `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
+            `<b>${escapeTelegramHtml(firstName)}</b> (@${escapeTelegramHtml(username || telegramId)})\n` +
+            `<i>Awaiting role assignment</i>`,
         }),
       ]);
     });
