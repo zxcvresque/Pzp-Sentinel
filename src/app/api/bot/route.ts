@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import { bot, fetchTelegramPhotoUrl } from "@/lib/bot";
+import { after, NextRequest, NextResponse } from "next/server";
+import { bot } from "@/lib/bot";
 import { prisma } from "@/lib/db";
+import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 import { logAuditEvent } from "@/lib/telegram-log";
 import { webhookCallback } from "grammy";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
@@ -15,22 +16,7 @@ bot.command("start", async (ctx) => {
 
   if (!telegramId) return;
 
-  // Fetch profile photo from Telegram
-  const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName);
-
   const user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (user) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        chatId,
-        ...(photoUrl && { photoUrl }),
-        ...(username && { telegramUser: username }),
-        name: firstName || user.name,
-      },
-    });
-  }
 
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
 
@@ -43,16 +29,24 @@ bot.command("start", async (ctx) => {
         name: firstName,
         chatId,
         roles: [],
-        ...(photoUrl && { photoUrl }),
       },
     });
 
-    logAuditEvent({
-      action: "BOT_REGISTER",
-      entityType: "User",
-      entityId: created.id,
-      userName: firstName,
-      details: `@${username || telegramId} started the bot — awaiting role assignment`,
+    after(async () => {
+      await Promise.allSettled([
+        refreshStoredTelegramAvatar({
+          userId: created.id,
+          telegramId,
+          userName: firstName,
+        }),
+        logAuditEvent({
+          action: "BOT_REGISTER",
+          entityType: "User",
+          entityId: created.id,
+          userName: firstName,
+          details: `@${username || telegramId} started the bot — awaiting role assignment`,
+        }),
+      ]);
     });
 
     await ctx.reply(
@@ -67,6 +61,24 @@ bot.command("start", async (ctx) => {
     );
     return;
   }
+
+  after(async () => {
+    await Promise.allSettled([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          chatId,
+          ...(username && { telegramUser: username }),
+          name: firstName || user.name,
+        },
+      }),
+      refreshStoredTelegramAvatar({
+        userId: user.id,
+        telegramId,
+        userName: firstName,
+      }),
+    ]);
+  });
 
   // In database but no roles — waiting for admin approval
   if (user.roles.length === 0) {

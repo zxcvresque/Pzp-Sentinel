@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Bot } from "grammy";
+import { Bot, Context } from "grammy";
 import { PrismaClient, Prisma } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
@@ -474,6 +474,31 @@ function refreshAvatarAfterReply(userId: string, telegramId: string, firstName: 
   })().catch((error) => console.error(`[avatar] Background refresh failed for ${telegramId}:`, error));
 }
 
+type ProgressReply = Promise<{ message_id: number } | null>;
+type WebAppKeyboard = Array<Array<{ text: string; web_app: { url: string } }>>;
+
+async function replaceProgressReply(
+  ctx: Context,
+  progressReply: ProgressReply,
+  text: string,
+  inlineKeyboard?: WebAppKeyboard,
+) {
+  const options = {
+    parse_mode: "HTML" as const,
+    ...(inlineKeyboard ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
+  };
+  const progress = await progressReply;
+  if (progress && ctx.chat) {
+    try {
+      await ctx.api.editMessageText(ctx.chat.id, progress.message_id, text, options);
+      return;
+    } catch (error) {
+      console.warn("[start] Could not replace progress reply; sending final response separately:", error);
+    }
+  }
+  await ctx.reply(text, options);
+}
+
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
@@ -626,36 +651,43 @@ bot.command("start", async (ctx) => {
       return;
     }
 
+    const progressReply = ctx.reply(
+      `<blockquote><b>⚡ Verifying login</b></blockquote>\n<i>Connecting Sentinel…</i>`,
+      { parse_mode: "HTML" },
+    ).catch((error) => {
+      console.warn("[auth] Immediate progress reply failed:", error);
+      return null;
+    });
+
     try {
-      const loginToken = await dbRetry(() =>
-        prisma.loginToken.findUnique({ where: { nonce } }),
-      );
+      const [loginToken, existingAuthUser] = await Promise.all([
+        dbRetry(() => prisma.loginToken.findUnique({ where: { nonce } })),
+        dbRetry(() => prisma.user.findUnique({ where: { telegramId } })),
+      ]);
 
       if (!loginToken || loginToken.status !== "PENDING") {
-        await ctx.reply(
+        await replaceProgressReply(
+          ctx,
+          progressReply,
           `⏳ <i>This login link has already been used or expired. Please request a new one.</i>`,
-          { parse_mode: "HTML" },
         );
         return;
       }
 
       if (loginToken.expiresAt < new Date()) {
-        await ctx.reply(
+        await replaceProgressReply(
+          ctx,
+          progressReply,
           `⏳ <i>This login link has expired. Please request a new one from the website.</i>`,
-          { parse_mode: "HTML" },
         );
         return;
       }
 
       // Ensure user exists in DB, create if needed
-      let authUser = await dbRetry(() =>
-        prisma.user.findUnique({ where: { telegramId } }),
-      );
+      let authUser = existingAuthUser;
+      const isNewAuthUser = !authUser;
 
       if (!authUser) {
-        // Fetch profile photo before creating user
-        const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
-
         authUser = await dbRetry(() =>
           prisma.user.create({
             data: {
@@ -663,46 +695,11 @@ bot.command("start", async (ctx) => {
               telegramUser: username,
               name: firstName,
               chatId,
-              photoUrl,
               roles: [],
             },
           }),
         );
 
-        logAuditEvent({
-          action: "BOT_REGISTER",
-          entityType: "User",
-          entityId: authUser.id,
-          userName: firstName,
-          details: `@${username || telegramId} registered via web login`,
-        });
-
-        await notifyAdminsFromBot(prisma, bot, {
-          type: "USER_REGISTERED",
-          title: "New User Started Bot",
-          message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
-          entityId: authUser.id,
-          priority: "HIGH",
-          telegramMessage:
-            `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
-            `<b>${firstName}</b> (@${username || telegramId})\n` +
-            `<i>Registered via web login — awaiting role assignment</i>`,
-        });
-      } else {
-        // Update chatId + refresh profile photo
-        const photoUrl = await fetchTelegramPhotoUrl(telegramId, firstName, bot);
-        const updates: Record<string, string | null> = {};
-        if (!authUser.chatId || authUser.chatId !== chatId) updates.chatId = chatId;
-        if (photoUrl) updates.photoUrl = photoUrl;
-
-        if (Object.keys(updates).length > 0) {
-          await dbRetry(() =>
-            prisma.user.update({
-              where: { id: authUser!.id },
-              data: updates,
-            }),
-          );
-        }
       }
 
       // Mark token as verified
@@ -713,41 +710,75 @@ bot.command("start", async (ctx) => {
         }),
       );
 
-      // Send confirmation with inline button
       const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
-      await ctx.reply(
+      await replaceProgressReply(
+        ctx,
+        progressReply,
         `<blockquote><b>✅ Login Verified</b></blockquote>\n` +
         `<b>${authUser.name}</b>, you've been signed in on the web.\n\n` +
         `<i>You can close this chat and return to Sentinel.</i>`,
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
-            ],
-          },
-        },
+        [[{ text: "Open Sentinel", web_app: { url: webappUrl } }]],
       );
 
-      logAuditEvent({
+      // Everything below is post-login maintenance and must not delay token
+      // verification or the confirmation shown to the user.
+      if (!isNewAuthUser) {
+        void dbRetry(() => prisma.user.update({
+          where: { id: authUser!.id },
+          data: {
+            chatId,
+            ...(username && username !== authUser!.telegramUser ? { telegramUser: username } : {}),
+          },
+        })).catch((error) => console.error(`[auth] Background profile sync failed for ${telegramId}:`, error));
+      }
+      refreshAvatarAfterReply(authUser.id, telegramId, firstName);
+      if (isNewAuthUser) {
+        void logAuditEvent({
+          action: "BOT_REGISTER",
+          entityType: "User",
+          entityId: authUser.id,
+          userName: firstName,
+          details: `@${username || telegramId} registered via web login`,
+        }).catch((error) => console.error(`[auth] Background registration audit failed for ${telegramId}:`, error));
+        void notifyAdminsFromBot(prisma, bot, {
+          type: "USER_REGISTERED",
+          title: "New User Started Bot",
+          message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
+          entityId: authUser.id,
+          priority: "HIGH",
+          telegramMessage:
+            `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
+            `<b>${firstName}</b> (@${username || telegramId})\n` +
+            `<i>Registered via web login — awaiting role assignment</i>`,
+        }).catch((error) => console.error(`[auth] Background admin notification failed for ${telegramId}:`, error));
+      }
+      void logAuditEvent({
         action: "WEB_LOGIN",
         entityType: "User",
         entityId: authUser.id,
         userName: authUser.name,
         details: `@${authUser.telegramUser || telegramId} verified web login via bot`,
-      });
+      }).catch((error) => console.error(`[auth] Background login audit failed for ${telegramId}:`, error));
     } catch (err) {
       console.error("Failed to process auth deep link:", err);
       try {
-        await ctx.reply(
+        await replaceProgressReply(
+          ctx,
+          progressReply,
           `❌ <i>Something went wrong verifying your login. Please try again.</i>`,
-          { parse_mode: "HTML" },
         );
       } catch { /* swallow */ }
     }
     return;
   }
 
+  const progressReply = ctx.reply(
+    `<blockquote><b>⚡ Sentinel</b></blockquote>\n<i>Opening your workspace…</i>`,
+    { parse_mode: "HTML" },
+  ).catch((error) => {
+    console.warn("[start] Immediate progress reply failed:", error);
+    return null;
+  });
   const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
 
   if (user) {
@@ -775,16 +806,10 @@ bot.command("start", async (ctx) => {
       },
     }));
 
-    logAuditEvent({
-      action: "BOT_REGISTER",
-      entityType: "User",
-      entityId: created.id,
-      userName: firstName,
-      details: `@${username || telegramId} started the bot — awaiting role assignment`,
-    });
-
     try {
-      await ctx.reply(
+      await replaceProgressReply(
+        ctx,
+        progressReply,
         `<blockquote><b>🎉 Welcome to Sentinel</b></blockquote>\n` +
         `<b>Hey ${firstName}!</b>\n\n` +
         `💰 Tracks community treasury\n` +
@@ -792,11 +817,17 @@ bot.command("start", async (ctx) => {
         `🔔 Sends payment reminders & notifications\n` +
         `📊 Keeps everything transparent\n\n` +
         `<i>You're not registered yet. An admin will review and assign your access shortly.</i>`,
-        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to new user:", err);
     }
+    void logAuditEvent({
+      action: "BOT_REGISTER",
+      entityType: "User",
+      entityId: created.id,
+      userName: firstName,
+      details: `@${username || telegramId} started the bot — awaiting role assignment`,
+    }).catch((error) => console.error(`[start] Background registration audit failed for ${telegramId}:`, error));
     refreshAvatarAfterReply(created.id, telegramId, firstName);
     // Admin fan-out is useful but may involve several Telegram calls, so it is
     // deliberately queued after the user has received the /start response.
@@ -816,11 +847,12 @@ bot.command("start", async (ctx) => {
 
   if (user.status === "INACTIVE") {
     try {
-      await ctx.reply(
+      await replaceProgressReply(
+        ctx,
+        progressReply,
         `<blockquote><b>🚫 Account Deactivated</b></blockquote>\n` +
         `<b>Hey ${user.name},</b>\n` +
         `<i>Your account has been deactivated. Contact an admin if you think this is a mistake.</i>`,
-        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to deactivated user:", err);
@@ -831,11 +863,12 @@ bot.command("start", async (ctx) => {
 
   if (user.roles.length === 0) {
     try {
-      await ctx.reply(
+      await replaceProgressReply(
+        ctx,
+        progressReply,
         `<blockquote><b>⏳ Pending Approval</b></blockquote>\n` +
         `<b>Hey ${user.name}!</b>\n` +
         `<i>You're in the system but don't have access yet. An admin will assign your role shortly.</i>`,
-        { parse_mode: "HTML" },
       );
     } catch (err) {
       console.error("Failed to reply to unassigned user:", err);
@@ -858,18 +891,13 @@ bot.command("start", async (ctx) => {
     : "";
 
   try {
-    await ctx.reply(
+    await replaceProgressReply(
+      ctx,
+      progressReply,
       `<b><i>👋 Welcome back, ${user.name}!</i></b>\n\n` +
       `<blockquote><b>Your Access</b></blockquote>\n` +
       `${yourRoles}${donorWebsite}`,
-      {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
-          ],
-        },
-      }
+      [[{ text: "Open Sentinel", web_app: { url: webappUrl } }]],
     );
   } catch (err) {
     console.error("Failed to reply to returning user:", err);

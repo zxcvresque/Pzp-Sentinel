@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
-import { fetchTelegramPhotoUrl, retainedArchivedTelegramPhoto } from "@/lib/bot";
+import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 
 function validateInitData(initData: string, botToken: string): Record<string, string> | null {
   const params = new URLSearchParams(initData);
@@ -58,10 +58,6 @@ export async function POST(req: NextRequest) {
   const telegramId = String(tgUser.id);
   const name = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "User";
 
-  // Archive the profile photo in the logs topic and retain that exact copy.
-  const botPhoto = await fetchTelegramPhotoUrl(telegramId, name);
-  const photoUrl = botPhoto;
-
   let user = await prisma.user.findUnique({ where: { telegramId } });
 
   if (!user) {
@@ -70,21 +66,29 @@ export async function POST(req: NextRequest) {
         telegramId,
         telegramUser: tgUser.username || "",
         name,
-        photoUrl,
         roles: [],
         status: "ACTIVE",
       },
     });
-  } else {
-    user = await prisma.user.update({
-      where: { telegramId },
-      data: {
-        telegramUser: tgUser.username || user.telegramUser,
-        name,
-        photoUrl: photoUrl || retainedArchivedTelegramPhoto(user.photoUrl),
-      },
-    });
   }
+
+  const storedUser = user;
+  after(async () => {
+    await Promise.allSettled([
+      refreshStoredTelegramAvatar({
+        userId: storedUser.id,
+        telegramId,
+        userName: name,
+      }),
+      prisma.user.update({
+        where: { id: storedUser.id },
+        data: {
+          telegramUser: tgUser.username || storedUser.telegramUser,
+          name,
+        },
+      }),
+    ]);
+  });
 
   if (user.roles.length === 0) {
     return NextResponse.json({

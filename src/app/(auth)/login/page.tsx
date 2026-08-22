@@ -61,6 +61,7 @@ export default function LoginPage() {
   const [isTelegramMiniApp, setIsTelegramMiniApp] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const verifiedRef = useRef(false);
+  const pollInFlightRef = useRef(false);
 
   const verifyMiniAppSession = useCallback(async (initData: string) => {
     if (!initData || verifiedRef.current) return;
@@ -179,7 +180,8 @@ export default function LoginPage() {
     if (!nonce || !waitingForBot) return;
 
     const poll = async () => {
-      if (verifiedRef.current) return; // already verified, ignore stale polls
+      if (verifiedRef.current || pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
       try {
         const res = await fetch(`/api/auth/login-check?nonce=${nonce}`);
         const data = await res.json();
@@ -221,11 +223,14 @@ export default function LoginPage() {
         // status === "pending" — keep polling
       } catch {
         // Network error — keep polling, it'll recover
+      } finally {
+        pollInFlightRef.current = false;
       }
     };
 
-    // Poll every 2 seconds
-    pollRef.current = setInterval(poll, 2000);
+    // Verification is a short-lived interactive flow. Poll quickly so the
+    // browser reacts almost immediately after Telegram verifies the token.
+    pollRef.current = setInterval(poll, 500);
     // Also poll immediately
     poll();
 

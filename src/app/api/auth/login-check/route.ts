@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
-import { fetchTelegramPhotoUrl, retainedArchivedTelegramPhoto } from "@/lib/bot";
+import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -35,13 +35,14 @@ export async function GET(req: NextRequest) {
   }
 
   const telegramId = loginToken.telegramId!;
-  const user = await prisma.user.findUnique({ where: { telegramId } });
+  const [user] = await Promise.all([
+    prisma.user.findUnique({ where: { telegramId } }),
+    prisma.loginToken.delete({ where: { id: loginToken.id } }).catch(() => undefined),
+  ]);
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404, ...noStore });
   }
-
-  await prisma.loginToken.delete({ where: { id: loginToken.id } }).catch(() => {});
 
   if (user.status === "INACTIVE") {
     return NextResponse.json(
@@ -80,14 +81,11 @@ export async function GET(req: NextRequest) {
     path: "/",
   });
 
-  const botPhoto = await fetchTelegramPhotoUrl(telegramId, user.name);
-  const photoUrl = botPhoto || retainedArchivedTelegramPhoto(user.photoUrl);
-  if (photoUrl !== user.photoUrl) {
-    await prisma.user.update({
-      where: { telegramId },
-      data: { photoUrl },
-    });
-  }
+  after(() => refreshStoredTelegramAvatar({
+    userId: user.id,
+    telegramId,
+    userName: user.name,
+  }));
 
   return response;
 }

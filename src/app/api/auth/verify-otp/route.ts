@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS, verifyOtpHash } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { fetchTelegramPhotoUrl, retainedArchivedTelegramPhoto } from "@/lib/bot";
+import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 
 export async function POST(req: NextRequest) {
   const { telegramId, otp } = await req.json();
@@ -57,29 +57,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid OTP" }, { status: 401 });
   }
 
-  // Clear OTP and refresh profile photo from Telegram
-  const photoUrl = await fetchTelegramPhotoUrl(user.telegramId, user.name);
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      otpCode: null,
-      otpExpiresAt: null,
-      otpAttempts: 0,
-      otpLockedUntil: null,
-      photoUrl: photoUrl || retainedArchivedTelegramPhoto(user.photoUrl),
-    },
-  });
-
-  const token = await signToken({ userId: user.id, roles: user.roles });
-  await logAudit({
-    userId: user.id,
-    action: "AUTH_OTP_SUCCESS",
-    entityType: "User",
-    entityId: user.id,
-    request: req,
-    userName: user.name,
-  });
+  // Only invalidate the OTP before returning success. Avatar archival and
+  // audit fan-out run after the browser has received its authenticated session.
+  const [, token] = await Promise.all([
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        otpCode: null,
+        otpExpiresAt: null,
+        otpAttempts: 0,
+        otpLockedUntil: null,
+      },
+    }),
+    signToken({ userId: user.id, roles: user.roles }),
+  ]);
 
   const defaultRole = highestRole(user.roles);
   const redirectMap: Record<string, string> = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" };
@@ -96,6 +87,24 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
+  });
+
+  after(async () => {
+    await Promise.allSettled([
+      refreshStoredTelegramAvatar({
+        userId: user.id,
+        telegramId: user.telegramId,
+        userName: user.name,
+      }),
+      logAudit({
+        userId: user.id,
+        action: "AUTH_OTP_SUCCESS",
+        entityType: "User",
+        entityId: user.id,
+        request: req,
+        userName: user.name,
+      }),
+    ]);
   });
 
   return response;
