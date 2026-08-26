@@ -2,6 +2,7 @@ export type NotificationDestination = {
   type: string;
   roles: string[];
   entityId?: string | null;
+  title?: string | null;
 };
 
 export function notificationDestination(notification: NotificationDestination): string | null {
@@ -18,6 +19,13 @@ export function notificationDestination(notification: NotificationDestination): 
     case "TASK_ASSIGNED":
       return "/dev/tasks";
     case "CREDENTIAL_ASSIGNED":
+      if (notification.entityId?.startsWith("openrouter:") || notification.title?.toLowerCase().includes("openrouter")) {
+        const keyId = notification.entityId?.replace(/^openrouter:/, "") || "";
+        return keyId
+          ? `/dev/openrouter?keyId=${encodeURIComponent(keyId)}&shared=${encodeURIComponent(`openrouter-key:${keyId}`)}#shared-${encodeURIComponent(keyId)}`
+          : "/dev/openrouter";
+      }
+      return isAdmin ? "/admin/credentials" : "/dev/credentials";
     case "CREDENTIAL_REVIEWED":
       return isAdmin ? "/admin/credentials" : "/dev/credentials";
     case "USER_REGISTERED":

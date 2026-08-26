@@ -289,7 +289,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     key={notif.id}
                     onClick={() => {
                       if (!notif.read) markRead([notif.id]);
-                      const href = notificationDestination({ type: notif.type, roles, entityId: notif.entityId });
+                      const href = notificationDestination({ type: notif.type, roles, entityId: notif.entityId, title: notif.title });
                       if (href) {
                         setNotifOpen(false);
                         router.push(href);

@@ -45,10 +45,20 @@ export interface OpenRouterActivityItem {
   workspace_id?: string;
 }
 
+export interface OpenRouterWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+}
+
 export interface OpenRouterAccountSnapshot {
   credits: { total_credits: number; total_usage: number; remaining: number };
   keys: OpenRouterKeyUsage[];
   activity: OpenRouterActivityItem[];
+  workspaces: OpenRouterWorkspace[];
 }
 
 function safeProviderMessage(value: unknown, status: number) {
@@ -111,11 +121,17 @@ export async function getOpenRouterActivity(managementKey: string, keyHash?: str
   return response.data;
 }
 
+export async function getOpenRouterWorkspaces(managementKey: string) {
+  const response = await openRouterFetch<{ data: OpenRouterWorkspace[]; total_count: number }>(managementKey, "/workspaces?limit=100");
+  return response.data;
+}
+
 export async function getOpenRouterAccountSnapshot(managementKey: string): Promise<OpenRouterAccountSnapshot> {
-  const [creditResponse, keyResponse, activity] = await Promise.all([
+  const [creditResponse, keyResponse, activity, workspaces] = await Promise.all([
     openRouterFetch<{ data: { total_credits: number; total_usage: number } }>(managementKey, "/credits"),
     openRouterFetch<{ data: OpenRouterKeyUsage[] }>(managementKey, "/keys?include_disabled=true"),
     getOpenRouterActivity(managementKey),
+    getOpenRouterWorkspaces(managementKey),
   ]);
   const totalCredits = Number(creditResponse.data.total_credits || 0);
   const totalUsage = Number(creditResponse.data.total_usage || 0);
@@ -123,5 +139,6 @@ export async function getOpenRouterAccountSnapshot(managementKey: string): Promi
     credits: { total_credits: totalCredits, total_usage: totalUsage, remaining: totalCredits - totalUsage },
     keys: keyResponse.data,
     activity,
+    workspaces,
   };
 }

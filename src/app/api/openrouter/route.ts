@@ -11,6 +11,7 @@ import {
   getOpenRouterKeyUsage,
   createOpenRouterApiKey,
   deleteOpenRouterApiKey,
+  getOpenRouterWorkspaces,
   openRouterKeyHash,
 } from "@/lib/openrouter";
 
@@ -167,7 +168,18 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user || !hasRole(user.roles, "ADMIN")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
-  const mode = body?.mode === "KEY" ? "KEY" : "ACCOUNT";
+  const mode = body?.mode === "KEY" ? "KEY" : body?.mode === "WORKSPACES" ? "WORKSPACES" : "ACCOUNT";
+
+  if (mode === "WORKSPACES") {
+    const managementKey = String(body?.managementKey || "").trim();
+    if (!managementKey) return NextResponse.json({ error: "Management key is required" }, { status: 400, headers: noStoreHeaders });
+    try {
+      const workspaces = await getOpenRouterWorkspaces(managementKey);
+      return NextResponse.json({ workspaces }, { headers: noStoreHeaders });
+    } catch (error) {
+      return NextResponse.json({ error: errorMessage(error) }, { status: 400, headers: noStoreHeaders });
+    }
+  }
 
   if (mode === "ACCOUNT") {
     const name = String(body?.name || "").trim();
@@ -179,11 +191,19 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       return NextResponse.json({ error: errorMessage(error) }, { status: 400 });
     }
+    const requestedWorkspaceId = body?.workspaceId ? String(body.workspaceId).trim() : "";
+    if (requestedWorkspaceId && !snapshot.workspaces.some((workspace) => workspace.id === requestedWorkspaceId)) {
+      return NextResponse.json({ error: "Choose a workspace returned by this management key", workspaces: snapshot.workspaces }, { status: 400, headers: noStoreHeaders });
+    }
+    if (!requestedWorkspaceId && snapshot.workspaces.length > 1) {
+      return NextResponse.json({ error: "Choose the OpenRouter workspace to connect", requiresWorkspaceSelection: true, workspaces: snapshot.workspaces }, { status: 409, headers: noStoreHeaders });
+    }
+    const workspaceId = requestedWorkspaceId || snapshot.workspaces[0]?.id || null;
     const account = await prisma.apiUsageAccount.create({
       data: {
         provider: "OPENROUTER",
         name,
-        workspaceId: body?.workspaceId ? String(body.workspaceId).trim() : null,
+        workspaceId,
         authCookie: null,
         apiKey: encryptSecret(managementKey),
         lastSnapshot: jsonValue(snapshot),
@@ -202,7 +222,7 @@ export async function POST(req: NextRequest) {
   const configuredLimit = body?.configuredLimit === "" || body?.configuredLimit == null ? null : Number(body.configuredLimit);
   if (!accountId || !name || (!createRemotely && !plaintextKey)) return NextResponse.json({ error: createRemotely ? "Account and key name are required" : "Account, key name, and API key are required" }, { status: 400 });
   if (configuredLimit != null && (!Number.isFinite(configuredLimit) || configuredLimit < 0)) return NextResponse.json({ error: "Limit must be zero or greater" }, { status: 400 });
-  const account = await prisma.apiUsageAccount.findFirst({ where: { id: accountId, provider: "OPENROUTER" }, select: { id: true, apiKey: true } });
+  const account = await prisma.apiUsageAccount.findFirst({ where: { id: accountId, provider: "OPENROUTER" }, select: { id: true, apiKey: true, workspaceId: true, lastSnapshot: true } });
   if (!account) return NextResponse.json({ error: "OpenRouter account not found" }, { status: 404 });
   if (assigneeIds.length) {
     const validAssignees = await prisma.user.count({ where: { id: { in: assigneeIds }, status: "ACTIVE", roles: { has: "DEV" } } });
@@ -219,12 +239,18 @@ export async function POST(req: NextRequest) {
       const reset = ["daily", "weekly", "monthly"].includes(body?.limitReset) ? body.limitReset as "daily" | "weekly" | "monthly" : null;
       const expiresAt = body?.expiresAt ? new Date(body.expiresAt) : null;
       if (expiresAt && Number.isNaN(expiresAt.getTime())) return NextResponse.json({ error: "Expiry must be a valid date" }, { status: 400 });
+      const requestedWorkspaceId = body?.workspaceId ? String(body.workspaceId).trim() : account.workspaceId;
+      const snapshot = account.lastSnapshot && typeof account.lastSnapshot === "object" && !Array.isArray(account.lastSnapshot) ? account.lastSnapshot as Record<string, unknown> : null;
+      const workspaces = Array.isArray(snapshot?.workspaces) ? snapshot.workspaces as Array<Record<string, unknown>> : [];
+      if (requestedWorkspaceId && workspaces.length && !workspaces.some((workspace) => workspace.id === requestedWorkspaceId)) {
+        return NextResponse.json({ error: "Choose a workspace available to this management key" }, { status: 400 });
+      }
       const created = await createOpenRouterApiKey(decryptSecret(account.apiKey), {
         name,
         limit: configuredLimit,
         limit_reset: reset,
         include_byok_in_limit: body?.includeByokInLimit === true,
-        ...(body?.workspaceId ? { workspace_id: String(body.workspaceId).trim() } : {}),
+        ...(requestedWorkspaceId ? { workspace_id: requestedWorkspaceId } : {}),
         ...(expiresAt ? { expires_at: expiresAt.toISOString() } : {}),
         ...(body?.creatorUserId ? { creator_user_id: String(body.creatorUserId).trim() } : {}),
       });
@@ -268,9 +294,9 @@ export async function POST(req: NextRequest) {
     type: "CREDENTIAL_ASSIGNED",
     title: "OpenRouter API key assigned",
     message: `${name} is ready in Services → OpenRouter. ${limitText}.`,
-    entityId: key.id,
+    entityId: `openrouter:${key.id}`,
     priority: "HIGH",
-    actionUrl: "/dev/openrouter",
+    actionUrl: `/dev/openrouter?keyId=${encodeURIComponent(key.id)}&shared=${encodeURIComponent(`openrouter-key:${key.id}`)}#shared-${encodeURIComponent(key.id)}`,
     actionLabel: "View API key",
     inAppOverride: true,
     telegramOverride: true,

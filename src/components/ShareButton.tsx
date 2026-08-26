@@ -32,20 +32,18 @@ export default function ShareButton({
     const visibleContext = target?.innerText
       .replace(/sk-or-[A-Za-z0-9_-]+/g, "[API key hidden]")
       .replace(/\s+/g, " ")
-      .replace(/\b(Share|Context copied)\b/g, "")
+      .replace(/\b(Share|Context copied|Title \+ link copied)\b/g, "")
       .trim()
       .slice(0, 220);
     const shareTitle = contextTitle?.trim() || targetHeading || entityLabel;
     const shareDetails = contextDetails?.trim() || visibleContext || `Open this ${entityLabel.toLowerCase()} in Sentinel.`;
-    const title = `Sentinel · ${shareTitle}`;
     const message = [
-      `Sentinel handoff · ${shareTitle}`,
+      `Sentinel · ${shareTitle}`,
       shareDetails,
       `Open in Sentinel: ${url.toString()}`,
     ].filter(Boolean).join("\n");
     try {
-      if (navigator.share) await navigator.share({ title, text: shareDetails, url: url.toString() });
-      else await navigator.clipboard.writeText(message);
+      await navigator.clipboard.writeText(message);
       setState("copied");
       window.setTimeout(() => setState("idle"), 1800);
     } catch (error) {
@@ -69,7 +67,7 @@ export default function ShareButton({
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
       </svg>
-      {state === "copied" ? "Context copied" : label}
+      {state === "copied" ? "Title + link copied" : label}
     </button>
   );
 }

@@ -31,4 +31,14 @@ describe("notification destinations", () => {
     expect(notificationDestination({ type: "VPS_ALERT", roles: ["ADMIN"], entityId: "vps_1" }))
       .toBe("/admin/vps");
   });
+
+  it("opens assigned OpenRouter keys in the developer service view even for admins", () => {
+    expect(notificationDestination({ type: "CREDENTIAL_ASSIGNED", roles: ["ADMIN", "DEV"], entityId: "openrouter:key/1", title: "OpenRouter API key assigned" }))
+      .toBe("/dev/openrouter?keyId=key%2F1&shared=openrouter-key%3Akey%2F1#shared-key%2F1");
+  });
+
+  it("keeps older OpenRouter notifications focused on the developer service view", () => {
+    expect(notificationDestination({ type: "CREDENTIAL_ASSIGNED", roles: ["ADMIN"], entityId: "legacy-key", title: "OpenRouter API key assigned" }))
+      .toBe("/dev/openrouter?keyId=legacy-key&shared=openrouter-key%3Alegacy-key#shared-legacy-key");
+  });
 });
