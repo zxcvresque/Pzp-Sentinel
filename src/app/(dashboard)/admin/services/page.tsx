@@ -8,6 +8,8 @@ import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
 import Link from "next/link";
 import { SERVICE_TEMPLATES } from "@/lib/service-templates";
+import { CUSTOM_REPEAT_UNITS, monthlyServiceCost, SERVICE_FREQUENCY_OPTIONS } from "@/lib/service-billing";
+import ShareButton from "@/components/ShareButton";
 
 interface ColumnDef {
   key: string;
@@ -24,6 +26,8 @@ interface Service {
   price: string | null;
   currency: string | null;
   frequency: string | null;
+  customRepeatEvery?: number | null;
+  customRepeatUnit?: string | null;
   planUrl: string | null;
   expiryDate: string | null;
   status: string | null;
@@ -41,6 +45,9 @@ function formatCurrency(price: string, currency: string | null) {
 
 function frequencyLabel(f: string | null) {
   if (f === "YEARLY") return "/yr";
+  if (f === "QUARTERLY") return "/quarter";
+  if (f === "HALF_YEARLY") return "/6 mo";
+  if (f === "CUSTOM") return " custom";
   if (f === "WEEKLY") return "/wk";
   if (f === "ONE_TIME") return " one-time";
   if (f === "LIFETIME") return " lifetime";
@@ -76,6 +83,8 @@ export default function ServicesPage() {
   const [price, setPrice] = useState("");
   const [currency, setCurrency] = useState("INR");
   const [frequency, setFrequency] = useState("MONTHLY");
+  const [customRepeatEvery, setCustomRepeatEvery] = useState("1");
+  const [customRepeatUnit, setCustomRepeatUnit] = useState("MONTH");
   const [planUrl, setPlanUrl] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [subStatus, setSubStatus] = useState("ACTIVE");
@@ -109,6 +118,8 @@ export default function ServicesPage() {
     setPrice("");
     setCurrency("INR");
     setFrequency("MONTHLY");
+    setCustomRepeatEvery("1");
+    setCustomRepeatUnit("MONTH");
     setPlanUrl("");
     setExpiryDate("");
     setSubStatus("ACTIVE");
@@ -131,6 +142,8 @@ export default function ServicesPage() {
     setPrice(hasCost ? parseFloat(svc.price!).toString() : "");
     setCurrency(svc.currency || "INR");
     setFrequency(svc.frequency || "MONTHLY");
+    setCustomRepeatEvery(String(svc.customRepeatEvery || 1));
+    setCustomRepeatUnit(svc.customRepeatUnit || "MONTH");
     setPlanUrl(svc.planUrl || "");
     setExpiryDate(svc.expiryDate ? svc.expiryDate.slice(0, 10) : "");
     setSubStatus(svc.status || "ACTIVE");
@@ -165,6 +178,8 @@ export default function ServicesPage() {
       payload.price = parseFloat(price);
       payload.currency = currency;
       payload.frequency = frequency;
+      payload.customRepeatEvery = frequency === "CUSTOM" ? Number(customRepeatEvery) : null;
+      payload.customRepeatUnit = frequency === "CUSTOM" ? customRepeatUnit : null;
       payload.planUrl = planUrl || null;
       payload.expiryDate = expiryDate || null;
       payload.status = subStatus;
@@ -173,6 +188,8 @@ export default function ServicesPage() {
       payload.price = null;
       payload.currency = null;
       payload.frequency = null;
+      payload.customRepeatEvery = null;
+      payload.customRepeatUnit = null;
       payload.planUrl = null;
       payload.expiryDate = null;
       payload.status = null;
@@ -252,10 +269,7 @@ export default function ServicesPage() {
     .filter((s) => s.status === "ACTIVE")
     .reduce((sum, s) => {
       const p = parseFloat(s.price!);
-      if (s.frequency === "YEARLY") return sum + p / 12;
-      if (s.frequency === "WEEKLY") return sum + (p * 52) / 12;
-      if (s.frequency === "ONE_TIME" || s.frequency === "LIFETIME") return sum;
-      return sum + p;
+      return sum + monthlyServiceCost(p, s.frequency, s.customRepeatEvery, s.customRepeatUnit);
     }, 0);
 
   const grouped = services.reduce<Record<string, Service[]>>((acc, s) => {
@@ -512,13 +526,22 @@ export default function ServicesPage() {
                   <Dropdown
                     value={frequency}
                     options={[
-                      { value: "MONTHLY", label: "Monthly" },
-                      { value: "YEARLY", label: "Yearly" },
+                      ...SERVICE_FREQUENCY_OPTIONS.map((option) => ({ ...option })),
                       { value: "ONE_TIME", label: "One Time" },
                     ]}
                     onChange={(val) => setFrequency(val)}
                   />
                 </div>
+                {frequency === "CUSTOM" && <>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Repeat every</label>
+                    <input required min="1" step="1" type="number" value={customRepeatEvery} onChange={(event) => setCustomRepeatEvery(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" />
+                  </div>
+                  <div>
+                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">Custom unit</label>
+                    <Dropdown value={customRepeatUnit} options={CUSTOM_REPEAT_UNITS.map((unit) => ({ value: unit, label: `${unit.charAt(0)}${unit.slice(1).toLowerCase()}` }))} onChange={setCustomRepeatUnit} />
+                  </div>
+                </>}
                 <div>
                   <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-1.5">
                     Expiry Date
@@ -603,7 +626,7 @@ export default function ServicesPage() {
                   const isExpired = svc.expiryDate ? new Date(svc.expiryDate) < new Date() : false;
 
                   return (
-                    <div key={svc.id} className="card p-5">
+                    <div key={svc.id} data-share-target={`service:${svc.id}`} className="card p-5">
                       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="text-sm font-semibold">{svc.name}</div>
@@ -671,6 +694,7 @@ export default function ServicesPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          <ShareButton entityType="service" entityId={svc.id} />
                           <Link href={`/admin/services/${svc.id}`} className="px-3 py-1.5 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20">Open</Link>
                           <button
                             onClick={() => openEditForm(svc)}

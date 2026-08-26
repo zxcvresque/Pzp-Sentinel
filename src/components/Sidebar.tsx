@@ -236,7 +236,7 @@ export default function Sidebar({
   function isItemActive(item: NavItem) {
     if (pathname === item.href) return true;
     if (item.label === "Services") {
-      return pathname.endsWith("/credentials") || pathname.endsWith("/vps") || pathname.endsWith("/alerts");
+      return pathname.endsWith("/credentials") || pathname.endsWith("/vps") || pathname.endsWith("/alerts") || pathname.endsWith("/openrouter");
     }
     if (item.label === "Transactions") return pathname.startsWith("/admin/transactions") || pathname === "/admin/reconciliation";
     return false;

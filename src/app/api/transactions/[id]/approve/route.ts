@@ -10,7 +10,7 @@ import { dmThanks } from "@/lib/donation-thanks";
 import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
-import { nextCycleDate } from "@/lib/vps-subscription";
+import { nextServiceCycleDate } from "@/lib/service-billing";
 
 export async function POST(
   req: NextRequest,
@@ -56,7 +56,7 @@ export async function POST(
         throw new Error("The linked recurring service no longer exists");
       }
       const base = service.expiryDate && service.expiryDate > now ? service.expiryDate : now;
-      const nextExpiry = nextCycleDate(base, service.frequency);
+      const nextExpiry = nextServiceCycleDate(base, service.frequency, service.customRepeatEvery, service.customRepeatUnit);
       await db.service.update({
         where: { id: service.id },
         data: {

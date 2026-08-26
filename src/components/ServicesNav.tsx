@@ -6,12 +6,14 @@ import { usePathname } from "next/navigation";
 const linksByRole = {
   ADMIN: [
     { label: "Catalogue", href: "/admin/services" },
+    { label: "OpenRouter", href: "/admin/openrouter" },
     { label: "VPS", href: "/admin/vps" },
     { label: "Credentials", href: "/admin/credentials" },
     { label: "Operational alerts", href: "/admin/alerts" },
   ],
   DEV: [
     { label: "VPS Stats", href: "/dev/vps" },
+    { label: "OpenRouter", href: "/dev/openrouter" },
     { label: "Credentials", href: "/dev/credentials" },
   ],
 } as const;

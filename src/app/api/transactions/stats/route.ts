@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, hasRole } from "@/lib/auth";
+import { monthlyServiceCost } from "@/lib/service-billing";
 
 export async function GET(request: NextRequest) {
   const user = await getCurrentUser();
@@ -112,15 +113,12 @@ export async function GET(request: NextRequest) {
 
   const activeSubRecords = await prisma.service.findMany({
     where: { status: "ACTIVE", price: { not: null } },
-    select: { price: true, currency: true, frequency: true },
+    select: { price: true, currency: true, frequency: true, customRepeatEvery: true, customRepeatUnit: true },
   });
 
   const monthlySubs = activeSubRecords.reduce((sum, sub) => {
     const price = toDisplay(Number(sub.price!), sub.currency ?? "INR");
-    if (sub.frequency === "YEARLY") return sum + price / 12;
-    if (sub.frequency === "WEEKLY") return sum + (price * 52) / 12;
-    if (sub.frequency === "ONE_TIME") return sum;
-    return sum + price; // MONTHLY
+    return sum + monthlyServiceCost(price, sub.frequency, sub.customRepeatEvery, sub.customRepeatUnit);
   }, 0);
 
   return NextResponse.json({

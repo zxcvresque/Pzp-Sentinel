@@ -7,6 +7,7 @@ import PageTour from "@/components/PageTour";
 import ServicesNav from "@/components/ServicesNav";
 import Dropdown from "@/components/Dropdown";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ShareButton from "@/components/ShareButton";
 
 type AccessLevel = "PUBLIC_KEY" | "FULL";
 
@@ -529,7 +530,7 @@ export default function CredentialsPage() {
               </h2>
               <div className="space-y-3">
                 {creds.map((cred) => (
-                  <div key={cred.id} className="card p-5">
+                  <div key={cred.id} data-share-target={`credential:${cred.id}`} className="card p-5">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -584,6 +585,7 @@ export default function CredentialsPage() {
                         )}
                       </div>
                       <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+                        <ShareButton entityType="credential" entityId={cred.id} />
                         <button
                           onClick={() => startEdit(cred)}
                           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"

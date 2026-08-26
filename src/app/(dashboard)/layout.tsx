@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import SpotlightTour from "@/components/SpotlightTour";
 import RoleOnboarding from "@/components/RoleOnboarding";
+import SharedItemSpotlight from "@/components/SharedItemSpotlight";
 import { getTourSteps } from "@/lib/tour-steps";
 import {
   GUIDANCE_VERSION,
@@ -231,6 +232,7 @@ export default function DashboardLayout({
     "/admin/attention": "Admin / Needs Attention",
     "/admin/alerts": "Admin / Services / Operational alerts",
     "/admin/services": "Admin / Services",
+    "/admin/openrouter": "Admin / Services / OpenRouter",
     "/admin/donors": "Admin / Donors",
     "/admin/broadcasts": "Admin / Broadcasts",
     "/admin/users": "Admin / Users",
@@ -243,6 +245,7 @@ export default function DashboardLayout({
     "/dev/tasks": "Dev / My Tasks",
     "/dev/vps": "Dev / VPS Stats",
     "/dev/credentials": "Dev / Credentials",
+    "/dev/openrouter": "Dev / Services / OpenRouter",
     "/donor": "Donor / Overview",
     "/profile": "Settings / General",
   };
@@ -311,6 +314,7 @@ export default function DashboardLayout({
         </main>
       </div>
       <div className="grain" />
+      <SharedItemSpotlight />
       <SpotlightTour
         steps={getTourSteps(tourRole)}
         active={tourActive}

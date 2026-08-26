@@ -15,10 +15,12 @@ export async function GET(req: NextRequest) {
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
   const cursor = url.searchParams.get("cursor");
+  const id = url.searchParams.get("id");
   const take = 50;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = {};
+  if (id) where.id = id;
   if (action) where.action = action;
   if (entityType) where.entityType = entityType;
   if (userId) where.userId = userId;

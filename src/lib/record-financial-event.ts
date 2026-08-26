@@ -9,7 +9,7 @@ type Direction = "IN" | "OUT";
 type TxType = "DONATION" | "EXPENSE" | "SUBSCRIPTION" | "OTHER";
 type Method = "UPI" | "BANK" | "OTHER";
 type Status = "PENDING" | "APPROVED" | "REJECTED";
-type Frequency = "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME" | "LIFETIME";
+type Frequency = "WEEKLY" | "MONTHLY" | "QUARTERLY" | "HALF_YEARLY" | "YEARLY" | "CUSTOM" | "ONE_TIME" | "LIFETIME";
 
 export interface FinancialCredentialDraft {
   platform?: string;
@@ -24,6 +24,8 @@ export interface FinancialServiceDraft {
   name?: string;
   category?: string;
   frequency?: Frequency;
+  customRepeatEvery?: number;
+  customRepeatUnit?: "MINUTE" | "HOUR" | "DAY" | "WEEK" | "MONTH";
   nextRenewal?: Date;
   planUrl?: string;
   templateId?: string;
@@ -68,7 +70,7 @@ export async function recordFinancialEvent(input: RecordFinancialEventInput) {
     }
 
     if (serviceDraft.action === "CREATE") {
-      const recurring = serviceDraft.frequency === "WEEKLY" || serviceDraft.frequency === "MONTHLY" || serviceDraft.frequency === "YEARLY";
+      const recurring = !["ONE_TIME", "LIFETIME"].includes(serviceDraft.frequency || "");
       if (!serviceDraft.name || !serviceDraft.category || !serviceDraft.frequency || (recurring && !serviceDraft.nextRenewal)) {
         throw new Error("A service needs a name, category, billing frequency and a renewal date when recurring");
       }
@@ -80,6 +82,8 @@ export async function recordFinancialEvent(input: RecordFinancialEventInput) {
           price: new Prisma.Decimal(input.amount),
           currency: input.currency,
           frequency: serviceDraft.frequency,
+          customRepeatEvery: serviceDraft.frequency === "CUSTOM" ? serviceDraft.customRepeatEvery : null,
+          customRepeatUnit: serviceDraft.frequency === "CUSTOM" ? serviceDraft.customRepeatUnit : null,
           planUrl: serviceDraft.planUrl || undefined,
           expiryDate: serviceDraft.nextRenewal,
           lastRenewalDate: input.status === "APPROVED" ? input.date : undefined,
@@ -128,7 +132,7 @@ export async function recordFinancialEvent(input: RecordFinancialEventInput) {
     const createdCredentials: Array<{ id: string; platform: string; label: string; expiresAt: Date | null }> = [];
     if (serviceDraft.action === "CREATE" && service) {
       await db.service.update({ where: { id: service.id }, data: { paidTxId: transaction.id } });
-      const repeat = serviceReminderRepeat(service.frequency);
+      const repeat = serviceReminderRepeat(service.frequency, service.customRepeatEvery, service.customRepeatUnit);
       if (repeat && service.expiryDate) {
         reminder = await db.reminder.create({
           data: {

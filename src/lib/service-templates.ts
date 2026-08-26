@@ -8,6 +8,8 @@ export interface ServiceTemplate {
   metadata: Array<{ key: string; label: string; type: string }>;
 }
 
+export { serviceReminderRepeat } from "./service-billing";
+
 export const SERVICE_TEMPLATES: ServiceTemplate[] = [
   {
     id: "SAAS_API",
@@ -104,11 +106,4 @@ export const SERVICE_TEMPLATES: ServiceTemplate[] = [
 
 export function serviceTemplate(id: unknown) {
   return SERVICE_TEMPLATES.find((template) => template.id === id) ?? null;
-}
-
-export function serviceReminderRepeat(frequency: string | null | undefined) {
-  if (frequency === "WEEKLY") return { repeatEvery: 1, repeatUnit: "WEEK" as const };
-  if (frequency === "MONTHLY") return { repeatEvery: 1, repeatUnit: "MONTH" as const };
-  if (frequency === "YEARLY") return { repeatEvery: 12, repeatUnit: "MONTH" as const };
-  return null;
 }

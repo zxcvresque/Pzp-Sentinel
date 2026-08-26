@@ -4,6 +4,7 @@ import { getCurrentUser, hasRole } from "@/lib/auth";
 import { Prisma } from "@/generated/prisma/client";
 import { logAudit } from "@/lib/audit";
 import { serviceReminderRepeat } from "@/lib/service-templates";
+import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const {
     category, name, columns, entries,
-    price, currency, frequency, planUrl, expiryDate, status,
+    price, currency, frequency, customRepeatEvery, customRepeatUnit, planUrl, expiryDate, status,
   } = body;
 
   if (!category || !name) {
@@ -42,6 +43,14 @@ export async function POST(req: NextRequest) {
 
   if (currency && !["INR", "USD"].includes(currency)) {
     return NextResponse.json({ error: "Invalid currency" }, { status: 400 });
+  }
+  if (frequency && !isServiceFrequency(frequency) && !["ONE_TIME", "LIFETIME"].includes(frequency)) {
+    return NextResponse.json({ error: "Invalid billing frequency" }, { status: 400 });
+  }
+  const parsedCustomEvery = frequency === "CUSTOM" ? Number(customRepeatEvery) : null;
+  const parsedCustomUnit = frequency === "CUSTOM" && isCustomRepeatUnit(customRepeatUnit) ? customRepeatUnit : null;
+  if (frequency === "CUSTOM" && (!Number.isInteger(parsedCustomEvery) || Number(parsedCustomEvery) <= 0 || !parsedCustomUnit)) {
+    return NextResponse.json({ error: "Custom billing needs a positive interval and time unit" }, { status: 400 });
   }
   const parsedPrice = price != null ? Number(price) : null;
   if (price != null && (!Number.isFinite(parsedPrice) || parsedPrice! <= 0)) {
@@ -57,12 +66,14 @@ export async function POST(req: NextRequest) {
         price: parsedPrice != null ? new Prisma.Decimal(parsedPrice) : undefined,
         currency: currency || undefined,
         frequency: frequency || undefined,
+        customRepeatEvery: parsedCustomEvery,
+        customRepeatUnit: parsedCustomUnit,
         planUrl: planUrl || undefined,
         expiryDate: expiryDate ? new Date(expiryDate) : undefined,
         status: status || undefined,
       },
     });
-    const repeat = serviceReminderRepeat(service.frequency);
+    const repeat = serviceReminderRepeat(service.frequency, service.customRepeatEvery, service.customRepeatUnit);
     if (service.expiryDate && repeat) {
       await db.reminder.create({
         data: {

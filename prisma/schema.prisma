@@ -84,7 +84,10 @@ enum SubStatus {
 enum Frequency {
   WEEKLY
   MONTHLY
+  QUARTERLY
+  HALF_YEARLY
   YEARLY
+  CUSTOM
   ONE_TIME
   LIFETIME
 }
@@ -220,6 +223,7 @@ model User {
   credentialsCreated           Credential[]                   @relation("CredCreatedBy")
   credentialsReviewed          Credential[]                   @relation("CredReviewedBy")
   credentialAccess             CredentialAccess[]             @relation("CredAccessUser")
+  openRouterKeyAccess          OpenRouterKeyAccess[]          @relation("OpenRouterKeyAccessUser")
   documentsUploaded            Document[]                     @relation("DocumentUploader")
   notifications                Notification[]
   razorpayOrders               RazorpayOrder[]
@@ -537,36 +541,38 @@ model BmcSubscriptionFeedback {
 }
 
 model Service {
-  id              String             @id @default(cuid())
-  category        String
-  name            String
-  columns         Json?
-  entries         Json?
+  id                String              @id @default(cuid())
+  category          String
+  name              String
+  columns           Json?
+  entries           Json?
   // Optional subscription / cost tracking
-  price           Decimal?
-  currency        Currency?
-  frequency       Frequency?
-  planUrl         String?
-  expiryDate      DateTime?
-  lastRenewalDate DateTime?
-  autoRenew       Boolean            @default(false)
-  workflowId      String?
-  paidTxId        String?            @unique
-  paidTransaction Transaction?       @relation("SubPaidTx", fields: [paidTxId], references: [id])
-  status          SubStatus?
-  attachments     String[]           @default([])
-  archivedAt      DateTime?
-  archivedById    String?
+  price             Decimal?
+  currency          Currency?
+  frequency         Frequency?
+  customRepeatEvery Int?
+  customRepeatUnit  ReminderRepeatUnit?
+  planUrl           String?
+  expiryDate        DateTime?
+  lastRenewalDate   DateTime?
+  autoRenew         Boolean             @default(false)
+  workflowId        String?
+  paidTxId          String?             @unique
+  paidTransaction   Transaction?        @relation("SubPaidTx", fields: [paidTxId], references: [id])
+  status            SubStatus?
+  attachments       String[]            @default([])
+  archivedAt        DateTime?
+  archivedById      String?
   // Optional link back to the VPS server that created this subscription.
   // SetNull so deleting a server preserves the Service + its transaction history.
-  vpsServerId     String?            @unique
-  vpsServer       VpsServer?         @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
-  createdAt       DateTime           @default(now())
-  transactions    Transaction[]      @relation("ServiceTransactions")
-  credentials     Credential[]
-  reminders       Reminder[]
-  alerts          OperationalAlert[]
-  documents       Document[]
+  vpsServerId       String?             @unique
+  vpsServer         VpsServer?          @relation("VpsSub", fields: [vpsServerId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+  transactions      Transaction[]       @relation("ServiceTransactions")
+  credentials       Credential[]
+  reminders         Reminder[]
+  alerts            OperationalAlert[]
+  documents         Document[]
 
   @@index([archivedAt, status])
   @@index([workflowId])
@@ -576,22 +582,59 @@ model Service {
 // authCookie and apiKey are always encrypted with CREDENTIAL_ENC_KEY before
 // they are written. lastSnapshot deliberately contains usage metadata only.
 model ApiUsageAccount {
-  id            String    @id @default(cuid())
-  provider      String    @default("OPENCODE_GO")
-  name          String
-  workspaceId   String
-  authCookie    String
-  apiKey        String?
-  expiresAt     DateTime?
-  enabled       Boolean   @default(true)
-  lastSnapshot  Json?
-  lastFetchedAt DateTime?
-  lastError     String?
-  lastErrorAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String          @id @default(cuid())
+  provider       String          @default("OPENCODE_GO")
+  name           String
+  workspaceId    String?
+  authCookie     String?
+  apiKey         String?
+  expiresAt      DateTime?
+  enabled        Boolean         @default(true)
+  lastSnapshot   Json?
+  lastFetchedAt  DateTime?
+  lastError      String?
+  lastErrorAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  openRouterKeys OpenRouterKey[]
 
   @@index([provider, enabled])
+}
+
+// Plaintext OpenRouter keys are field-encrypted. List endpoints return only
+// masked labels and usage metadata; reveal is a separate, audited action.
+model OpenRouterKey {
+  id               String                @id @default(cuid())
+  accountId        String
+  account          ApiUsageAccount       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name             String
+  encryptedKey     String
+  keyHash          String?
+  configuredLimit  Decimal?
+  enabled          Boolean               @default(true)
+  lastSnapshot     Json?
+  activitySnapshot Json?
+  lastFetchedAt    DateTime?
+  lastError        String?
+  lastErrorAt      DateTime?
+  accesses         OpenRouterKeyAccess[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([accountId, keyHash])
+  @@index([accountId, enabled])
+}
+
+model OpenRouterKeyAccess {
+  id        String        @id @default(cuid())
+  keyId     String
+  key       OpenRouterKey @relation(fields: [keyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation("OpenRouterKeyAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@unique([keyId, userId])
+  @@index([userId])
 }
 
 model Project {

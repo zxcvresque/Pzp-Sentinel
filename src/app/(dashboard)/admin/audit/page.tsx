@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
+import ShareButton from "@/components/ShareButton";
 
 interface AuditEntry {
   id: string;
@@ -123,6 +124,8 @@ export default function AuditPage() {
         params.set("to", toDate.toISOString());
       }
       if (cursor) params.set("cursor", cursor);
+      const sharedAuditId = new URLSearchParams(window.location.search).get("auditId");
+      if (sharedAuditId) params.set("id", sharedAuditId);
 
       const res = await fetch(`/api/audit?${params.toString()}`);
       const data = await res.json();
@@ -293,7 +296,8 @@ export default function AuditPage() {
             const expanded = expandedId === group.id;
             const actor = userMap[log.userId];
             return (
-              <div key={group.id}>
+              <div key={group.id} data-share-target={`audit:${log.id}`} className="relative">
+                <ShareButton entityType="audit" entityId={log.id} label="" className="absolute right-11 top-2.5 z-10 h-8 w-8 px-0 sm:right-12" />
                 <button
                   type="button"
                   onClick={() => setExpandedId(expanded ? null : group.id)}

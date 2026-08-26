@@ -13,6 +13,7 @@ import { serviceReminderRepeat } from "@/lib/service-templates";
 import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
 import { parseBmcWebhook } from "@/lib/bmc-webhook";
 import { parseDonationFrequency } from "@/lib/donation-frequency";
+import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
 
 export async function PATCH(
   req: NextRequest,
@@ -23,7 +24,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, serviceId, createService, confirmReviewedEdit, donationFrequency } = body;
+  const { amount, currency, direction, type, method, description, date, fromUserId, attachments, serviceId, createService, updateService, credentials, confirmReviewedEdit, donationFrequency } = body;
 
   const transaction = await prisma.transaction.findUnique({ where: { id } });
   if (!transaction) return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
@@ -142,13 +143,36 @@ export async function PATCH(
   }
   const effectiveDirection = direction ?? transaction.direction;
   const effectiveType = type ?? transaction.type;
+  if (credentials !== undefined) {
+    if (!Array.isArray(credentials) || credentials.length > 10) {
+      return NextResponse.json({ error: "Enter at most 10 credentials for a linked service" }, { status: 400 });
+    }
+    for (const rawCredential of credentials as Array<Record<string, unknown>>) {
+      const credentialId = typeof rawCredential.id === "string" ? rawCredential.id : "";
+      const label = typeof rawCredential.label === "string" ? rawCredential.label.trim() : "";
+      const value = typeof rawCredential.value === "string" ? rawCredential.value : "";
+      const expiresAt = rawCredential.expiresAt ? new Date(String(rawCredential.expiresAt)) : null;
+      if (!label || (expiresAt && Number.isNaN(expiresAt.getTime())) || (!credentialId && !value)) {
+        return NextResponse.json({ error: "Each new credential needs a label and secret; expiry dates must be valid" }, { status: 400 });
+      }
+    }
+    if (!createService) {
+      const existingTargetId = typeof serviceId === "string" && serviceId ? serviceId : transaction.serviceId;
+      const credentialIds = credentials.map((item: Record<string, unknown>) => typeof item.id === "string" ? item.id : "").filter(Boolean);
+      if (!existingTargetId || (credentialIds.length && await prisma.credential.count({ where: { id: { in: credentialIds }, serviceId: existingTargetId, parentId: null, deletedAt: null } }) !== new Set(credentialIds).size)) {
+        return NextResponse.json({ error: "A linked credential could not be found" }, { status: 400 });
+      }
+    }
+  }
   let createdServiceId: string | null = null;
   if (createService) {
     const serviceName = typeof createService.name === "string" ? createService.name.trim() : "";
     const serviceCategory = typeof createService.category === "string" ? createService.category.trim() : "";
-    const serviceFrequency = ["WEEKLY", "MONTHLY", "YEARLY"].includes(createService.frequency) ? createService.frequency : null;
+    const serviceFrequency = isServiceFrequency(createService.frequency) ? createService.frequency : null;
+    const customRepeatEvery = serviceFrequency === "CUSTOM" ? Number(createService.customRepeatEvery) : null;
+    const customRepeatUnit = serviceFrequency === "CUSTOM" && isCustomRepeatUnit(createService.customRepeatUnit) ? createService.customRepeatUnit : null;
     const renewalAt = createService.nextRenewal ? new Date(createService.nextRenewal) : null;
-    if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !serviceName || !serviceCategory || !serviceFrequency || !renewalAt || Number.isNaN(renewalAt.getTime())) {
+    if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !serviceName || !serviceCategory || !serviceFrequency || (serviceFrequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit)) || !renewalAt || Number.isNaN(renewalAt.getTime())) {
       return NextResponse.json({ error: "Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal" }, { status: 400 });
     }
     const service = await prisma.service.create({
@@ -158,6 +182,12 @@ export async function PATCH(
         price: amount !== undefined ? new Prisma.Decimal(amount) : transaction.amount,
         currency: currency ?? transaction.currency,
         frequency: serviceFrequency,
+        customRepeatEvery,
+        customRepeatUnit,
+        planUrl: typeof createService.planUrl === "string" ? createService.planUrl.trim() || null : null,
+        autoRenew: createService.autoRenew === true,
+        columns: Array.isArray(createService.columns) && createService.columns.length ? createService.columns : undefined,
+        entries: Array.isArray(createService.entries) && createService.entries.length ? createService.entries : undefined,
         expiryDate: renewalAt,
         lastRenewalDate: date ? new Date(date) : transaction.date,
         status: "ACTIVE",
@@ -166,7 +196,7 @@ export async function PATCH(
       },
     });
     createdServiceId = service.id;
-    const repeat = serviceReminderRepeat(serviceFrequency);
+    const repeat = serviceReminderRepeat(serviceFrequency, customRepeatEvery, customRepeatUnit);
     if (repeat) {
       await prisma.reminder.create({
         data: {
@@ -181,6 +211,139 @@ export async function PATCH(
           serviceId: service.id,
         },
       });
+    }
+  }
+
+  let serviceBeforeForAudit: Record<string, unknown> | null = null;
+  let serviceAfterForAudit: Record<string, unknown> | null = null;
+  const credentialAuditRows: Array<{ id: string; action: "CREDENTIAL_CREATE" | "CREDENTIAL_UPDATE"; before?: Record<string, unknown>; after: Record<string, unknown> }> = [];
+  const targetServiceId = createdServiceId || (typeof serviceId === "string" && serviceId ? serviceId : transaction.serviceId);
+  if (updateService) {
+    if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !targetServiceId) {
+      return NextResponse.json({ error: "Service details can only be edited for a linked outgoing subscription" }, { status: 400 });
+    }
+    const existingService = await prisma.service.findUnique({ where: { id: targetServiceId } });
+    if (!existingService) return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+    const serviceName = typeof updateService.name === "string" ? updateService.name.trim() : "";
+    const serviceCategory = typeof updateService.category === "string" ? updateService.category.trim() : "";
+    const serviceFrequency = isServiceFrequency(updateService.frequency) ? updateService.frequency : null;
+    const customRepeatEvery = serviceFrequency === "CUSTOM" ? Number(updateService.customRepeatEvery) : null;
+    const customRepeatUnit = serviceFrequency === "CUSTOM" && isCustomRepeatUnit(updateService.customRepeatUnit) ? updateService.customRepeatUnit : null;
+    const renewalAt = updateService.nextRenewal ? new Date(updateService.nextRenewal) : null;
+    if (!serviceName || !serviceCategory || !serviceFrequency || (serviceFrequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit)) || !renewalAt || Number.isNaN(renewalAt.getTime())) {
+      return NextResponse.json({ error: "Complete the linked service name, category, billing frequency and next renewal" }, { status: 400 });
+    }
+    serviceBeforeForAudit = {
+      name: existingService.name,
+      category: existingService.category,
+      frequency: existingService.frequency,
+      customRepeatEvery: existingService.customRepeatEvery,
+      customRepeatUnit: existingService.customRepeatUnit,
+      planUrl: existingService.planUrl,
+      expiryDate: existingService.expiryDate,
+      autoRenew: existingService.autoRenew,
+      columns: existingService.columns,
+      entries: existingService.entries,
+    };
+    const updatedService = await prisma.service.update({
+      where: { id: targetServiceId },
+      data: {
+        name: serviceName,
+        category: serviceCategory,
+        price: amount !== undefined ? new Prisma.Decimal(amount) : transaction.amount,
+        currency: currency ?? transaction.currency,
+        frequency: serviceFrequency,
+        customRepeatEvery,
+        customRepeatUnit,
+        planUrl: typeof updateService.planUrl === "string" ? updateService.planUrl.trim() || null : null,
+        expiryDate: renewalAt,
+        autoRenew: updateService.autoRenew === true,
+        columns: Array.isArray(updateService.columns) && updateService.columns.length ? updateService.columns : Prisma.JsonNull,
+        entries: Array.isArray(updateService.entries) && updateService.entries.length ? updateService.entries : Prisma.JsonNull,
+      },
+    });
+    const repeat = serviceReminderRepeat(updatedService.frequency, updatedService.customRepeatEvery, updatedService.customRepeatUnit);
+    const existingReminder = await prisma.reminder.findFirst({ where: { serviceId: targetServiceId } });
+    if (repeat) {
+      const reminderData = {
+        message: `Renew ${updatedService.name} (${updatedService.currency} ${updatedService.price})`,
+        frequency: "CUSTOM" as const,
+        repeatEvery: repeat.repeatEvery,
+        repeatUnit: repeat.repeatUnit,
+        nextFire: renewalAt,
+        active: updatedService.status === "ACTIVE",
+        recipientRoles: ["ADMIN" as const],
+      };
+      if (existingReminder) await prisma.reminder.update({ where: { id: existingReminder.id }, data: reminderData });
+      else await prisma.reminder.create({ data: { ...reminderData, createdById: user.id, channel: "BOTH", serviceId: targetServiceId } });
+    } else if (existingReminder?.active) {
+      await prisma.reminder.update({ where: { id: existingReminder.id }, data: { active: false } });
+    }
+    serviceAfterForAudit = {
+      name: updatedService.name,
+      category: updatedService.category,
+      frequency: updatedService.frequency,
+      customRepeatEvery: updatedService.customRepeatEvery,
+      customRepeatUnit: updatedService.customRepeatUnit,
+      planUrl: updatedService.planUrl,
+      expiryDate: updatedService.expiryDate,
+      autoRenew: updatedService.autoRenew,
+      columns: updatedService.columns,
+      entries: updatedService.entries,
+    };
+  }
+
+  if (credentials !== undefined) {
+    if (!targetServiceId || !Array.isArray(credentials) || credentials.length > 10) {
+      return NextResponse.json({ error: "Enter at most 10 credentials for a linked service" }, { status: 400 });
+    }
+    for (const rawCredential of credentials as Array<Record<string, unknown>>) {
+      const credentialId = typeof rawCredential.id === "string" ? rawCredential.id : "";
+      const label = typeof rawCredential.label === "string" ? rawCredential.label.trim() : "";
+      const value = typeof rawCredential.value === "string" ? rawCredential.value : "";
+      const expiresAt = rawCredential.expiresAt ? new Date(String(rawCredential.expiresAt)) : null;
+      if (!label || (expiresAt && Number.isNaN(expiresAt.getTime())) || (!credentialId && !value)) {
+        return NextResponse.json({ error: "Each new credential needs a label and secret; expiry dates must be valid" }, { status: 400 });
+      }
+      if (credentialId) {
+        const existingCredential = await prisma.credential.findFirst({ where: { id: credentialId, serviceId: targetServiceId, parentId: null, deletedAt: null } });
+        if (!existingCredential) return NextResponse.json({ error: "A linked credential could not be found" }, { status: 400 });
+        const updatedCredential = await prisma.credential.update({
+          where: { id: credentialId },
+          data: {
+            label,
+            expiresAt,
+            ...(value ? { value: encryptSecret(value) } : {}),
+          },
+        });
+        if (value && existingCredential.vpsServerId && existingCredential.credKind) {
+          const vpsColumn = existingCredential.credKind === "VPS_PASSWORD" ? "password"
+            : existingCredential.credKind === "VPS_SSH_KEY" ? "sshKeyFileUrl"
+              : null;
+          if (vpsColumn) {
+            await prisma.vpsServer.update({ where: { id: existingCredential.vpsServerId }, data: { [vpsColumn]: encryptSecret(value) } });
+          }
+        }
+        credentialAuditRows.push({
+          id: credentialId,
+          action: "CREDENTIAL_UPDATE",
+          before: { label: existingCredential.label, expiresAt: existingCredential.expiresAt },
+          after: { label: updatedCredential.label, expiresAt: updatedCredential.expiresAt, valueChanged: Boolean(value) },
+        });
+      } else {
+        const createdCredential = await prisma.credential.create({
+          data: {
+            platform: typeof rawCredential.platform === "string" && rawCredential.platform.trim() ? rawCredential.platform.trim() : (typeof updateService?.name === "string" ? updateService.name.trim() : "Service"),
+            label,
+            value: encryptSecret(value),
+            expiresAt,
+            status: "APPROVED",
+            createdById: user.id,
+            serviceId: targetServiceId,
+          },
+        });
+        credentialAuditRows.push({ id: createdCredential.id, action: "CREDENTIAL_CREATE", after: { label: createdCredential.label, expiresAt: createdCredential.expiresAt, serviceId: targetServiceId } });
+      }
     }
   }
   if (serviceId !== undefined || effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION") {
@@ -212,6 +375,11 @@ export async function PATCH(
     data,
     include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true, linkedService: { select: { id: true, name: true } } },
   });
+
+  if (serviceBeforeForAudit && serviceAfterForAudit && targetServiceId) {
+    await logAudit({ userId: user.id, action: "SERVICE_UPDATE", entityType: "Service", entityId: targetServiceId, transactionId: id, before: serviceBeforeForAudit, after: serviceAfterForAudit, userName: user.name, request: req });
+  }
+  await Promise.all(credentialAuditRows.map((row) => logAudit({ userId: user.id, action: row.action, entityType: "Credential", entityId: row.id, transactionId: id, before: row.before, after: row.after, userName: user.name, request: req })));
 
   if (isBmcReconciliation && updated.fromUserId) {
     if (bmcReceipt?.supporterId) {

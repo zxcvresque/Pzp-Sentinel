@@ -3,6 +3,7 @@ import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { formatTgMessage, notifyAdmins } from "@/lib/notifications";
 import { recordFinancialEvent } from "@/lib/record-financial-event";
+import { nextServiceCycleDate } from "@/lib/service-billing";
 
 export type VpsDuration = {
   mode?: "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION" | null;
@@ -16,11 +17,7 @@ export type VpsDuration = {
 const RECURRING = new Set(["WEEKLY", "MONTHLY", "YEARLY"]);
 
 export function nextCycleDate(from: Date, frequency: string | null | undefined): Date {
-  const date = new Date(from);
-  if (frequency === "WEEKLY") date.setDate(date.getDate() + 7);
-  if (frequency === "MONTHLY") date.setMonth(date.getMonth() + 1);
-  if (frequency === "YEARLY") date.setFullYear(date.getFullYear() + 1);
-  return date;
+  return nextServiceCycleDate(from, frequency);
 }
 
 function parsePrice(value: VpsDuration["price"]): number {

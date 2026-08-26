@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import ServicesNav from "@/components/ServicesNav";
 import TgUser from "@/components/TgUser";
+import ShareButton from "@/components/ShareButton";
 
 interface ServiceDetail {
   id: string;
@@ -44,11 +45,11 @@ export default function ServiceDetailPage() {
   if (!service) return <div className="skeleton h-72 w-full" />;
 
   return (
-    <div>
+    <div data-share-target={`service:${service.id}`}>
       <ServicesNav role="ADMIN" />
       <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row">
         <div><Link href="/admin/services" className="text-xs text-text-tertiary hover:text-lime">← Service catalogue</Link><h1 className="mt-2 text-3xl font-extrabold">{service.name}</h1><p className="mt-1 text-sm text-text-secondary">{service.category} · {service.status || "Untracked"}</p></div>
-        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex"><Link href={`/admin/transactions/new?mode=RENEWAL&serviceId=${encodeURIComponent(service.id)}`} className="rounded-full bg-lime px-4 py-2.5 text-center text-sm font-semibold text-bg-void">Record renewal</Link>{service.planUrl && <a href={service.planUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--border)] px-4 py-2.5 text-center text-sm text-lime">Open plan ↗</a>}</div>
+        <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:flex"><ShareButton entityType="service" entityId={service.id} className="py-2.5" /><Link href={`/admin/transactions/new?mode=RENEWAL&serviceId=${encodeURIComponent(service.id)}`} className="rounded-full bg-lime px-4 py-2.5 text-center text-sm font-semibold text-bg-void">Record renewal</Link>{service.planUrl && <a href={service.planUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[var(--border)] px-4 py-2.5 text-center text-sm text-lime">Open plan ↗</a>}</div>
       </div>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

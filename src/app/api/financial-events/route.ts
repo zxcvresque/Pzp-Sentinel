@@ -8,10 +8,10 @@ import { logTransaction as logTelegramTransaction } from "@/lib/telegram-log";
 import { logTransaction as logGithubTransaction } from "@/lib/github-log";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
+import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
 
 const MODES = ["INCOME", "PURCHASE", "SUBSCRIPTION", "RENEWAL", "REVERSAL", "ADJUSTMENT"] as const;
 const METHODS = ["OTHER", "BANK", "UPI"] as const;
-const FREQUENCIES = ["WEEKLY", "MONTHLY", "YEARLY"] as const;
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -59,9 +59,12 @@ export async function POST(req: NextRequest) {
 
   const rawService = body?.service && typeof body.service === "object" ? body.service : {};
   const serviceAction = ["NONE", "LINK", "CREATE"].includes(rawService.action) ? rawService.action : "NONE";
-  const frequency = FREQUENCIES.includes(rawService.frequency) ? rawService.frequency : undefined;
+  const frequency = isServiceFrequency(rawService.frequency) ? rawService.frequency : undefined;
+  const customRepeatEvery = frequency === "CUSTOM" ? Number(rawService.customRepeatEvery) : undefined;
+  const customRepeatUnit = frequency === "CUSTOM" && isCustomRepeatUnit(rawService.customRepeatUnit) ? rawService.customRepeatUnit : undefined;
   const nextRenewal = rawService.nextRenewal ? new Date(rawService.nextRenewal) : undefined;
-  if (serviceAction === "CREATE" && (!rawService.name?.trim() || !rawService.category?.trim() || !frequency || !nextRenewal || Number.isNaN(nextRenewal.getTime()))) {
+  const invalidCustomInterval = frequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit);
+  if (serviceAction === "CREATE" && (!rawService.name?.trim() || !rawService.category?.trim() || !frequency || invalidCustomInterval || !nextRenewal || Number.isNaN(nextRenewal.getTime()))) {
     return NextResponse.json({ error: "Complete the service name, category, billing frequency and next renewal" }, { status: 400 });
   }
   if (serviceAction === "LINK" && !rawService.id) return NextResponse.json({ error: "Choose a service" }, { status: 400 });
@@ -102,6 +105,8 @@ export async function POST(req: NextRequest) {
         name: typeof rawService.name === "string" ? rawService.name.trim() : undefined,
         category: typeof rawService.category === "string" ? rawService.category.trim() : undefined,
         frequency,
+        customRepeatEvery,
+        customRepeatUnit,
         nextRenewal,
         planUrl: typeof rawService.planUrl === "string" ? rawService.planUrl.trim() : undefined,
         templateId: typeof rawService.templateId === "string" ? rawService.templateId : undefined,

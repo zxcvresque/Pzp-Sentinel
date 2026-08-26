@@ -456,7 +456,7 @@ async function backfillServiceOperations() {
         }));
         links += linked.count;
       }
-      const repeat = serviceReminderRepeat(service.frequency);
+      const repeat = serviceReminderRepeat(service.frequency, service.customRepeatEvery, service.customRepeatUnit);
       if (service.status === "ACTIVE" && service.expiryDate && repeat && service.reminders.length === 0) {
         await dbRetry(() => prisma.reminder.create({
           data: {
@@ -1262,11 +1262,11 @@ async function checkSubscriptionRenewals() {
         where: {
           autoRenew: true,
           status: "ACTIVE",
-          frequency: { in: ["WEEKLY", "MONTHLY", "YEARLY"] },
+          frequency: { in: ["WEEKLY", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "CUSTOM"] },
           price: { not: null },
           expiryDate: { not: null, lte: now },
         },
-        select: { id: true, name: true, price: true, currency: true, frequency: true, expiryDate: true },
+        select: { id: true, name: true, price: true, currency: true, frequency: true, customRepeatEvery: true, customRepeatUnit: true, expiryDate: true },
       }),
     );
 

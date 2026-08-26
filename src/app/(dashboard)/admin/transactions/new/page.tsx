@@ -7,6 +7,7 @@ import PageTour from "@/components/PageTour";
 import TransactionsNav from "@/components/TransactionsNav";
 import TransactionAttachmentField from "@/components/TransactionAttachmentField";
 import { SERVICE_TEMPLATES } from "@/lib/service-templates";
+import { CUSTOM_REPEAT_UNITS, SERVICE_FREQUENCY_OPTIONS } from "@/lib/service-billing";
 
 type Mode = "INCOME" | "PURCHASE" | "SUBSCRIPTION" | "RENEWAL" | "REVERSAL" | "ADJUSTMENT";
 type ServiceAction = "NONE" | "LINK" | "CREATE";
@@ -46,6 +47,8 @@ export default function RecordTransactionPage() {
   const [serviceName, setServiceName] = useState("");
   const [category, setCategory] = useState("");
   const [frequency, setFrequency] = useState("MONTHLY");
+  const [customRepeatEvery, setCustomRepeatEvery] = useState("1");
+  const [customRepeatUnit, setCustomRepeatUnit] = useState("MONTH");
   const [nextRenewal, setNextRenewal] = useState("");
   const [planUrl, setPlanUrl] = useState("");
   const [autoRenew, setAutoRenew] = useState(false);
@@ -142,6 +145,8 @@ export default function RecordTransactionPage() {
             name: serviceName,
             category,
             frequency,
+            customRepeatEvery: frequency === "CUSTOM" ? customRepeatEvery : undefined,
+            customRepeatUnit: frequency === "CUSTOM" ? customRepeatUnit : undefined,
             nextRenewal,
             planUrl,
             autoRenew,
@@ -207,7 +212,11 @@ export default function RecordTransactionPage() {
                 <Field label="Template"><Dropdown value={templateId} options={[{ value: "", label: "Custom service" }, ...SERVICE_TEMPLATES.map((item) => ({ value: item.id, label: item.label }))]} onChange={selectTemplate} /></Field>
                 <Field label="Service name"><input required value={serviceName} onChange={(event) => setServiceName(event.target.value)} className={inputClass} /></Field>
                 <Field label="Category"><input required value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass} /></Field>
-                <Field label="Billing frequency"><Dropdown value={frequency} options={[{ value: "WEEKLY", label: "Weekly" }, { value: "MONTHLY", label: "Monthly" }, { value: "YEARLY", label: "Yearly" }]} onChange={setFrequency} /></Field>
+                <Field label="Billing frequency"><Dropdown value={frequency} options={SERVICE_FREQUENCY_OPTIONS.map((option) => ({ ...option }))} onChange={setFrequency} /></Field>
+                {frequency === "CUSTOM" && <>
+                  <Field label="Repeat every"><input required inputMode="numeric" min="1" step="1" type="number" value={customRepeatEvery} onChange={(event) => setCustomRepeatEvery(event.target.value)} className={inputClass} /></Field>
+                  <Field label="Custom unit"><Dropdown value={customRepeatUnit} options={CUSTOM_REPEAT_UNITS.map((unit) => ({ value: unit, label: `${unit.charAt(0)}${unit.slice(1).toLowerCase()}${Number(customRepeatEvery) === 1 ? "" : "s"}` }))} onChange={setCustomRepeatUnit} /></Field>
+                </>}
                 <Field label="Next renewal"><input required type="date" value={nextRenewal} onChange={(event) => setNextRenewal(event.target.value)} className={inputClass} /></Field>
                 <Field label="Plan / dashboard URL" extra="sm:col-span-2 lg:col-span-3"><input type="url" value={planUrl} onChange={(event) => setPlanUrl(event.target.value)} placeholder="https://…" className={inputClass} /></Field>
               </div>

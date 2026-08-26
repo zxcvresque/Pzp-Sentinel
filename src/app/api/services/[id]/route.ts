@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { Prisma } from "@/generated/prisma/client";
 import { notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { serviceReminderRepeat } from "@/lib/service-templates";
+import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
 
 export async function GET(
   _req: NextRequest,
@@ -59,8 +60,18 @@ export async function PATCH(
   const body = await req.json();
   const {
     category, name, columns, entries,
-    price, currency, frequency, planUrl, expiryDate, status,
+    price, currency, frequency, customRepeatEvery, customRepeatUnit, planUrl, expiryDate, status, autoRenew,
   } = body;
+
+  if (frequency && !isServiceFrequency(frequency) && !["ONE_TIME", "LIFETIME"].includes(frequency)) {
+    return NextResponse.json({ error: "Invalid billing frequency" }, { status: 400 });
+  }
+  const effectiveFrequency = frequency !== undefined ? frequency : existing.frequency;
+  const effectiveCustomEvery = customRepeatEvery !== undefined ? Number(customRepeatEvery) : existing.customRepeatEvery;
+  const effectiveCustomUnit = customRepeatUnit !== undefined ? customRepeatUnit : existing.customRepeatUnit;
+  if (effectiveFrequency === "CUSTOM" && (!Number.isInteger(effectiveCustomEvery) || Number(effectiveCustomEvery) <= 0 || !isCustomRepeatUnit(effectiveCustomUnit))) {
+    return NextResponse.json({ error: "Custom billing needs a positive interval and time unit" }, { status: 400 });
+  }
 
   const data: Record<string, unknown> = {};
   if (category !== undefined) data.category = category;
@@ -70,9 +81,12 @@ export async function PATCH(
   if (price !== undefined) data.price = price != null ? new Prisma.Decimal(price) : null;
   if (currency !== undefined) data.currency = currency || null;
   if (frequency !== undefined) data.frequency = frequency || null;
+  if (customRepeatEvery !== undefined || frequency !== undefined) data.customRepeatEvery = effectiveFrequency === "CUSTOM" ? Number(effectiveCustomEvery) : null;
+  if (customRepeatUnit !== undefined || frequency !== undefined) data.customRepeatUnit = effectiveFrequency === "CUSTOM" ? effectiveCustomUnit : null;
   if (planUrl !== undefined) data.planUrl = planUrl || null;
   if (expiryDate !== undefined) data.expiryDate = expiryDate ? new Date(expiryDate) : null;
   if (status !== undefined) data.status = status || null;
+  if (autoRenew !== undefined) data.autoRenew = autoRenew === true;
 
   const service = await prisma.service.update({ where: { id }, data });
   if (expiryDate !== undefined || status !== undefined) {
@@ -84,7 +98,7 @@ export async function PATCH(
 
   // Keep the linked renewal reminder synchronized with service billing data.
   if (service.expiryDate && service.frequency) {
-    const repeat = serviceReminderRepeat(service.frequency);
+    const repeat = serviceReminderRepeat(service.frequency, service.customRepeatEvery, service.customRepeatUnit);
     if (repeat) {
       await prisma.reminder.upsert({
         where: { id: (await prisma.reminder.findFirst({ where: { serviceId: id } }))?.id ?? "missing" },
