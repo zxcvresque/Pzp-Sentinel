@@ -116,11 +116,11 @@ export async function GET(req: NextRequest) {
   if (shouldRefresh) {
     if (isAdmin) {
       const accounts = await prisma.apiUsageAccount.findMany({ where: { provider: "OPENROUTER", enabled: true }, select: { id: true, apiKey: true } });
-      const keys = await prisma.openRouterKey.findMany({ where: { enabled: true }, select: { id: true, encryptedKey: true, keyHash: true, account: { select: { apiKey: true } } } });
+      const keys = await prisma.openRouterKey.findMany({ where: { enabled: true, account: { enabled: true } }, select: { id: true, encryptedKey: true, keyHash: true, account: { select: { apiKey: true } } } });
       await Promise.allSettled([...accounts.map(refreshAccount), ...keys.map(refreshStoredKey)]);
     } else {
       const keys = await prisma.openRouterKey.findMany({
-        where: { enabled: true, accesses: { some: { userId: user.id } } },
+        where: { enabled: true, account: { enabled: true }, accesses: { some: { userId: user.id } } },
         select: { id: true, encryptedKey: true, keyHash: true, account: { select: { apiKey: true } } },
       });
       await Promise.allSettled(keys.map(refreshStoredKey));

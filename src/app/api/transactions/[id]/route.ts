@@ -14,6 +14,7 @@ import { decryptSecret, encryptSecret } from "@/lib/secret-crypto";
 import { parseBmcWebhook } from "@/lib/bmc-webhook";
 import { parseDonationFrequency } from "@/lib/donation-frequency";
 import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
+import { isProviderVerified } from "@/lib/provider-verification";
 
 export async function PATCH(
   req: NextRequest,
@@ -32,7 +33,7 @@ export async function PATCH(
   const donorOwnsPending = hasRole(user.roles, "DONOR")
     && (transaction.fromUserId === user.id || transaction.createdById === user.id)
     && transaction.status === "PENDING"
-    && !transaction.providerVerified
+    && !isProviderVerified(transaction)
     && !transaction.voidedAt;
   if (!isAdmin && !donorOwnsPending) return NextResponse.json({ error: "Only an admin or the owner of a pending manual submission may edit it" }, { status: 403 });
   if (!isAdmin) {
@@ -71,7 +72,7 @@ export async function PATCH(
   if (method !== undefined && !["UPI", "RAZORPAY", "BMC", "BANK", "OTHER"].includes(method)) {
     return NextResponse.json({ error: "Invalid payment method" }, { status: 400 });
   }
-  if (method !== undefined && ["RAZORPAY", "BMC"].includes(method) && !transaction.providerVerified) {
+  if (method !== undefined && ["RAZORPAY", "BMC"].includes(method) && !isProviderVerified(transaction)) {
     return NextResponse.json({ error: "Provider methods can only come from a verified provider payment" }, { status: 400 });
   }
   if (description !== undefined && (typeof description !== "string" || !description.trim())) {
@@ -546,7 +547,7 @@ export async function DELETE(
   const donorCanCancel = hasRole(user.roles, "DONOR")
     && (transaction.fromUserId === user.id || transaction.createdById === user.id)
     && transaction.status === "PENDING"
-    && !transaction.providerVerified;
+    && !isProviderVerified(transaction);
   if (!isAdmin && !donorCanCancel) return NextResponse.json({ error: "Only your pending manual submission can be cancelled" }, { status: 403 });
   const effectiveReason = reason || "Cancelled by donor";
   const identityUser = transaction.fromUser || transaction.createdBy;

@@ -12,6 +12,7 @@ import { escapeTelegramHtml, formatTelegramIdentity } from "@/lib/telegram-forma
 import { logProofScreenshot, logProofScreenshots, logTransaction as logTelegramTransaction } from "@/lib/telegram-log";
 import { resolveTransactionAccess } from "@/lib/transaction-access";
 import { transactionOrderFromParams, transactionPageFromParams, transactionWhereFromParams } from "@/lib/transaction-query";
+import { isProviderVerified } from "@/lib/provider-verification";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -70,7 +71,11 @@ export async function GET(req: NextRequest) {
   ]);
 
   return NextResponse.json({
-    transactions: transactions.map((transaction) => ({ ...transaction, providerDetailsEncrypted: undefined })),
+    transactions: transactions.map((transaction) => ({
+      ...transaction,
+      providerVerified: isProviderVerified(transaction),
+      providerDetailsEncrypted: undefined,
+    })),
     total,
     page,
     limit,
