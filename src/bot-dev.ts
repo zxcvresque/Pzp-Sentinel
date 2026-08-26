@@ -22,6 +22,7 @@ import { serviceReminderRepeat } from "./lib/service-templates";
 import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
 import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
 import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
+import { handleSharedLinkStart } from "./lib/shared-link-bot";
 import {
   deliverTelegramWithRetry,
   isPermanentTelegramRecipientError,
@@ -562,6 +563,7 @@ bot.command("start", async (ctx) => {
 
   // Deep link: /start myid — reply with the user's Telegram ID
   const payload = ctx.match?.trim();
+  if (await handleSharedLinkStart(ctx, payload)) return;
   if (payload === "myid") {
     try {
       await ctx.reply(

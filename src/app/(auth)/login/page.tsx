@@ -29,6 +29,12 @@ function getTelegramWebApp() {
   return window.Telegram?.WebApp;
 }
 
+function requestedDestination(fallback: string) {
+  if (typeof window === "undefined") return fallback;
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : fallback;
+}
+
 function loadTelegramWebAppScript() {
   if (getTelegramWebApp()) return Promise.resolve();
 
@@ -86,7 +92,7 @@ export default function LoginPage() {
       }
 
       verifiedRef.current = true;
-      window.location.href = data.redirect || dashboardForRoles(data.user?.roles);
+      window.location.href = requestedDestination(data.redirect || dashboardForRoles(data.user?.roles));
     } catch {
       setError("Telegram sign-in failed. Please try again.");
     } finally {
@@ -123,7 +129,7 @@ export default function LoginPage() {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (cancelled || !data?.user?.roles) return;
-          window.location.href = dashboardForRoles(data.user.roles);
+          window.location.href = requestedDestination(dashboardForRoles(data.user.roles));
         })
         .catch(() => {});
     });
@@ -189,7 +195,7 @@ export default function LoginPage() {
         if (data.status === "verified") {
           verifiedRef.current = true;
           if (pollRef.current) clearInterval(pollRef.current);
-          window.location.href = data.redirect;
+          window.location.href = requestedDestination(data.redirect);
           return;
         }
 
@@ -514,7 +520,7 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
         setError(data.error);
         return;
       }
-      window.location.href = data.redirect;
+      window.location.href = requestedDestination(data.redirect);
     } catch {
       setError("Something went wrong.");
     } finally {

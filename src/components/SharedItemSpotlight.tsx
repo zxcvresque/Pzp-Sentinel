@@ -24,11 +24,11 @@ export default function SharedItemSpotlight() {
         setMessage("This shared item is not in the current filtered view.");
         return;
       }
-      target.classList.add("sentinel-shared-spotlight");
       target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const hadTabIndex = target.hasAttribute("tabindex");
+      if (!hadTabIndex) target.setAttribute("tabindex", "-1");
+      window.setTimeout(() => target.focus({ preventScroll: true }), 420);
       setMessage(`${type.replace(/-/g, " ")} handoff located`);
-      const cleanup = window.setTimeout(() => target.classList.add("sentinel-shared-spotlight-settled"), 4200);
-      return () => window.clearTimeout(cleanup);
     };
     const timer = window.setTimeout(locate, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };

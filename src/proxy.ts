@@ -24,7 +24,7 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Public pages
-  if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+  if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/")) || /^\/[A-Za-z0-9_-]{8}$/.test(pathname)) {
     return NextResponse.next();
   }
 
@@ -50,7 +50,9 @@ export async function proxy(req: NextRequest) {
   // Page routes: redirect to login if no valid token
   const token = req.cookies.get("token")?.value;
   if (!token) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
   }
 
   try {
@@ -63,7 +65,9 @@ export async function proxy(req: NextRequest) {
       }
     }
   } catch {
-    const response = NextResponse.redirect(new URL("/login", req.url));
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
+    const response = NextResponse.redirect(loginUrl);
     response.cookies.delete("token");
     return response;
   }

@@ -8,6 +8,7 @@ import { escapeTelegramHtml } from "@/lib/telegram-format";
 import { registerRazorpayFeedbackHandlers } from "@/lib/razorpay-feedback-bot";
 import { registerBmcFeedbackHandlers } from "@/lib/bmc-feedback-bot";
 import { notifyAdmins } from "@/lib/notifications";
+import { handleSharedLinkStart } from "@/lib/shared-link-bot";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -16,6 +17,9 @@ bot.command("start", async (ctx) => {
   const firstName = ctx.from?.first_name || "Unknown";
 
   if (!telegramId) return;
+
+  const payload = ctx.match?.trim();
+  if (await handleSharedLinkStart(ctx, payload)) return;
 
   const user = await prisma.user.findUnique({ where: { telegramId } });
 

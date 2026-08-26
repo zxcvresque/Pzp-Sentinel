@@ -53,34 +53,6 @@
   --radius-xl: 20px;
 }
 
-/* Admin-to-admin deep-link handoff. The target keeps its original layout while
-   a short-lived light sweep and orbiting flair make it unmistakable. */
-.sentinel-shared-spotlight {
-  position: relative;
-  isolation: isolate;
-  z-index: 4;
-  border-color: color-mix(in srgb, var(--lime) 68%, transparent) !important;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lime) 28%, transparent), 0 24px 80px color-mix(in srgb, var(--lime) 17%, transparent) !important;
-  animation: sentinel-shared-arrive 1.15s cubic-bezier(.16,1,.3,1) both;
-}
-.sentinel-shared-spotlight::after {
-  content: "Shared with you  ✦";
-  position: absolute;
-  z-index: 8;
-  top: -13px;
-  right: 18px;
-  border: 1px solid color-mix(in srgb, var(--lime) 45%, transparent);
-  border-radius: 999px;
-  padding: 5px 10px;
-  background: color-mix(in srgb, var(--bg-void) 88%, var(--lime));
-  color: var(--lime);
-  font: 700 9px/1 var(--font-mono), monospace;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  box-shadow: 0 8px 30px color-mix(in srgb, var(--lime) 22%, transparent);
-  animation: sentinel-shared-flair 1.35s cubic-bezier(.16,1,.3,1) both;
-}
-.sentinel-shared-spotlight-settled { animation: sentinel-shared-breathe 3s ease-in-out infinite; }
 .sentinel-shared-toast {
   position: fixed; right: 24px; bottom: 24px; z-index: 9998;
   display: flex; align-items: center; gap: 12px; min-width: min(340px, calc(100vw - 32px));
@@ -97,12 +69,9 @@
 .sentinel-shared-orbit::after { content: "S"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--lime); font: 800 11px var(--font-mono), monospace; }
 .sentinel-shared-orbit i { position: absolute; left: 14px; top: 14px; width: 3px; height: 3px; border-radius: 50%; background: var(--lime); transform-origin: 2px 2px; animation: sentinel-orbit 2.2s linear infinite; }
 .sentinel-shared-orbit i:nth-child(2) { animation-delay: -.72s; }.sentinel-shared-orbit i:nth-child(3) { animation-delay: -1.44s; }
-@keyframes sentinel-shared-arrive { from { opacity: .38; transform: translateY(18px) scale(.975); filter: saturate(.6); } to { opacity: 1; transform: none; filter: none; } }
-@keyframes sentinel-shared-flair { from { opacity: 0; transform: translateY(9px) scale(.75) rotate(3deg); } to { opacity: 1; transform: none; } }
-@keyframes sentinel-shared-breathe { 50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--lime) 18%, transparent), 0 18px 55px color-mix(in srgb, var(--lime) 11%, transparent); } }
 @keyframes sentinel-shared-toast-in { from { opacity: 0; transform: translateY(20px) scale(.92); } to { opacity: 1; transform: none; } }
 @keyframes sentinel-orbit { from { transform: rotate(0deg) translateX(17px); } to { transform: rotate(360deg) translateX(17px); } }
-@media (prefers-reduced-motion: reduce) { .sentinel-shared-spotlight,.sentinel-shared-spotlight::after,.sentinel-shared-toast,.sentinel-shared-orbit i { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .sentinel-shared-toast,.sentinel-shared-orbit i { animation: none !important; } }
 
 @theme inline {
   --color-bg-void: var(--bg-void);

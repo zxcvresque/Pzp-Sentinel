@@ -233,6 +233,7 @@ model User {
   bmcCheckoutIntents           BmcCheckoutIntent[]
   bmcSupporterLinks            BmcSupporterLink[]
   bmcSubscriptionFeedback      BmcSubscriptionFeedback[]
+  shareLinksCreated            ShareLink[]                    @relation("ShareLinkCreator")
 
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence  DonateCadence @default(MONTHLY)
@@ -908,6 +909,27 @@ model AuditLog {
   @@index([requestId])
   @@index([workflowId, timestamp])
   @@index([outcome, timestamp])
+}
+
+// Short, non-secret handoff codes. The code opens Sentinel's Telegram bot;
+// authorization is still enforced by the bot and the destination page.
+model ShareLink {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  entityType   String
+  entityId     String
+  targetPath   String
+  title        String
+  details      String?
+  createdById  String
+  createdBy    User      @relation("ShareLinkCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  openCount    Int       @default(0)
+  lastOpenedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([createdById, createdAt])
 }
 
 enum NotifType {
