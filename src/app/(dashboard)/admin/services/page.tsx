@@ -694,7 +694,7 @@ export default function ServicesPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <ShareButton entityType="service" entityId={svc.id} />
+                          <ShareButton entityType="service" entityId={svc.id} contextTitle={svc.name} contextDetails={`${categoryName} service${svc.status ? ` · ${svc.status.toLowerCase()}` : ""}${svc.price ? ` · ${formatCurrency(svc.price, svc.currency)}${frequencyLabel(svc.frequency)}` : ""}`} />
                           <Link href={`/admin/services/${svc.id}`} className="px-3 py-1.5 rounded-full text-xs font-semibold bg-lime/10 text-lime hover:bg-lime/20">Open</Link>
                           <button
                             onClick={() => openEditForm(svc)}

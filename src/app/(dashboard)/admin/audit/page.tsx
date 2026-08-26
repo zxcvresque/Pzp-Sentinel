@@ -297,11 +297,11 @@ export default function AuditPage() {
             const actor = userMap[log.userId];
             return (
               <div key={group.id} data-share-target={`audit:${log.id}`} className="relative">
-                <ShareButton entityType="audit" entityId={log.id} label="" className="absolute right-11 top-2.5 z-10 h-8 w-8 px-0 sm:right-12" />
+                <ShareButton entityType="audit" entityId={log.id} label="" contextTitle={`${log.action.replaceAll("_", " ")} · ${log.entityType}`} contextDetails={`${actor?.name || `User ${log.userId.slice(0, 8)}`} · ${new Date(log.timestamp).toLocaleString()} · record ${log.entityId.slice(0, 8)}`} className="absolute right-3 top-1/2 z-10 h-8 w-8 -translate-y-1/2 px-0" />
                 <button
                   type="button"
                   onClick={() => setExpandedId(expanded ? null : group.id)}
-                  className="card px-4 py-3 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between w-full text-left hover:border-[var(--lime)]/20 transition-colors"
+                  className="card flex w-full flex-col gap-1.5 py-3 pl-4 pr-14 text-left transition-colors hover:border-[var(--lime)]/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full sm:w-auto">
                     <span

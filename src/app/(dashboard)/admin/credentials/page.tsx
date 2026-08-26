@@ -585,7 +585,7 @@ export default function CredentialsPage() {
                         )}
                       </div>
                       <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-                        <ShareButton entityType="credential" entityId={cred.id} />
+                        <ShareButton entityType="credential" entityId={cred.id} contextTitle={cred.label} contextDetails={`${cred.platform} credential · ${cred.accesses.length ? `shared with ${cred.accesses.length} developer${cred.accesses.length === 1 ? "" : "s"}` : "admin only"}`} />
                         <button
                           onClick={() => startEdit(cred)}
                           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-violet/10 text-violet hover:bg-violet/20 transition-colors"
