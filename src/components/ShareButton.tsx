@@ -29,19 +29,11 @@ export default function ShareButton({
     const entityLabel = entityType.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
     const target = buttonRef.current?.closest<HTMLElement>("[data-share-target]");
     const targetHeading = target?.querySelector<HTMLElement>("h1, h2, h3, [data-share-heading]")?.innerText.trim();
-    const visibleContext = target?.innerText
-      .replace(/sk-or-[A-Za-z0-9_-]+/g, "[API key hidden]")
-      .replace(/\s+/g, " ")
-      .replace(/\b(Share|Context copied|Title \+ link copied)\b/g, "")
-      .trim()
-      .slice(0, 220);
-    const shareTitle = contextTitle?.trim() || targetHeading || entityLabel;
-    const shareDetails = contextDetails?.trim() || visibleContext || `Open this ${entityLabel.toLowerCase()} in Sentinel.`;
-    const message = [
-      `Sentinel · ${shareTitle}`,
-      shareDetails,
-      `Open in Sentinel: ${url.toString()}`,
-    ].filter(Boolean).join("\n");
+    const clean = (value?: string) => value?.replace(/\s+/g, " ").trim();
+    const shareTitle = clean(contextTitle) || clean(targetHeading) || entityLabel;
+    const shareDetails = clean(contextDetails);
+    const summary = `Sentinel · ${shareTitle}${shareDetails ? ` — ${shareDetails}` : ""}`.slice(0, 180);
+    const message = `${summary}\nOpen in Sentinel: ${url.toString()}`;
     try {
       await navigator.clipboard.writeText(message);
       setState("copied");
@@ -67,7 +59,7 @@ export default function ShareButton({
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 10.5 6.8-4M8.6 13.5l6.8 4" />
       </svg>
-      {state === "copied" ? "Title + link copied" : label}
+      {state === "copied" ? "Link copied" : label}
     </button>
   );
 }
