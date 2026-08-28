@@ -98,6 +98,18 @@ function getTelegramInitData() {
     || "";
 }
 
+function getTelegramUserId() {
+  const userJson = new URLSearchParams(getTelegramInitData()).get("user");
+  if (!userJson) return "";
+  try {
+    const user = JSON.parse(userJson) as { id?: number | string };
+    const id = String(user.id ?? "");
+    return /^\d{5,20}$/.test(id) ? id : "";
+  } catch {
+    return "";
+  }
+}
+
 function isTelegramEmbedded() {
   const platform = getTelegramWebApp()?.platform
     || telegramLaunchParams().get("tgWebAppPlatform")
@@ -614,6 +626,7 @@ export default function LoginPage() {
 
 function OtpFlow({ onBack }: { onBack: () => void }) {
   const restoredTelegramId = restorePendingOtp();
+  const embeddedTelegramId = isTelegramEmbedded() ? getTelegramUserId() : "";
   const [step, setStep] = useState<"id" | "otp">(restoredTelegramId ? "otp" : "id");
   const [telegramId, setTelegramId] = useState(restoredTelegramId);
   const [otp, setOtp] = useState("");
@@ -726,14 +739,31 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
               "Send OTP"
             )}
           </button>
-          <a
-            href="https://t.me/TheSentinelRobot?start=myid"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block text-center text-white/30 text-xs mt-3 hover:text-white/55 transition-colors"
-          >
-            Don&apos;t know your ID?
-          </a>
+          {isTelegramEmbedded() ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (embeddedTelegramId) {
+                  setTelegramId(embeddedTelegramId);
+                  setError("");
+                } else {
+                  setError("Telegram could not provide your ID in this Mini App session.");
+                }
+              }}
+              className="block w-full text-center text-white/30 text-xs mt-3 hover:text-white/55 transition-colors"
+            >
+              Don&apos;t know your ID?
+            </button>
+          ) : (
+            <a
+              href="https://t.me/TheSentinelRobot?start=myid"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-center text-white/30 text-xs mt-3 hover:text-white/55 transition-colors"
+            >
+              Don&apos;t know your ID?
+            </a>
+          )}
         </form>
       ) : (
         <form onSubmit={verifyOtp}>
