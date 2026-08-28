@@ -3,6 +3,7 @@ import { createHmac } from "crypto";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
+import { setSessionCookies } from "@/lib/session-cookies";
 
 function validateInitData(initData: string, botToken: string): Record<string, string> | null {
   const params = new URLSearchParams(initData);
@@ -114,13 +115,7 @@ export async function POST(req: NextRequest) {
     redirect,
   });
 
-  response.cookies.set("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    path: "/",
-  });
+  setSessionCookies(response, token, SESSION_MAX_AGE_SECONDS);
 
   return response;
 }

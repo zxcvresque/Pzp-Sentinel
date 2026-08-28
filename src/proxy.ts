@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import type { Role } from "@/generated/prisma/enums";
+import { PRIMARY_SESSION_COOKIE, sessionTokens, TELEGRAM_WEB_SESSION_COOKIE } from "@/lib/session-cookies";
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "");
 
@@ -20,6 +21,17 @@ const roleRoutes: Record<string, Role> = {
   "/dev": "DEV",
 };
 
+async function sessionPayload(req: NextRequest) {
+  for (const token of sessionTokens(req.cookies)) {
+    try {
+      return (await jwtVerify(token, JWT_SECRET)).payload;
+    } catch {
+      // A stale first-party cookie must not mask a valid Telegram partition.
+    }
+  }
+  return null;
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -35,28 +47,22 @@ export async function proxy(req: NextRequest) {
 
   // API routes: reject early if no token (defense-in-depth — route handlers also check)
   if (pathname.startsWith("/api/")) {
-    const token = req.cookies.get("token")?.value;
-    if (!token) {
+    const payload = await sessionPayload(req);
+    if (!payload) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    try {
-      await jwtVerify(token, JWT_SECRET);
-    } catch {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
     }
     return NextResponse.next();
   }
 
   // Page routes: redirect to login if no valid token
-  const token = req.cookies.get("token")?.value;
-  if (!token) {
+  const payload = await sessionPayload(req);
+  if (!payload) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
 
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
     const roles = payload.roles as Role[];
 
     for (const [prefix, role] of Object.entries(roleRoutes)) {
@@ -68,7 +74,8 @@ export async function proxy(req: NextRequest) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", `${pathname}${req.nextUrl.search}`);
     const response = NextResponse.redirect(loginUrl);
-    response.cookies.delete("token");
+    response.cookies.delete(PRIMARY_SESSION_COOKIE);
+    response.cookies.delete(TELEGRAM_WEB_SESSION_COOKIE);
     return response;
   }
 

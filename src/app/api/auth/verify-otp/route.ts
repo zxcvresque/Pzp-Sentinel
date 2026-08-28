@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS, verifyOtpHash } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
+import { setSessionCookies } from "@/lib/session-cookies";
 
 export async function POST(req: NextRequest) {
   const { telegramId, otp } = await req.json();
@@ -81,13 +82,7 @@ export async function POST(req: NextRequest) {
     redirect: redirectMap[defaultRole] || "/donor",
   });
 
-  response.cookies.set("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    path: "/",
-  });
+  setSessionCookies(response, token, SESSION_MAX_AGE_SECONDS);
 
   after(async () => {
     await Promise.allSettled([

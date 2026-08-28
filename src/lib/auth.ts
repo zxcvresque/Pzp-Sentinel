@@ -3,6 +3,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { prisma } from "./db";
 import type { Role } from "@/generated/prisma/enums";
+import { sessionTokens } from "./session-cookies";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required");
@@ -41,10 +42,11 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
 
 export async function getCurrentUser() {
   const cookieStore = await cookies();
-  const token = cookieStore.get("token")?.value;
-  if (!token) return null;
-
-  const payload = await verifyToken(token);
+  let payload: JwtPayload | null = null;
+  for (const token of sessionTokens(cookieStore)) {
+    payload = await verifyToken(token);
+    if (payload) break;
+  }
   if (!payload) return null;
 
   const user = await prisma.user.findUnique({

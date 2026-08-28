@@ -173,12 +173,9 @@ export default function LoginPage() {
     }
   }, []);
 
-  // Single ordered entry flow. Inside Telegram's in-app browser the signed
-  // initData is the source of truth for WHO is signing in — it must win over any
-  // leftover `token` cookie. (Multiple Telegram accounts on one device share the
-  // same webview + cookie, so a stale cookie would otherwise show the previous
-  // account.) Only when there's no initData (a regular browser) do we fall back to
-  // the existing-session redirect.
+  // Resolve Telegram's host context before enabling either login method. A Mini
+  // App must not authenticate until the user explicitly presses the Telegram
+  // button; this effect only prepares the bridge and the visible choices.
   useEffect(() => {
     let cancelled = false;
 
@@ -192,10 +189,8 @@ export default function LoginPage() {
       setTelegramContextReady(true);
 
       if (initData) {
-        // Telegram Mini App: authenticate as the CURRENT Telegram account.
         webApp?.ready?.();
         webApp?.expand?.();
-        verifyMiniAppSession(initData);
         return;
       }
 
@@ -221,16 +216,15 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!telegramContextReady) return;
-    if (isTelegramMiniApp) {
-      clearPendingLogin();
-      clearPendingOtp();
-      return;
-    }
     const restoreTimer = window.setTimeout(() => {
-      const pendingNonce = restorePendingLogin();
-      if (pendingNonce) {
-        setNonce(pendingNonce);
-        setWaitingForBot(true);
+      if (isTelegramMiniApp) {
+        clearPendingLogin();
+      } else {
+        const pendingNonce = restorePendingLogin();
+        if (pendingNonce) {
+          setNonce(pendingNonce);
+          setWaitingForBot(true);
+        }
       }
       if (restorePendingOtp()) setShowOtp(true);
     }, 0);
@@ -562,7 +556,7 @@ export default function LoginPage() {
                 >
                   <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
                 </svg>
-                {isTelegramMiniApp ? "Continue with Telegram" : "Login with Telegram"}
+                Login with Telegram
               </button>
 
               {error && (
@@ -576,32 +570,28 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {!isTelegramMiniApp && (
-                <>
-                  <div className="flex items-center gap-3 mt-6 mb-1">
-                    <div
-                      className="flex-1 h-px"
-                      style={{ background: "rgba(255,255,255,0.08)" }}
-                    />
-                    <span className="text-white/20 text-[10px] uppercase tracking-widest">
-                      or
-                    </span>
-                    <div
-                      className="flex-1 h-px"
-                      style={{ background: "rgba(255,255,255,0.08)" }}
-                    />
-                  </div>
+              <div className="flex items-center gap-3 mt-6 mb-1">
+                <div
+                  className="flex-1 h-px"
+                  style={{ background: "rgba(255,255,255,0.08)" }}
+                />
+                <span className="text-white/20 text-[10px] uppercase tracking-widest">
+                  or
+                </span>
+                <div
+                  className="flex-1 h-px"
+                  style={{ background: "rgba(255,255,255,0.08)" }}
+                />
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowOtp(true)}
-                    disabled={!telegramContextReady}
-                    className="w-full text-white/30 text-xs hover:text-white/55 transition-colors duration-300 py-2 disabled:cursor-not-allowed disabled:opacity-25"
-                  >
-                    Sign in with OTP
-                  </button>
-                </>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowOtp(true)}
+                disabled={!telegramContextReady}
+                className="w-full text-white/30 text-xs hover:text-white/55 transition-colors duration-300 py-2 disabled:cursor-not-allowed disabled:opacity-25"
+              >
+                Sign in with OTP
+              </button>
             </>
           ) : (
             <OtpFlow

@@ -2,6 +2,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
+import { setSessionCookies } from "@/lib/session-cookies";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +74,7 @@ export async function GET(req: NextRequest) {
     redirect,
   }, noStore);
 
-  response.cookies.set("token", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    path: "/",
-  });
+  setSessionCookies(response, token, SESSION_MAX_AGE_SECONDS);
 
   after(() => refreshStoredTelegramAvatar({
     userId: user.id,

@@ -4,6 +4,7 @@ import { getCurrentUser, signToken, verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { NotifType, DonateCadence, FormLayout, ReminderUnit } from "@/generated/prisma/enums";
 import type { Role } from "@/generated/prisma/enums";
+import { sessionTokens, setSessionCookies } from "@/lib/session-cookies";
 
 export const dynamic = "force-dynamic";
 
@@ -63,19 +64,17 @@ export async function GET() {
   // a role added or removed after login otherwise wouldn't take effect until the 24h
   // token expired. The app fetches this endpoint on load, so re-mint the cookie here
   // when the DB roles drift from the token — preserving the original expiry.
-  const token = (await cookies()).get("token")?.value;
-  const payload = token ? await verifyToken(token) : null;
+  const cookieStore = await cookies();
+  let payload = null;
+  for (const token of sessionTokens(cookieStore)) {
+    payload = await verifyToken(token);
+    if (payload) break;
+  }
   if (payload?.exp && !rolesEqual(payload.roles, user.roles)) {
     const remaining = payload.exp - Math.floor(Date.now() / 1000);
     if (remaining > 0) {
       const fresh = await signToken({ userId: user.id, roles: user.roles }, payload.exp);
-      res.cookies.set("token", fresh, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: remaining,
-        path: "/",
-      });
+      setSessionCookies(res, fresh, remaining);
     }
   }
 

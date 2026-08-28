@@ -49,7 +49,10 @@ export async function POST(req: NextRequest) {
       `<blockquote><b>Login Code</b></blockquote>\n` +
       `<code>${otp}</code>\n\n` +
       `<i>Expires in 5 minutes. Do not share this code.</i>`,
-      { parse_mode: "HTML" }
+      {
+        parse_mode: "HTML",
+        disable_notification: true,
+      },
     );
   } catch {
     await prisma.user.update({
