@@ -766,13 +766,15 @@ bot.command("start", async (ctx) => {
       );
 
       const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
+      const resumeUrl = new URL("/login", webappUrl);
+      resumeUrl.searchParams.set("login_nonce", nonce);
       await replaceProgressReply(
         ctx,
         progressReply,
         `<blockquote><b>✅ Login Verified</b></blockquote>\n` +
         `<b>${authUser.name}</b>, you've been signed in on the web.\n\n` +
         `<i>You can close this chat and return to Sentinel.</i>`,
-        [[{ text: "Open Sentinel", web_app: { url: webappUrl } }]],
+        [[{ text: "Return to Sentinel", web_app: { url: resumeUrl.toString() } }]],
       );
 
       // Everything below is post-login maintenance and must not delay token

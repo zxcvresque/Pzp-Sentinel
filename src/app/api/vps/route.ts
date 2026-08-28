@@ -176,6 +176,8 @@ export async function GET() {
                     ? "ONE_TIME"
                     : "SUBSCRIPTION",
                 frequency: s.subscription.frequency,
+                customRepeatEvery: s.subscription.customRepeatEvery,
+                customRepeatUnit: s.subscription.customRepeatUnit,
                 price: s.subscription.price != null ? Number(s.subscription.price) : null,
                 currency: s.subscription.currency,
                 expiryDate: s.subscription.expiryDate?.toISOString() ?? null,

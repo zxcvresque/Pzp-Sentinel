@@ -18,7 +18,7 @@ export async function POST() {
   });
 
   return NextResponse.json(
-    { nonce },
+    { nonce, expiresAt: expiresAt.toISOString() },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

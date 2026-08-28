@@ -21,6 +21,51 @@ bot.command("start", async (ctx) => {
   const payload = ctx.match?.trim();
   if (await handleSharedLinkStart(ctx, payload)) return;
 
+  if (payload?.startsWith("auth_")) {
+    const nonce = payload.slice(5);
+    if (!/^[0-9a-f]{32}$/i.test(nonce)) {
+      await ctx.reply("This login link is invalid. Return to Sentinel and try again.");
+      return;
+    }
+
+    const loginToken = await prisma.loginToken.findUnique({ where: { nonce } });
+    if (!loginToken || loginToken.status !== "PENDING" || loginToken.expiresAt < new Date()) {
+      await ctx.reply("This login link has already been used or expired. Return to Sentinel and request a new one.");
+      return;
+    }
+
+    let authUser = await prisma.user.findUnique({ where: { telegramId } });
+    if (!authUser) {
+      authUser = await prisma.user.create({
+        data: { telegramId, telegramUser: username, name: firstName, chatId, roles: [] },
+      });
+    }
+    await prisma.loginToken.update({ where: { nonce }, data: { telegramId, status: "VERIFIED" } });
+
+    const resumeUrl = new URL("/login", process.env.WEBAPP_URL || "https://pzp.finance");
+    resumeUrl.searchParams.set("login_nonce", nonce);
+    await ctx.reply(
+      `<blockquote><b>✅ Login Verified</b></blockquote>\n` +
+      `<b>${escapeTelegramHtml(authUser.name)}</b>, return to the Sentinel window to finish signing in.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "Return to Sentinel", web_app: { url: resumeUrl.toString() } }]] },
+      },
+    );
+
+    const storedAuthUser = authUser;
+    after(async () => {
+      await Promise.allSettled([
+        prisma.user.update({
+          where: { id: storedAuthUser.id },
+          data: { chatId, ...(username && { telegramUser: username }), name: firstName || storedAuthUser.name },
+        }),
+        refreshStoredTelegramAvatar({ userId: storedAuthUser.id, telegramId, userName: firstName }),
+      ]);
+    });
+    return;
+  }
+
   const user = await prisma.user.findUnique({ where: { telegramId } });
 
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";

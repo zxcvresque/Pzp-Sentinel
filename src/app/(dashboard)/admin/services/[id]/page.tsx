@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import ServicesNav from "@/components/ServicesNav";
 import TgUser from "@/components/TgUser";
 import ShareButton from "@/components/ShareButton";
+import AttachmentViewer, { attachmentName } from "@/components/AttachmentViewer";
 
 interface ServiceDetail {
   id: string;
@@ -61,7 +62,7 @@ export default function ServiceDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title={`Billing ledger · ${service.transactions.length}`}>
-          {service.transactions.length ? service.transactions.map((transaction) => <div key={transaction.id} className="border-b border-[var(--border)] py-4 last:border-0"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span>{transaction.id === service.paidTxId && <span className="rounded-full bg-lime/10 px-2 py-0.5 font-mono text-[8px] uppercase text-lime">Initial payment</span>}<span className={`rounded-full px-2 py-0.5 font-mono text-[8px] uppercase ${transaction.status === "APPROVED" ? "bg-mint/10 text-mint" : transaction.status === "PENDING" ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{transaction.status}</span></div><p className="mt-1 text-xs leading-5 text-text-secondary">{transaction.description} · {transaction.method}</p></div><span className="text-xs text-text-tertiary">{new Date(transaction.date).toLocaleDateString()}</span></div><div className="mt-3"><TgUser name={transaction.createdBy.name} photoUrl={transaction.createdBy.photoUrl} telegramUser={transaction.createdBy.telegramUser} size={22} /></div>{transaction.attachments.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{transaction.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-3 py-1.5 text-[11px] text-violet">📎 {decodeURIComponent(url.split("/").pop() || "Receipt")}</a>)}</div>}</div>) : <Empty text="No linked payments yet." />}
+          {service.transactions.length ? service.transactions.map((transaction) => <div key={transaction.id} className="border-b border-[var(--border)] py-4 last:border-0"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span>{transaction.id === service.paidTxId && <span className="rounded-full bg-lime/10 px-2 py-0.5 font-mono text-[8px] uppercase text-lime">Initial payment</span>}<span className={`rounded-full px-2 py-0.5 font-mono text-[8px] uppercase ${transaction.status === "APPROVED" ? "bg-mint/10 text-mint" : transaction.status === "PENDING" ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{transaction.status}</span></div><p className="mt-1 text-xs leading-5 text-text-secondary">{transaction.description} · {transaction.method}</p></div><span className="text-xs text-text-tertiary">{new Date(transaction.date).toLocaleDateString()}</span></div><div className="mt-3"><TgUser name={transaction.createdBy.name} photoUrl={transaction.createdBy.photoUrl} telegramUser={transaction.createdBy.telegramUser} size={22} /></div>{transaction.attachments.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{transaction.attachments.map((url) => <AttachmentViewer key={url} url={url} className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-3 py-1.5 text-[11px] text-violet">📎 {attachmentName(url, "Receipt")}</AttachmentViewer>)}</div>}</div>) : <Empty text="No linked payments yet." />}
         </Panel>
 
         <Panel title={`Credentials · ${service.credentials.length}`}>
@@ -77,7 +78,7 @@ export default function ServiceDetailPage() {
         </Panel>
 
         <Panel title={`Files · ${service.attachments.length}`}>
-          {service.attachments.length ? service.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block truncate border-b border-[var(--border)] py-3 text-sm text-violet last:border-0">📎 {decodeURIComponent(url.split("/").pop() || "Attachment")}</a>) : <Empty text="No service files." />}
+          {service.attachments.length ? service.attachments.map((url) => <AttachmentViewer key={url} url={url} className="block w-full truncate border-b border-[var(--border)] py-3 text-left text-sm text-violet last:border-0">📎 {attachmentName(url)}</AttachmentViewer>) : <Empty text="No service files." />}
         </Panel>
       </div>
     </div>

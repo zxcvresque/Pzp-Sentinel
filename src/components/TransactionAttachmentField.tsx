@@ -2,18 +2,10 @@
 
 import Image from "next/image";
 import { useRef, useState } from "react";
+import AttachmentViewer, { attachmentName } from "@/components/AttachmentViewer";
 
 const MAX_FILES = 10;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
-
-function attachmentName(url: string) {
-  try {
-    const name = decodeURIComponent(url.split("/").pop() || "Attachment");
-    return name || "Attachment";
-  } catch {
-    return url.split("/").pop() || "Attachment";
-  }
-}
 
 function isImageAttachment(url: string) {
   if (url.startsWith("/api/avatar/")) return true;
@@ -125,7 +117,7 @@ export default function TransactionAttachmentField({
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium text-text-secondary" title={attachmentName(url)}>{attachmentName(url)}</p>
-                <a href={url} target="_blank" rel="noreferrer" className="text-[10px] text-violet hover:underline">Open attachment</a>
+                <AttachmentViewer url={url} className="text-[10px] text-violet hover:underline">Open attachment</AttachmentViewer>
               </div>
               <button type="button" onClick={() => onChange(value.filter((item) => item !== url))} className="shrink-0 rounded-full p-1.5 text-text-tertiary hover:bg-coral/10 hover:text-coral" aria-label={`Remove ${attachmentName(url)}`}>
                 <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-4 w-4"><path d="m5 5 10 10M15 5 5 15" /></svg>

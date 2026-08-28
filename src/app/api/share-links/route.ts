@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
-import { createShareCode, isShareEntityType, shareBaseUrl, shareTargetPath, type ShareEntityType } from "@/lib/share-links";
+import { createShareCode, isShareEntityType, shareBotUrl, shareTargetPath, type ShareEntityType } from "@/lib/share-links";
 
 const noStore = { "Cache-Control": "private, no-store" };
 
@@ -35,5 +35,5 @@ export async function POST(req: NextRequest) {
     : await prisma.shareLink.create({ data: { code: createShareCode(), entityType, entityId, targetPath, title, details, createdById: user.id } });
 
   await logAudit({ userId: user.id, userName: user.name, request: req, action: existing ? "SHARE_LINK_REFRESH" : "SHARE_LINK_CREATE", entityType: "ShareLink", entityId: shareLink.id, after: { code: shareLink.code, sharedEntityType: entityType, sharedEntityId: entityId, targetPath } });
-  return NextResponse.json({ shortUrl: `${shareBaseUrl(req.nextUrl.origin)}/${shareLink.code}` }, { headers: noStore });
+  return NextResponse.json({ shortUrl: shareBotUrl(shareLink.code) }, { headers: noStore });
 }

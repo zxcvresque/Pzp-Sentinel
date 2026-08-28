@@ -30,6 +30,11 @@ export function shareBaseUrl(fallbackOrigin: string) {
   return (process.env.SHARE_BASE_URL || fallbackOrigin).replace(/\/$/, "");
 }
 
+export function shareBotUrl(code: string) {
+  const botUsername = process.env.BOT_USERNAME?.trim().replace(/^@/, "") || "TheSentinelRobot";
+  return `https://t.me/${botUsername}?start=share_${code}`;
+}
+
 export function shareStartCode(payload: string | undefined) {
   if (!payload?.startsWith("share_")) return null;
   const code = payload.slice(6);

@@ -12,6 +12,7 @@ import TransactionsNav from "@/components/TransactionsNav";
 import Link from "next/link";
 import TransactionAttribution from "@/components/TransactionAttribution";
 import ShareButton from "@/components/ShareButton";
+import AttachmentViewer, { attachmentName } from "@/components/AttachmentViewer";
 import { CUSTOM_REPEAT_UNITS, SERVICE_FREQUENCY_OPTIONS } from "@/lib/service-billing";
 import { linkedServiceEditFields, type EditableLinkedService, type ServiceEditColumn } from "@/lib/transaction-service-edit";
 
@@ -517,7 +518,7 @@ export default function TransactionsPage() {
             <div className="mt-2.5">
               <TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={28} />
             </div>
-            {tx.attachments.length > 0 && <div className="mt-2 flex max-w-full flex-wrap gap-1.5">{tx.attachments.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 text-[10px] text-violet">{decodeURIComponent(url.split("/").pop() || "Receipt")}</a>)}</div>}
+            {tx.attachments.length > 0 && <div className="mt-2 flex max-w-full flex-wrap gap-1.5">{tx.attachments.map((url) => <AttachmentViewer key={url} url={url} className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 text-[10px] text-violet">{attachmentName(url, "Receipt")}</AttachmentViewer>)}</div>}
             {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
           </div>
           <div role="cell" className={`flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-sm font-semibold lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span><span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></span></div>

@@ -9,6 +9,7 @@ import BmcSupportCard from "@/components/BmcSupportCard";
 import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
 import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 import CurrencyToggle from "@/components/CurrencyToggle";
+import AttachmentViewer, { attachmentName } from "@/components/AttachmentViewer";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import {
   convertCurrencyAmount,
@@ -598,17 +599,21 @@ export default function DonorDashboard() {
                   <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
                   <span className="ml-1">&middot; paid in {tx.currency}</span>
                 </div>
+                {tx.attachments && tx.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {tx.attachments.map((url) => (
+                      <AttachmentViewer key={url} url={url} className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 text-[10px] text-violet">
+                        📎 {attachmentName(url, "Proof")}
+                      </AttachmentViewer>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-3 shrink-0 sm:ml-3">
                 <span className="text-mint font-semibold">
                   {formatCurrencyAmount(
                     convertCurrencyAmount(Number(tx.amount), tx.currency, displayCurrency, usdToInr),
                     displayCurrency,
-                  )}
-                  {tx.attachments && tx.attachments.length > 0 && (
-                    <span className="text-text-tertiary text-[10px] ml-1 font-normal">
-                      📎 {tx.attachments.length}
-                    </span>
                   )}
                 </span>
                 <span

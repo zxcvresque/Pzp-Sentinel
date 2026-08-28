@@ -7,6 +7,12 @@ import PageTour from "@/components/PageTour";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import ServicesNav from "@/components/ServicesNav";
 import TgUser from "@/components/TgUser";
+import {
+  CUSTOM_REPEAT_UNITS,
+  SERVICE_FREQUENCY_OPTIONS,
+  type CustomRepeatUnit,
+  type ServiceFrequency,
+} from "@/lib/service-billing";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -61,7 +67,9 @@ interface Server {
 
 interface Subscription {
   mode: "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION";
-  frequency: "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME" | "LIFETIME";
+  frequency: ServiceFrequency | "ONE_TIME" | "LIFETIME";
+  customRepeatEvery: number | null;
+  customRepeatUnit: CustomRepeatUnit | null;
   price: number | null;
   currency: "INR" | "USD" | null;
   expiryDate: string | null;
@@ -198,7 +206,16 @@ function loadStatus(loadAvg: string): { label: string; color: string; help: stri
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = { INR: "₹", USD: "$" };
-const FREQ_SHORT: Record<string, string> = { WEEKLY: "wk", MONTHLY: "mo", YEARLY: "yr", ONE_TIME: "once" };
+const FREQ_SHORT: Record<string, string> = { WEEKLY: "wk", MONTHLY: "mo", QUARTERLY: "quarter", HALF_YEARLY: "6 mo", YEARLY: "yr", ONE_TIME: "once" };
+
+function subscriptionFrequencyLabel(sub: Subscription): string {
+  if (sub.frequency === "CUSTOM" && sub.customRepeatEvery && sub.customRepeatUnit) {
+    const unit = sub.customRepeatUnit.toLowerCase();
+    return `Every ${sub.customRepeatEvery} ${unit}${sub.customRepeatEvery === 1 ? "" : "s"}`;
+  }
+  return SERVICE_FREQUENCY_OPTIONS.find((option) => option.value === sub.frequency)?.label
+    || sub.frequency.toLowerCase().replaceAll("_", " ");
+}
 
 function formatMoney(amount: number | null | undefined, currency: string | null | undefined): string {
   if (amount == null) return "—";
@@ -210,7 +227,7 @@ function formatMoney(amount: number | null | undefined, currency: string | null 
 function formatRate(sub: Subscription): string {
   const money = formatMoney(sub.price, sub.currency);
   if (sub.mode !== "SUBSCRIPTION") return money;
-  return `${money} / ${FREQ_SHORT[sub.frequency] ?? sub.frequency.toLowerCase()}`;
+  return `${money} / ${FREQ_SHORT[sub.frequency] ?? subscriptionFrequencyLabel(sub)}`;
 }
 
 function formatDate(iso: string): string {
@@ -607,7 +624,7 @@ function ApprovedServerCard({
                   </Pill>
                 ) : (
                   <Pill color="var(--lime)" bg="rgba(111,209,215,0.10)">
-                    {sub.frequency}
+                    {subscriptionFrequencyLabel(sub)}
                   </Pill>
                 )}
                 {sub.autoRenew && (
@@ -1208,11 +1225,12 @@ function ServerForm({
   );
   const [price, setPrice] = useState(initSub?.price != null ? String(initSub.price) : "");
   const [currency, setCurrency] = useState<"INR" | "USD">((initSub?.currency as "INR" | "USD") ?? "INR");
-  const [frequency, setFrequency] = useState<"WEEKLY" | "MONTHLY" | "YEARLY">(
-    initSub && initSub.frequency !== "ONE_TIME"
-      ? (initSub.frequency as "WEEKLY" | "MONTHLY" | "YEARLY")
-      : "MONTHLY",
-  );
+  const initialFrequency = initSub && SERVICE_FREQUENCY_OPTIONS.some((option) => option.value === initSub.frequency)
+    ? initSub.frequency as ServiceFrequency
+    : "MONTHLY";
+  const [frequency, setFrequency] = useState<ServiceFrequency>(initialFrequency);
+  const [customRepeatEvery, setCustomRepeatEvery] = useState(initSub?.customRepeatEvery ? String(initSub.customRepeatEvery) : "1");
+  const [customRepeatUnit, setCustomRepeatUnit] = useState<CustomRepeatUnit>(initSub?.customRepeatUnit ?? "MONTH");
   const [expiryDate, setExpiryDate] = useState(toDateInput(initSub?.expiryDate));
   const [autoRenew, setAutoRenew] = useState(initSub?.autoRenew ?? false);
   const [submitting, setSubmitting] = useState(false);
@@ -1250,7 +1268,8 @@ function ServerForm({
   const tags = parseTagsInput(tagsInput);
   const hasAuth = Boolean(password.trim() || sshKeyFile);
   const priceNum = Number(price);
-  const billingValid = durationMode === "NONE" || (Number.isFinite(priceNum) && priceNum > 0);
+  const customCycleValid = frequency !== "CUSTOM" || (Number.isInteger(Number(customRepeatEvery)) && Number(customRepeatEvery) > 0);
+  const billingValid = durationMode === "NONE" || (Number.isFinite(priceNum) && priceNum > 0 && customCycleValid);
   const canSubmit = Boolean(
     name.trim() &&
     ip.trim() &&
@@ -1308,6 +1327,8 @@ function ServerForm({
               price: priceNum,
               currency,
               frequency,
+              customRepeatEvery: frequency === "CUSTOM" ? Number(customRepeatEvery) : null,
+              customRepeatUnit: frequency === "CUSTOM" ? customRepeatUnit : null,
               expiryDate: expiryDate || null,
               autoRenew,
             };
@@ -1370,6 +1391,8 @@ function ServerForm({
       setPrice("");
       setCurrency("INR");
       setFrequency("MONTHLY");
+      setCustomRepeatEvery("1");
+      setCustomRepeatUnit("MONTH");
       setExpiryDate("");
       setAutoRenew(false);
       setOpen(false);
@@ -1661,12 +1684,10 @@ function ServerForm({
                       <span className={labelClass}>Billing cycle</span>
                       <select
                         value={frequency}
-                        onChange={(e) => setFrequency(e.target.value as "WEEKLY" | "MONTHLY" | "YEARLY")}
+                        onChange={(e) => setFrequency(e.target.value as ServiceFrequency)}
                         className={inputClass}
                       >
-                        <option value="WEEKLY">Weekly</option>
-                        <option value="MONTHLY">Monthly</option>
-                        <option value="YEARLY">Yearly</option>
+                        {SERVICE_FREQUENCY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
                     <label className="xl:col-span-3">
@@ -1678,6 +1699,32 @@ function ServerForm({
                         className={inputClass}
                       />
                     </label>
+                    {frequency === "CUSTOM" && (
+                      <>
+                        <label className="xl:col-span-3">
+                          <span className={labelClass}>Repeat every</span>
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={customRepeatEvery}
+                            onChange={(e) => setCustomRepeatEvery(e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="xl:col-span-3">
+                          <span className={labelClass}>Custom unit</span>
+                          <select
+                            value={customRepeatUnit}
+                            onChange={(e) => setCustomRepeatUnit(e.target.value as CustomRepeatUnit)}
+                            className={inputClass}
+                          >
+                            {CUSTOM_REPEAT_UNITS.map((unit) => <option key={unit} value={unit}>{unit.charAt(0)}{unit.slice(1).toLowerCase()}</option>)}
+                          </select>
+                        </label>
+                      </>
+                    )}
                     <label className="xl:col-span-12 flex items-center gap-2">
                       <input
                         type="checkbox"

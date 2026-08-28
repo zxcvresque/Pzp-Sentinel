@@ -2,7 +2,7 @@ export const SERVICE_FREQUENCY_OPTIONS = [
   { value: "WEEKLY", label: "Weekly" },
   { value: "MONTHLY", label: "Monthly" },
   { value: "QUARTERLY", label: "Quarterly (3 months)" },
-  { value: "HALF_YEARLY", label: "Every 6 months" },
+  { value: "HALF_YEARLY", label: "Half-yearly (6 months)" },
   { value: "YEARLY", label: "Yearly" },
   { value: "CUSTOM", label: "Custom interval" },
 ] as const;

@@ -1,23 +1,36 @@
 import { Prisma } from "@/generated/prisma/client";
+import type { Frequency as PrismaFrequency } from "@/generated/prisma/enums";
 import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { formatTgMessage, notifyAdmins } from "@/lib/notifications";
 import { recordFinancialEvent } from "@/lib/record-financial-event";
-import { nextServiceCycleDate } from "@/lib/service-billing";
+import {
+  isCustomRepeatUnit,
+  isServiceFrequency,
+  nextServiceCycleDate,
+  serviceReminderRepeat,
+  type CustomRepeatUnit,
+  type ServiceFrequency,
+} from "@/lib/service-billing";
 
 export type VpsDuration = {
   mode?: "LIFETIME" | "ONE_TIME" | "SUBSCRIPTION" | null;
   price?: number | string | null;
   currency?: "INR" | "USD" | null;
-  frequency?: "WEEKLY" | "MONTHLY" | "YEARLY" | null;
+  frequency?: ServiceFrequency | null;
+  customRepeatEvery?: number | null;
+  customRepeatUnit?: CustomRepeatUnit | null;
   expiryDate?: string | null;
   autoRenew?: boolean | null;
 };
 
-const RECURRING = new Set(["WEEKLY", "MONTHLY", "YEARLY"]);
-
-export function nextCycleDate(from: Date, frequency: string | null | undefined): Date {
-  return nextServiceCycleDate(from, frequency);
+export function nextCycleDate(
+  from: Date,
+  frequency: string | null | undefined,
+  customRepeatEvery?: number | null,
+  customRepeatUnit?: string | null,
+): Date {
+  return nextServiceCycleDate(from, frequency, customRepeatEvery, customRepeatUnit);
 }
 
 function parsePrice(value: VpsDuration["price"]): number {
@@ -49,11 +62,21 @@ export async function syncVpsSubscription(
     : duration.mode === "ONE_TIME"
       ? "ONE_TIME"
       : duration.frequency || "MONTHLY";
+  if (duration.mode === "SUBSCRIPTION" && !isServiceFrequency(frequency)) {
+    throw new Error("Invalid VPS billing frequency");
+  }
+  const customRepeatEvery = frequency === "CUSTOM" ? Number(duration.customRepeatEvery) : null;
+  const customRepeatUnit = frequency === "CUSTOM" && isCustomRepeatUnit(duration.customRepeatUnit)
+    ? duration.customRepeatUnit
+    : null;
+  if (frequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit)) {
+    throw new Error("A custom VPS billing cycle needs a positive interval and unit");
+  }
   const currency = duration.currency || "INR";
-  const recurring = RECURRING.has(frequency);
+  const recurring = Boolean(serviceReminderRepeat(frequency, customRepeatEvery, customRepeatUnit));
   const expiryDate = duration.expiryDate
     ? new Date(duration.expiryDate)
-    : recurring ? nextCycleDate(new Date(), frequency) : undefined;
+    : recurring ? nextCycleDate(new Date(), frequency, customRepeatEvery, customRepeatUnit) : undefined;
   if (expiryDate && Number.isNaN(expiryDate.getTime())) throw new Error("Invalid VPS plan expiry date");
 
   const sharedData = {
@@ -61,7 +84,9 @@ export async function syncVpsSubscription(
     name: server.name,
     price: new Prisma.Decimal(amount),
     currency,
-    frequency: frequency as "WEEKLY" | "MONTHLY" | "YEARLY" | "ONE_TIME" | "LIFETIME",
+    frequency: frequency as PrismaFrequency,
+    customRepeatEvery,
+    customRepeatUnit,
     planUrl: server.planLink?.trim() || null,
     expiryDate,
     autoRenew: recurring && Boolean(duration.autoRenew),
@@ -88,6 +113,8 @@ export async function syncVpsSubscription(
       name: server.name,
       category: "VPS",
       frequency,
+      customRepeatEvery: customRepeatEvery ?? undefined,
+      customRepeatUnit: customRepeatUnit ?? undefined,
       nextRenewal: expiryDate,
       planUrl: sharedData.planUrl || undefined,
       autoRenew: sharedData.autoRenew,

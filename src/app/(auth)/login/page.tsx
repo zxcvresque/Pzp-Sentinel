@@ -8,6 +8,64 @@ interface TelegramWebApp {
   initData?: string;
   ready?: () => void;
   expand?: () => void;
+  openTelegramLink?: (url: string) => void;
+}
+
+const LOGIN_FLOW_STORAGE_KEY = "sentinel_pending_telegram_login";
+const OTP_FLOW_STORAGE_KEY = "sentinel_pending_otp_login";
+const LOGIN_NONCE = /^[0-9a-f]{32}$/i;
+
+function clearPendingLogin() {
+  if (typeof window !== "undefined") window.localStorage.removeItem(LOGIN_FLOW_STORAGE_KEY);
+}
+
+function savePendingLogin(nonce: string, expiresAt?: string) {
+  if (typeof window === "undefined" || !LOGIN_NONCE.test(nonce)) return;
+  window.localStorage.setItem(LOGIN_FLOW_STORAGE_KEY, JSON.stringify({
+    nonce,
+    expiresAt: expiresAt || new Date(Date.now() + 5 * 60_000).toISOString(),
+  }));
+}
+
+function restorePendingLogin() {
+  if (typeof window === "undefined") return "";
+  const queryNonce = new URLSearchParams(window.location.search).get("login_nonce") || "";
+  if (LOGIN_NONCE.test(queryNonce)) {
+    savePendingLogin(queryNonce);
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("login_nonce");
+    window.history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    return queryNonce;
+  }
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(LOGIN_FLOW_STORAGE_KEY) || "null") as { nonce?: string; expiresAt?: string } | null;
+    if (saved?.nonce && LOGIN_NONCE.test(saved.nonce) && saved.expiresAt && new Date(saved.expiresAt) > new Date()) return saved.nonce;
+  } catch {
+    // Ignore malformed browser storage and start a fresh flow.
+  }
+  clearPendingLogin();
+  return "";
+}
+
+function clearPendingOtp() {
+  if (typeof window !== "undefined") window.localStorage.removeItem(OTP_FLOW_STORAGE_KEY);
+}
+
+function savePendingOtp(telegramId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(OTP_FLOW_STORAGE_KEY, JSON.stringify({ telegramId, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() }));
+}
+
+function restorePendingOtp() {
+  if (typeof window === "undefined") return "";
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(OTP_FLOW_STORAGE_KEY) || "null") as { telegramId?: string; expiresAt?: string } | null;
+    if (saved?.telegramId && /^\d{5,20}$/.test(saved.telegramId) && saved.expiresAt && new Date(saved.expiresAt) > new Date()) return saved.telegramId;
+  } catch {
+    // Ignore malformed browser storage and start a fresh flow.
+  }
+  clearPendingOtp();
+  return "";
 }
 
 declare global {
@@ -43,7 +101,11 @@ function loadTelegramWebAppScript() {
       "script[data-telegram-web-app]",
     );
     if (existing) {
-      resolve();
+      if (getTelegramWebApp()) resolve();
+      else {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => resolve(), { once: true });
+      }
       return;
     }
 
@@ -92,6 +154,8 @@ export default function LoginPage() {
       }
 
       verifiedRef.current = true;
+      clearPendingLogin();
+      clearPendingOtp();
       window.location.href = requestedDestination(data.redirect || dashboardForRoles(data.user?.roles));
     } catch {
       setError("Telegram sign-in failed. Please try again.");
@@ -139,6 +203,18 @@ export default function LoginPage() {
     };
   }, [verifyMiniAppSession]);
 
+  useEffect(() => {
+    const restoreTimer = window.setTimeout(() => {
+      const pendingNonce = restorePendingLogin();
+      if (pendingNonce) {
+        setNonce(pendingNonce);
+        setWaitingForBot(true);
+      }
+      if (restorePendingOtp()) setShowOtp(true);
+    }, 0);
+    return () => window.clearTimeout(restoreTimer);
+  }, []);
+
   // Generate a nonce and navigate to bot deep link
   const handleTelegramLogin = useCallback(async () => {
     setError("");
@@ -164,12 +240,23 @@ export default function LoginPage() {
       }
 
       setNonce(data.nonce);
+      savePendingLogin(data.nonce, data.expiresAt);
       setWaitingForBot(true);
       setLoading(false);
 
-      // Use an anchor click to open in new tab (more reliable than window.open)
+      const telegramUrl = `https://t.me/${BOT_USERNAME}?start=auth_${data.nonce}`;
+      // Telegram's Mini App API keeps the current Sentinel window alive while
+      // opening the bot chat. Regular browsers retain the separate-tab fallback.
+      if (webApp?.openTelegramLink) {
+        try {
+          webApp.openTelegramLink(telegramUrl);
+          return;
+        } catch {
+          // Older Telegram clients fall through to a separate browser tab.
+        }
+      }
       const a = document.createElement("a");
-      a.href = `https://t.me/${BOT_USERNAME}?start=auth_${data.nonce}`;
+      a.href = telegramUrl;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       document.body.appendChild(a);
@@ -194,6 +281,7 @@ export default function LoginPage() {
 
         if (data.status === "verified") {
           verifiedRef.current = true;
+          clearPendingLogin();
           if (pollRef.current) clearInterval(pollRef.current);
           window.location.href = requestedDestination(data.redirect);
           return;
@@ -205,6 +293,7 @@ export default function LoginPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           setWaitingForBot(false);
           setNonce("");
+          clearPendingLogin();
           setError("Login expired. Please try again.");
           return;
         }
@@ -213,6 +302,7 @@ export default function LoginPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           setWaitingForBot(false);
           setNonce("");
+          clearPendingLogin();
           setAwaitingRole(true);
           setError(data.error);
           return;
@@ -222,6 +312,7 @@ export default function LoginPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           setWaitingForBot(false);
           setNonce("");
+          clearPendingLogin();
           setError(data.error);
           return;
         }
@@ -245,10 +336,36 @@ export default function LoginPage() {
     };
   }, [nonce, waitingForBot]);
 
+  useEffect(() => {
+    if (!nonce || !waitingForBot) return;
+    const resume = () => {
+      if (document.visibilityState === "visible" && !pollInFlightRef.current) {
+        pollInFlightRef.current = true;
+        fetch(`/api/auth/login-check?nonce=${nonce}`, { cache: "no-store" }).then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (data?.status !== "verified") return;
+          verifiedRef.current = true;
+          clearPendingLogin();
+          if (pollRef.current) clearInterval(pollRef.current);
+          window.location.href = requestedDestination(data.redirect);
+        }).catch(() => {}).finally(() => {
+          pollInFlightRef.current = false;
+        });
+      }
+    };
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", resume);
+    return () => {
+      window.removeEventListener("focus", resume);
+      document.removeEventListener("visibilitychange", resume);
+    };
+  }, [nonce, waitingForBot]);
+
   const cancelWaiting = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     setWaitingForBot(false);
     setNonce("");
+    clearPendingLogin();
     setError("");
   };
 
@@ -460,6 +577,7 @@ export default function LoginPage() {
               onBack={() => {
                 setShowOtp(false);
                 setError("");
+                clearPendingOtp();
               }}
             />
           )}
@@ -474,8 +592,9 @@ export default function LoginPage() {
 /* ------------------------------------------------------------------ */
 
 function OtpFlow({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<"id" | "otp">("id");
-  const [telegramId, setTelegramId] = useState("");
+  const restoredTelegramId = restorePendingOtp();
+  const [step, setStep] = useState<"id" | "otp">(restoredTelegramId ? "otp" : "id");
+  const [telegramId, setTelegramId] = useState(restoredTelegramId);
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -485,6 +604,7 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
     e.preventDefault();
     setError("");
     setLoading(true);
+    savePendingOtp(telegramId);
     try {
       const res = await fetch("/api/auth/request-otp", {
         method: "POST",
@@ -520,6 +640,7 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
         setError(data.error);
         return;
       }
+      clearPendingOtp();
       window.location.href = requestedDestination(data.redirect);
     } catch {
       setError("Something went wrong.");
