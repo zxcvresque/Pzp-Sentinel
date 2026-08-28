@@ -6,9 +6,9 @@ const BOT_USERNAME = "TheSentinelRobot";
 
 interface TelegramWebApp {
   initData?: string;
+  platform?: string;
   ready?: () => void;
   expand?: () => void;
-  openTelegramLink?: (url: string) => void;
 }
 
 const LOGIN_FLOW_STORAGE_KEY = "sentinel_pending_telegram_login";
@@ -87,35 +87,43 @@ function getTelegramWebApp() {
   return window.Telegram?.WebApp;
 }
 
+function telegramLaunchParams() {
+  if (typeof window === "undefined") return new URLSearchParams();
+  return new URLSearchParams(window.location.hash.replace(/^#/, ""));
+}
+
+function getTelegramInitData() {
+  return getTelegramWebApp()?.initData?.trim()
+    || telegramLaunchParams().get("tgWebAppData")?.trim()
+    || "";
+}
+
+function isTelegramEmbedded() {
+  const platform = getTelegramWebApp()?.platform
+    || telegramLaunchParams().get("tgWebAppPlatform")
+    || "";
+  return Boolean(getTelegramInitData() || (platform && platform !== "unknown"));
+}
+
 function requestedDestination(fallback: string) {
   if (typeof window === "undefined") return fallback;
   const next = new URLSearchParams(window.location.search).get("next");
   return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : fallback;
 }
 
-function loadTelegramWebAppScript() {
+function waitForTelegramWebApp(timeoutMs = 1500) {
   if (getTelegramWebApp()) return Promise.resolve();
 
   return new Promise<void>((resolve) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      "script[data-telegram-web-app]",
-    );
-    if (existing) {
-      if (getTelegramWebApp()) resolve();
-      else {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener("error", () => resolve(), { once: true });
+    const startedAt = Date.now();
+    const check = () => {
+      if (getTelegramWebApp() || Date.now() - startedAt >= timeoutMs) {
+        resolve();
+        return;
       }
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = "https://telegram.org/js/telegram-web-app.js";
-    script.async = true;
-    script.dataset.telegramWebApp = "true";
-    script.onload = () => resolve();
-    script.onerror = () => resolve();
-    document.head.appendChild(script);
+      window.setTimeout(check, 25);
+    };
+    check();
   });
 }
 
@@ -127,6 +135,7 @@ export default function LoginPage() {
   const [waitingForBot, setWaitingForBot] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [isTelegramMiniApp, setIsTelegramMiniApp] = useState(false);
+  const [telegramContextReady, setTelegramContextReady] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const verifiedRef = useRef(false);
   const pollInFlightRef = useRef(false);
@@ -173,18 +182,25 @@ export default function LoginPage() {
   useEffect(() => {
     let cancelled = false;
 
-    loadTelegramWebAppScript().then(() => {
+    waitForTelegramWebApp().then(() => {
       if (cancelled) return;
 
       const webApp = getTelegramWebApp();
-      const initData = webApp?.initData;
+      const initData = getTelegramInitData();
+      const embedded = isTelegramEmbedded();
+      setIsTelegramMiniApp(embedded);
+      setTelegramContextReady(true);
 
       if (initData) {
         // Telegram Mini App: authenticate as the CURRENT Telegram account.
-        setIsTelegramMiniApp(true);
-        webApp.ready?.();
-        webApp.expand?.();
+        webApp?.ready?.();
+        webApp?.expand?.();
         verifyMiniAppSession(initData);
+        return;
+      }
+
+      if (embedded) {
+        setError("Telegram did not provide a secure Mini App session. Close this window and reopen Sentinel using the bot's Open Sentinel button.");
         return;
       }
 
@@ -204,6 +220,12 @@ export default function LoginPage() {
   }, [verifyMiniAppSession]);
 
   useEffect(() => {
+    if (!telegramContextReady) return;
+    if (isTelegramMiniApp) {
+      clearPendingLogin();
+      clearPendingOtp();
+      return;
+    }
     const restoreTimer = window.setTimeout(() => {
       const pendingNonce = restorePendingLogin();
       if (pendingNonce) {
@@ -213,7 +235,7 @@ export default function LoginPage() {
       if (restorePendingOtp()) setShowOtp(true);
     }, 0);
     return () => window.clearTimeout(restoreTimer);
-  }, []);
+  }, [isTelegramMiniApp, telegramContextReady]);
 
   // Generate a nonce and navigate to bot deep link
   const handleTelegramLogin = useCallback(async () => {
@@ -222,11 +244,21 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      await waitForTelegramWebApp();
       const webApp = getTelegramWebApp();
-      const initData = webApp?.initData;
+      const initData = getTelegramInitData();
+      const embedded = isTelegramEmbedded();
+      setIsTelegramMiniApp(embedded);
       if (initData) {
-        setIsTelegramMiniApp(true);
+        webApp?.ready?.();
+        webApp?.expand?.();
         await verifyMiniAppSession(initData);
+        return;
+      }
+
+      if (embedded) {
+        setError("Telegram did not provide a secure Mini App session. Close this window and reopen Sentinel using the bot's Open Sentinel button.");
+        setLoading(false);
         return;
       }
 
@@ -245,16 +277,8 @@ export default function LoginPage() {
       setLoading(false);
 
       const telegramUrl = `https://t.me/${BOT_USERNAME}?start=auth_${data.nonce}`;
-      // Telegram's Mini App API keeps the current Sentinel window alive while
-      // opening the bot chat. Regular browsers retain the separate-tab fallback.
-      if (webApp?.openTelegramLink) {
-        try {
-          webApp.openTelegramLink(telegramUrl);
-          return;
-        } catch {
-          // Older Telegram clients fall through to a separate browser tab.
-        }
-      }
+      // This branch is exclusively for standalone browsers. Calling Telegram's
+      // bridge from Telegram Web can replace/close the active Mini App popup.
       const a = document.createElement("a");
       a.href = telegramUrl;
       a.target = "_blank";
@@ -483,7 +507,7 @@ export default function LoginPage() {
           {!showOtp ? (
             <>
               {/* Waiting overlay */}
-              {(loading || waitingForBot) && (
+              {(!telegramContextReady || loading || waitingForBot) && (
                 <div
                   className="absolute inset-0 z-20 rounded-2xl flex items-center justify-center"
                   style={{
@@ -494,7 +518,9 @@ export default function LoginPage() {
                   <div className="flex flex-col items-center gap-3 px-6">
                     <span className="w-6 h-6 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
                     <span className="text-white/60 text-sm text-center">
-                      {waitingForBot
+                      {!telegramContextReady
+                        ? "Connecting securely to Telegram..."
+                        : waitingForBot
                         ? "Waiting for confirmation in Telegram..."
                         : "Signing in..."}
                     </span>
@@ -519,7 +545,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleTelegramLogin}
-                disabled={loading || waitingForBot}
+                disabled={!telegramContextReady || loading || waitingForBot}
                 className="tg-btn w-full flex items-center justify-center gap-3 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 disabled:opacity-25 disabled:cursor-not-allowed"
                 style={{
                   background: "linear-gradient(135deg, #2AABEE 0%, #229ED9 100%)",
@@ -550,27 +576,32 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <div className="flex items-center gap-3 mt-6 mb-1">
-                <div
-                  className="flex-1 h-px"
-                  style={{ background: "rgba(255,255,255,0.08)" }}
-                />
-                <span className="text-white/20 text-[10px] uppercase tracking-widest">
-                  or
-                </span>
-                <div
-                  className="flex-1 h-px"
-                  style={{ background: "rgba(255,255,255,0.08)" }}
-                />
-              </div>
+              {!isTelegramMiniApp && (
+                <>
+                  <div className="flex items-center gap-3 mt-6 mb-1">
+                    <div
+                      className="flex-1 h-px"
+                      style={{ background: "rgba(255,255,255,0.08)" }}
+                    />
+                    <span className="text-white/20 text-[10px] uppercase tracking-widest">
+                      or
+                    </span>
+                    <div
+                      className="flex-1 h-px"
+                      style={{ background: "rgba(255,255,255,0.08)" }}
+                    />
+                  </div>
 
-              <button
-                type="button"
-                onClick={() => setShowOtp(true)}
-                className="w-full text-white/30 text-xs hover:text-white/55 transition-colors duration-300 py-2"
-              >
-                Sign in with OTP
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowOtp(true)}
+                    disabled={!telegramContextReady}
+                    className="w-full text-white/30 text-xs hover:text-white/55 transition-colors duration-300 py-2 disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    Sign in with OTP
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <OtpFlow
