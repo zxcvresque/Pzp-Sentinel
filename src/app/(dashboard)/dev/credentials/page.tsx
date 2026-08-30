@@ -60,16 +60,20 @@ export default function DevCredentialsPage() {
   const [fields, setFields] = useState<{ label: string; value: string }[]>([
     { label: "", value: "" },
   ]);
+  const [visibleSecretFields, setVisibleSecretFields] = useState<Set<number>>(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     fetch("/api/credentials")
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error("Could not load credentials"); return r.json(); })
       .then((data) => {
         setCredentials(data.credentials || []);
         setPendingGrants(data.pendingGrants || []);
         setPending(data.pending || []);
+        setLoadError("");
       })
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "Could not load credentials"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -99,6 +103,7 @@ export default function DevCredentialsPage() {
     setEditingParentId(cred.id);
     setPlatform(cred.platform);
     setFields([{ label: cred.label, value: "" }]);
+    setVisibleSecretFields(new Set());
     setShowForm(true);
   }
 
@@ -106,6 +111,7 @@ export default function DevCredentialsPage() {
     setEditingParentId(null);
     setPlatform("");
     setFields([{ label: "", value: "" }]);
+    setVisibleSecretFields(new Set());
     setShowForm(true);
   }
 
@@ -114,6 +120,7 @@ export default function DevCredentialsPage() {
     setEditingParentId(null);
     setPlatform("");
     setFields([{ label: "", value: "" }]);
+    setVisibleSecretFields(new Set());
   }
 
   function updateField(idx: number, key: "label" | "value", val: string) {
@@ -191,6 +198,7 @@ export default function DevCredentialsPage() {
           {showForm ? "Cancel" : "Share New"}
         </button>
       </div>
+      {loadError && <div role="alert" className="mb-4 rounded-lg border border-coral/20 bg-coral/8 px-4 py-3 text-sm text-coral">{loadError}</div>}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
@@ -201,10 +209,11 @@ export default function DevCredentialsPage() {
           </div>
           <FormExample lines={["Platform: Hetzner VPS", "Label: Root Password, API Key, etc.", "Value: the actual secret"]} />
           <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+            <label htmlFor="dev-credential-platform" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Platform
             </label>
             <input
+              id="dev-credential-platform"
               type="text"
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
@@ -218,11 +227,13 @@ export default function DevCredentialsPage() {
               <div key={idx} className="flex items-end gap-3">
                 <div className="flex-1">
                   {idx === 0 && (
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    <label htmlFor={`dev-credential-label-${idx}`} className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                       Label
                     </label>
                   )}
                   <input
+                    id={`dev-credential-label-${idx}`}
+                    aria-label={`Credential label ${idx + 1}`}
                     type="text"
                     value={f.label}
                     onChange={(e) => updateField(idx, "label", e.target.value)}
@@ -232,21 +243,30 @@ export default function DevCredentialsPage() {
                 </div>
                 <div className="flex-1">
                   {idx === 0 && (
-                    <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                    <label htmlFor={`dev-credential-value-${idx}`} className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                       Value
                     </label>
                   )}
-                  <input
-                    type="text"
-                    value={f.value}
-                    onChange={(e) => updateField(idx, "value", e.target.value)}
-                    placeholder="The credential value"
-                    className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-lime/30"
-                  />
+                  <div className="relative">
+                    <input
+                      id={`dev-credential-value-${idx}`}
+                      aria-label={`Credential value ${idx + 1}`}
+                      type={visibleSecretFields.has(idx) ? "text" : "password"}
+                      autoComplete="new-password"
+                      value={f.value}
+                      onChange={(e) => updateField(idx, "value", e.target.value)}
+                      placeholder="The credential value"
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg py-3 pl-4 pr-16 text-text-primary font-mono text-sm focus:outline-none focus:border-lime/30"
+                    />
+                    <button type="button" aria-label={`${visibleSecretFields.has(idx) ? "Hide" : "Reveal"} credential value ${idx + 1}`} onClick={() => setVisibleSecretFields((current) => { const next = new Set(current); if (next.has(idx)) next.delete(idx); else next.add(idx); return next; })} className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-text-tertiary hover:text-text-primary">
+                      {visibleSecretFields.has(idx) ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
                 {fields.length > 1 && (
                   <button
                     type="button"
+                    aria-label={`Remove credential field ${idx + 1}`}
                     onClick={() => removeField(idx)}
                     className="px-3 py-3 text-coral hover:text-coral/80 transition-colors text-sm"
                   >

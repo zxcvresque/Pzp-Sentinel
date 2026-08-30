@@ -94,7 +94,8 @@ function formatGB(gb: number): string {
 }
 
 function sshTarget(user: string, ip: string): string {
-  return ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+  const target = ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+  return `'${target.replace(/'/g, `'"'"'`)}'`;
 }
 
 function sshPortFlag(port: number): string {
@@ -676,7 +677,11 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
   const [provider, setProvider] = useState("");
   const [ip, setIp] = useState("");
   const [platform, setPlatform] = useState("");
+  const [username, setUsername] = useState("root");
+  const [sshPort, setSshPort] = useState("22");
   const [password, setPassword] = useState("");
+  const [sshKeyFile, setSshKeyFile] = useState<File | null>(null);
+  const [tagsInput, setTagsInput] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -686,10 +691,15 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
 
   useEffect(() => {
     if (!open) return;
-    fetch("/api/projects").then((response) => response.ok ? response.json() : { projects: [] }).then((data) => setProjects(data.projects || [])).catch(() => {});
+    fetch("/api/projects")
+      .then((response) => { if (!response.ok) throw new Error("Could not load your projects"); return response.json(); })
+      .then((data) => { setProjects(data.projects || []); setError(""); })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "Could not load your projects"));
   }, [open]);
 
-  const canSubmit = name.trim() && platform.trim() && ip.trim() && password.trim() && projectIds.length > 0;
+  const canSubmit = name.trim() && platform.trim() && ip.trim() && username.trim()
+    && Number.isInteger(Number(sshPort)) && Number(sshPort) >= 1 && Number(sshPort) <= 65535
+    && (password.trim() || sshKeyFile) && projectIds.length > 0;
 
   const inputClass =
     "w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary placeholder:text-text-tertiary text-sm focus:outline-none focus:border-[var(--border-active)] transition-colors";
@@ -703,6 +713,15 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
     setSuccess(false);
 
     try {
+      let uploadedKey: { url: string; fileName: string } | null = null;
+      if (sshKeyFile) {
+        const form = new FormData();
+        form.append("file", sshKeyFile);
+        const upload = await fetch("/api/vps/key-upload", { method: "POST", body: form });
+        const uploadData = await upload.json().catch(() => ({}));
+        if (!upload.ok) throw new Error(uploadData.error || "Failed to upload SSH key file");
+        uploadedKey = { url: uploadData.url, fileName: uploadData.fileName };
+      }
       const res = await fetch("/api/vps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -711,7 +730,12 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
           provider: provider.trim(),
           ip: ip.trim(),
           platform: platform.trim(),
+          username: username.trim(),
+          sshPort: Number(sshPort),
           password: password.trim(),
+          sshKeyFileUrl: uploadedKey?.url ?? "",
+          sshKeyFileName: uploadedKey?.fileName ?? "",
+          tags: tagsInput.split(",").map((tag) => tag.trim()).filter(Boolean),
           notes: notes.trim(),
           projectIds,
           maintainerIds: [],
@@ -727,7 +751,11 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
       setProvider("");
       setIp("");
       setPlatform("");
+      setUsername("root");
+      setSshPort("22");
       setPassword("");
+      setSshKeyFile(null);
+      setTagsInput("");
       setNotes("");
       setProjectIds([]);
       setSuccess(true);
@@ -812,8 +840,8 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
                 />
               </div>
 
-              {/* Row 2: Provider, Password */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Row 2: Provider, SSH username and port */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <input
                   type="text"
                   placeholder="Who provided it?"
@@ -822,14 +850,52 @@ function RequestServerForm({ onRequested }: { onRequested: () => void }) {
                   className={inputClass}
                 />
                 <input
-                  type="password"
-                  placeholder="SSH password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  type="text"
+                  aria-label="SSH username"
+                  placeholder="SSH username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  className={inputClass}
+                />
+                <input
+                  type="number"
+                  aria-label="SSH port"
+                  placeholder="SSH port"
+                  min="1"
+                  max="65535"
+                  value={sshPort}
+                  onChange={(e) => setSshPort(e.target.value)}
                   required
                   className={inputClass}
                 />
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  aria-label="SSH password"
+                  placeholder="SSH password (optional with key)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClass}
+                />
+                <label className={`${inputClass} cursor-pointer`}>
+                  <span className="text-text-tertiary">{sshKeyFile ? sshKeyFile.name : "SSH private key file (optional with password)"}</span>
+                  <input type="file" className="sr-only" onChange={(event) => setSshKeyFile(event.target.files?.[0] ?? null)} />
+                </label>
+              </div>
+
+              <input
+                type="text"
+                aria-label="Server tags"
+                placeholder="Tags, comma separated (optional)"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                className={inputClass}
+              />
+              <p className="-mt-2 text-[11px] text-[var(--text-tertiary)]">Provide a password, an SSH key file, or both.</p>
 
               {/* Row 3: Notes */}
               <textarea

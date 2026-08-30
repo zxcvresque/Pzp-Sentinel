@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
 
   const amount = Number(body?.amount);
   const currency = body?.currency === "USD" ? "USD" : body?.currency === "INR" ? "INR" : null;
-  const method = ["UPI", "BANK", "OTHER"].includes(body?.method) ? body.method as "UPI" | "BANK" | "OTHER" : null;
+  const method = ["UPI", "BMC", "BANK", "OTHER"].includes(body?.method) ? body.method as "UPI" | "BMC" | "BANK" | "OTHER" : null;
   const description = typeof body?.description === "string" ? body.description.trim() : "";
   const date = body?.date ? new Date(body.date) : new Date();
   const proofFileId = typeof body?.proofFileId === "string" ? body.proofFileId : null;

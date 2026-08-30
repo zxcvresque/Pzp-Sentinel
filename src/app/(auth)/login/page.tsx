@@ -699,10 +699,11 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
     <>
       {step === "id" ? (
         <form onSubmit={requestOtp}>
-          <label className="text-white/50 text-[11px] font-semibold uppercase tracking-[0.15em] block mb-2">
+          <label htmlFor="otp-telegram-id" className="text-white/50 text-[11px] font-semibold uppercase tracking-[0.15em] block mb-2">
             Telegram ID
           </label>
           <input
+            id="otp-telegram-id"
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
@@ -791,10 +792,11 @@ function OtpFlow({ onBack }: { onBack: () => void }) {
               OTP sent. Check your Telegram DMs.
             </p>
           </div>
-          <label className="text-white/50 text-[11px] font-semibold uppercase tracking-[0.15em] block mb-2">
+          <label htmlFor="otp-code" className="text-white/50 text-[11px] font-semibold uppercase tracking-[0.15em] block mb-2">
             Enter OTP
           </label>
           <input
+            id="otp-code"
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"

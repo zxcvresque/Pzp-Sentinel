@@ -11,6 +11,7 @@ type Invite = {
   note: string | null;
   expiresAt: string;
   allowRazorpay: boolean;
+  lockedRazorpayAmount: number | null;
   state: "ACTIVE" | "USED" | "EXPIRED" | "REVOKED";
 };
 
@@ -70,7 +71,7 @@ export default function OneTimeDonationPage({ token }: { token: string }) {
               <div className="mt-4 text-left sm:mt-0 sm:text-right"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Valid until</p><p className="mt-1 text-sm text-text-secondary">{new Date(invite.expiresAt).toLocaleString()}</p></div>
             </section>
             <BmcSupportCard guestToken={token} />
-            {invite.allowRazorpay && <RazorpayDonationCard guestToken={token} onSuccess={() => setComplete(true)} />}
+            {invite.allowRazorpay && <RazorpayDonationCard guestToken={token} lockedGuestAmount={invite.lockedRazorpayAmount} onSuccess={() => setComplete(true)} />}
           </>
         ) : null}
 

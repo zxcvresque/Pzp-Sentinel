@@ -32,8 +32,8 @@
 
   /* Text */
   --text-primary: #e4e4e8;
-  --text-secondary: rgba(228,228,232,0.50);
-  --text-tertiary: rgba(228,228,232,0.25);
+  --text-secondary: #aeb4bf;
+  --text-tertiary: rgba(174,180,191,0.76);
 
   /* Borders */
   --border: rgba(255,255,255,0.07);

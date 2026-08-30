@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { NotifType, DonateCadence, FormLayout, ReminderUnit } from "@/generated/prisma/enums";
 import type { Role } from "@/generated/prisma/enums";
 import { sessionTokens, setSessionCookies } from "@/lib/session-cookies";
+import { isReadableSubtextColor } from "@/lib/appearance";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function GET() {
       telegramUser: user.telegramUser,
       photoUrl: user.photoUrl,
       themeColor: user.themeColor,
+      subtextColor: user.subtextColor,
       formLayout: user.formLayout,
       onboardingVersion: user.onboardingVersion,
       savedColors: user.savedColors,
@@ -97,6 +99,7 @@ export async function PATCH(req: NextRequest) {
     githubUsername,
     name,
     themeColor,
+    subtextColor,
     savedColors,
     donateReminderCadence,
     donateReminderEveryN,
@@ -114,6 +117,7 @@ export async function PATCH(req: NextRequest) {
     githubUsername?: string;
     name?: string;
     themeColor?: string;
+    subtextColor?: string;
     savedColors?: string[];
     donateReminderCadence?: DonateCadence;
     donateReminderEveryN?: number | null;
@@ -185,6 +189,13 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: `Invalid hex color: "${color}"` }, { status: 400 });
     }
     data.themeColor = color;
+  }
+  if (subtextColor !== undefined) {
+    const color = typeof subtextColor === "string" ? subtextColor.trim() : "";
+    if (!isReadableSubtextColor(color)) {
+      return NextResponse.json({ error: "Choose a lighter subtext color with readable contrast" }, { status: 400 });
+    }
+    data.subtextColor = color;
   }
   if (savedColors !== undefined) {
     if (!Array.isArray(savedColors) || savedColors.length > 3 || savedColors.some((color) => typeof color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(color))) {
@@ -280,6 +291,7 @@ export async function PATCH(req: NextRequest) {
       githubUsername: true,
       name: true,
       themeColor: true,
+      subtextColor: true,
       savedColors: true,
       donateReminderCadence: true,
       donateReminderEveryN: true,

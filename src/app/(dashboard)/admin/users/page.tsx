@@ -726,10 +726,11 @@ export default function UsersPage() {
             <FormExample lines={["Name: John Doe", "Telegram ID: 123456789 · Username: johndoe", "Roles: DONOR (or ADMIN, DEV)"]} />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="new-user-name" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Name
                 </label>
                 <input
+                  id="new-user-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -739,11 +740,14 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="new-user-telegram-id" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Telegram ID
                 </label>
                 <input
+                  id="new-user-telegram-id"
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{5,20}"
                   value={telegramId}
                   onChange={(e) => setTelegramId(e.target.value)}
                   placeholder="Numeric TG ID"
@@ -752,23 +756,24 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
-                  TG Username
+                <label htmlFor="new-user-telegram-name" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                  TG Username (optional)
                 </label>
                 <input
+                  id="new-user-telegram-name"
                   type="text"
                   value={telegramUser}
                   onChange={(e) => setTelegramUser(e.target.value)}
                   placeholder="@username"
-                  required
                   className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="new-user-github-name" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   GitHub Username
                 </label>
                 <input
+                  id="new-user-github-name"
                   type="text"
                   value={githubUsername}
                   onChange={(e) => setGithubUsername(e.target.value)}
@@ -778,9 +783,9 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="mb-4">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Roles
-              </label>
+              </span>
               <div className="flex gap-2">
                 {["ADMIN", "DONOR", "DEV"].map((role) => {
                   const rc = getRoleColor(role);
@@ -803,7 +808,7 @@ export default function UsersPage() {
             </div>
             <button
               type="submit"
-              disabled={submitting || !name || !telegramId || !telegramUser || roles.length === 0}
+              disabled={submitting || !name || !/^\d{5,20}$/.test(telegramId) || roles.length === 0}
               className="bg-lime text-bg-void font-semibold px-6 py-2.5 rounded-full text-sm hover:bg-lime/90 disabled:opacity-40 transition-colors"
             >
               {submitting ? "Creating..." : "Create User"}

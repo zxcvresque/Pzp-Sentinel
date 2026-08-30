@@ -13,6 +13,7 @@ import { recordFinancialEvent } from "@/lib/record-financial-event";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import { projectAccessFor } from "@/lib/project-access";
 import { DEFAULT_VPS_ALERT_PREFERENCE, promptNewVpsMaintainers } from "@/lib/vps-alerts";
+import { isValidSshUsername, isValidVpsHost, parseSshPort } from "@/lib/vps-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +41,7 @@ function normalizeTags(value: unknown) {
 }
 
 function normalizeSshPort(value: unknown) {
-  const port = Number(value);
-  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 22;
+  return parseSshPort(value) ?? 22;
 }
 
 type MetricAggregate = {
@@ -282,6 +282,15 @@ export async function POST(req: NextRequest) {
       if (!await projectAccessFor(user, projectId)) return NextResponse.json({ error: "You can only link servers to your projects" }, { status: 403 });
     }
   }
+  if (!isValidVpsHost(cleanIp)) {
+    return NextResponse.json({ error: "Enter a valid IP address or hostname" }, { status: 400 });
+  }
+  if (!isValidSshUsername(cleanUsername)) {
+    return NextResponse.json({ error: "Enter a valid SSH username" }, { status: 400 });
+  }
+  if (sshPort !== undefined && parseSshPort(sshPort) === null) {
+    return NextResponse.json({ error: "SSH port must be a whole number from 1 to 65535" }, { status: 400 });
+  }
   if (linkedProjectIds.length) {
     const projectCount = await prisma.project.count({ where: { id: { in: linkedProjectIds }, archivedAt: null } });
     if (projectCount !== linkedProjectIds.length) return NextResponse.json({ error: "One or more projects are invalid" }, { status: 400 });
@@ -455,6 +464,11 @@ export async function PATCH(req: NextRequest) {
     const maintainerIds: string[] | null = Array.isArray(body.maintainerIds)
       ? Array.from(new Set<string>(body.maintainerIds.filter((value: unknown): value is string => typeof value === "string")))
       : null;
+    const nextHost = String(body.ip ?? existingServer.ip).trim();
+    const nextUsername = String(body.username ?? existingServer.username ?? "root").trim() || "root";
+    if (!isValidVpsHost(nextHost)) return NextResponse.json({ error: "Enter a valid IP address or hostname" }, { status: 400 });
+    if (!isValidSshUsername(nextUsername)) return NextResponse.json({ error: "Enter a valid SSH username" }, { status: 400 });
+    if (body.sshPort !== undefined && parseSshPort(body.sshPort) === null) return NextResponse.json({ error: "SSH port must be a whole number from 1 to 65535" }, { status: 400 });
 
     if (projectIds) {
       const validProjects = await prisma.project.count({ where: { id: { in: projectIds }, archivedAt: null } });
@@ -468,9 +482,9 @@ export async function PATCH(req: NextRequest) {
     const data: Prisma.VpsServerUpdateInput = {
       name: String(body.name ?? existingServer.name).trim() || existingServer.name,
       provider: String(body.provider ?? "").trim(),
-      ip: String(body.ip ?? existingServer.ip).trim(),
+      ip: nextHost,
       platform: String(body.platform ?? "").trim(),
-      username: String(body.username ?? "root").trim() || "root",
+      username: nextUsername,
       sshPort: normalizeSshPort(body.sshPort),
       accessPublicKeys: String(body.accessPublicKeys ?? "").trim(),
       tags: normalizeTags(body.tags),

@@ -89,12 +89,15 @@ export default function RazorpayDonationCard({
   onSuccess,
   adminPreview = false,
   guestToken,
+  lockedGuestAmount = null,
 }: {
   onSuccess?: () => void | Promise<void>;
   adminPreview?: boolean;
   guestToken?: string;
+  lockedGuestAmount?: number | null;
 }) {
-  const [amount, setAmount] = useState("501");
+  const [amount, setAmount] = useState(lockedGuestAmount == null ? "501" : String(lockedGuestAmount));
+  const [guestAmountLocked, setGuestAmountLocked] = useState(lockedGuestAmount != null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
@@ -130,6 +133,10 @@ export default function RazorpayDonationCard({
         id: string; amount: number; currency: string; description: string; keyId: string; testMode: boolean;
         prefill: { name: string };
       };
+      if (guestToken) {
+        setAmount(String(order.amount / 100));
+        setGuestAmountLocked(true);
+      }
       if (!window.Razorpay) throw new Error("Razorpay Checkout is unavailable");
       const checkoutOptions: Record<string, unknown> = {
         key: order.keyId,
@@ -255,7 +262,7 @@ export default function RazorpayDonationCard({
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {presets.map((preset) => (
-              <button key={preset} type="button" onClick={() => setAmount(String(preset))}
+              <button key={preset} type="button" disabled={guestAmountLocked} onClick={() => setAmount(String(preset))}
                 className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all ${amount === String(preset) ? "border-lime/40 bg-lime/12 text-lime shadow-[0_0_24px_var(--lime-glow)]" : "border-[var(--border)] bg-white/[.02] text-text-secondary hover:border-[var(--border-hover)] hover:text-text-primary"}`}>
                 ₹{preset.toLocaleString("en-IN")}
               </button>
@@ -267,10 +274,11 @@ export default function RazorpayDonationCard({
               <span className="mb-1.5 block font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Custom amount</span>
               <span className="flex h-12 items-center rounded-xl border border-[var(--border)] bg-black/10 px-3 focus-within:border-[var(--border-active)]">
                 <span className="mr-2 text-text-secondary">₹</span>
-                <input aria-label="Donation amount" type="text" inputMode="decimal" value={amount}
+                <input aria-label="Donation amount" type="text" inputMode="decimal" value={amount} disabled={guestAmountLocked}
                   onChange={(event) => /^\d*\.?\d{0,2}$/.test(event.target.value) && setAmount(event.target.value)}
                   className="min-w-0 flex-1 bg-transparent text-base font-semibold text-text-primary outline-none" placeholder="501" />
               </span>
+              {guestAmountLocked && <span className="mt-1.5 block text-[10px] text-text-tertiary">Amount locked when this secure checkout was created.</span>}
             </label>
             <label className="block">
               <span className="mb-1.5 block font-mono text-[9px] uppercase tracking-[.12em] text-text-tertiary">Note (optional)</span>

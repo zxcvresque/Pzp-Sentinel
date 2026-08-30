@@ -5,6 +5,7 @@ import Dropdown from "@/components/Dropdown";
 import TgUser from "@/components/TgUser";
 import FormExample from "@/components/FormExample";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import FormDialog from "@/components/FormDialog";
 import { reminderRepeatLabel, type ReminderFrequency, type ReminderRepeatUnit } from "@/lib/admin-reminders";
 
 interface Reminder {
@@ -66,13 +67,16 @@ export default function RemindersPage() {
   const [admins, setAdmins] = useState<Array<{ id: string; name: string; photoUrl?: string | null }>>([]);
   const [ownerId, setOwnerId] = useState("");
   const [escalationAt, setEscalationAt] = useState("");
+  const [snoozeTarget, setSnoozeTarget] = useState<Reminder | null>(null);
+  const [snoozeUntil, setSnoozeUntil] = useState("");
 
   useEffect(() => {
-    Promise.all([fetch("/api/reminders").then((r) => r.json()), fetch("/api/users").then((r) => r.ok ? r.json() : { users: [] })])
+    Promise.all([fetch("/api/reminders").then((r) => { if (!r.ok) throw new Error("Could not load reminders"); return r.json(); }), fetch("/api/users").then((r) => { if (!r.ok) throw new Error("Could not load reminder owners"); return r.json(); })])
       .then(([data, userData]) => {
         setReminders(data.reminders || []);
         setAdmins((userData.users || []).filter((candidate: { roles: string[]; status: string }) => candidate.roles.includes("ADMIN") && candidate.status === "ACTIVE"));
       })
+      .catch((error) => setErrorMsg(error instanceof Error ? error.message : "Could not load reminders"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -115,6 +119,20 @@ export default function RemindersPage() {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg("");
+
+    const firstSend = new Date(nextFire);
+    if (Number.isNaN(firstSend.getTime()) || firstSend <= new Date()) {
+      setErrorMsg("First send must be in the future.");
+      setSubmitting(false);
+      document.getElementById("reminder-next-fire")?.focus();
+      return;
+    }
+    if (escalationAt && new Date(escalationAt) <= firstSend) {
+      setErrorMsg("Escalation must be after the first send.");
+      setSubmitting(false);
+      document.getElementById("reminder-escalation-at")?.focus();
+      return;
+    }
 
     const payload = {
       message,
@@ -183,14 +201,37 @@ export default function RemindersPage() {
   async function reminderAction(id: string, action: "ACKNOWLEDGE" | "SNOOZE") {
     const payload: Record<string, string> = { action };
     if (action === "SNOOZE") {
-      const until = window.prompt("Snooze until (for example 2026-08-22T10:00)");
-      if (!until) return;
-      payload.until = new Date(until).toISOString();
+      const reminder = reminders.find((item) => item.id === id);
+      if (!reminder) return;
+      setSnoozeTarget(reminder);
+      setSnoozeUntil("");
+      setErrorMsg("");
+      return;
     }
     const response = await fetch(`/api/reminders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     if (!response.ok) return;
     const data = await response.json();
     setReminders((current) => current.map((reminder) => reminder.id === id ? { ...reminder, ...data.reminder } : reminder));
+  }
+
+  async function submitSnooze(event: React.FormEvent) {
+    event.preventDefault();
+    if (!snoozeTarget) return;
+    const until = new Date(snoozeUntil);
+    if (Number.isNaN(until.getTime()) || until <= new Date()) {
+      setErrorMsg("Choose a future snooze time.");
+      document.getElementById("snooze-until")?.focus();
+      return;
+    }
+    setSubmitting(true);
+    const response = await fetch(`/api/reminders/${snoozeTarget.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "SNOOZE", until: until.toISOString() }) });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) setErrorMsg(data?.error || "Could not snooze reminder");
+    else {
+      setReminders((current) => current.map((reminder) => reminder.id === snoozeTarget.id ? { ...reminder, ...data.reminder } : reminder));
+      setSnoozeTarget(null);
+    }
+    setSubmitting(false);
   }
 
   if (loading) {
@@ -215,6 +256,10 @@ export default function RemindersPage() {
         variant="danger"
         loading={deleting}
       />
+      <FormDialog open={snoozeTarget !== null} title="Snooze reminder" description="Choose when this reminder should become due again." submitLabel="Snooze" loading={submitting} error={errorMsg} onClose={() => setSnoozeTarget(null)} onSubmit={submitSnooze}>
+        <label htmlFor="snooze-until" className="block text-xs font-semibold text-text-secondary">Snooze until</label>
+        <input id="snooze-until" autoFocus required type="datetime-local" value={snoozeUntil} onChange={(event) => setSnoozeUntil(event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-3 py-2 text-text-primary" />
+      </FormDialog>
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-extrabold">
@@ -234,6 +279,7 @@ export default function RemindersPage() {
           {showForm ? "Cancel" : "New Reminder"}
         </button>
       </div>
+      {errorMsg && !showForm && !snoozeTarget && <div role="alert" className="mb-4 rounded-lg border border-coral/20 bg-coral/8 px-4 py-3 text-sm text-coral">{errorMsg}</div>}
 
       {successMsg && (
         <div className="mb-4 p-4 rounded-lg bg-mint/8 border border-mint/20 text-mint text-sm">
@@ -267,10 +313,11 @@ export default function RemindersPage() {
             </div>
           )}
           <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+            <label htmlFor="reminder-message" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Message
             </label>
             <textarea
+              id="reminder-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Reminder message..."
@@ -281,10 +328,11 @@ export default function RemindersPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <label htmlFor="reminder-frequency" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Frequency
               </label>
               <Dropdown
+                id="reminder-frequency"
                 value={frequency}
                 options={[
                   { value: "ONCE", label: "Once" },
@@ -294,11 +342,13 @@ export default function RemindersPage() {
               />
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <label htmlFor="reminder-next-fire" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 First Send
               </label>
               <input
                 type="datetime-local"
+                id="reminder-next-fire"
+                min={localDateTimeValue(new Date().toISOString())}
                 value={nextFire}
                 onChange={(e) => setNextFire(e.target.value)}
                 required
@@ -306,10 +356,11 @@ export default function RemindersPage() {
               />
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <label htmlFor="reminder-channel" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Delivery
               </label>
               <Dropdown
+                id="reminder-channel"
                 value={channel}
                 options={[
                   { value: "BOTH", label: "Both" },
@@ -322,11 +373,12 @@ export default function RemindersPage() {
           </div>
           {frequency === "CUSTOM" && (
             <div className="mb-4">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <label htmlFor="reminder-repeat-every" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Repeat Every
               </label>
               <div className="grid max-w-xl grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3">
                 <input
+                  id="reminder-repeat-every"
                   type="number"
                   min="1"
                   max="10000"
@@ -336,7 +388,7 @@ export default function RemindersPage() {
                   required
                   className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30"
                 />
-                <Dropdown
+                <Dropdown ariaLabel="Repeat unit"
                   value={repeatUnit}
                   options={[
                     { value: "MINUTE", label: "Minutes" },
@@ -352,12 +404,12 @@ export default function RemindersPage() {
           )}
           <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Owner</label>
-              <Dropdown value={ownerId} options={[{ value: "", label: "Me" }, ...admins.map((admin) => ({ value: admin.id, label: admin.name, avatar: admin.photoUrl ?? null }))]} onChange={setOwnerId} />
+              <label htmlFor="reminder-owner" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Owner</label>
+              <Dropdown id="reminder-owner" value={ownerId} options={[{ value: "", label: "Me" }, ...admins.map((admin) => ({ value: admin.id, label: admin.name, avatar: admin.photoUrl ?? null }))]} onChange={setOwnerId} />
             </div>
             <div>
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Escalate if unacknowledged (optional)</label>
-              <input type="datetime-local" value={escalationAt} onChange={(event) => setEscalationAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" />
+              <label htmlFor="reminder-escalation-at" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Escalate if unacknowledged (optional)</label>
+              <input id="reminder-escalation-at" type="datetime-local" min={nextFire || localDateTimeValue(new Date().toISOString())} value={escalationAt} onChange={(event) => setEscalationAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" />
             </div>
           </div>
           <button

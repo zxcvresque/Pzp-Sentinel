@@ -138,7 +138,7 @@ function shellQuote(value: string): string {
 }
 
 function sshTarget(user: string, ip: string): string {
-  return ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`;
+  return shellQuote(ip.includes(":") ? `${user}@[${ip}]` : `${user}@${ip}`);
 }
 
 function sshPortFlag(port: number): string {
@@ -251,7 +251,7 @@ function sentinelOrigin(): string {
 
 /** Full copy-paste install one-liner for a server's agent token. */
 function installCommand(token: string): string {
-  return `curl -fsSL ${sentinelOrigin()}/install.sh | sudo bash -s -- --token ${token}`;
+  return `curl -fsSL ${shellQuote(`${sentinelOrigin()}/install.sh`)} | sudo bash -s -- --token ${shellQuote(token)}`;
 }
 
 /** Days until expiry (negative = already expired). */

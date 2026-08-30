@@ -187,14 +187,20 @@ registerBmcFeedbackHandlers(bot, prisma);
 const handleUpdate = webhookCallback(bot, "std/http");
 
 export async function POST(req: NextRequest) {
+  const configuredSecret = process.env.BOT_WEBHOOK_SECRET;
+  if (!configuredSecret) {
+    console.error("[bot-webhook] BOT_WEBHOOK_SECRET is not configured; refusing update");
+    return NextResponse.json({ error: "Webhook unavailable" }, { status: 503 });
+  }
   const secretToken = req.headers.get("x-telegram-bot-api-secret-token");
-  if (process.env.BOT_WEBHOOK_SECRET && secretToken !== process.env.BOT_WEBHOOK_SECRET) {
+  if (secretToken !== configuredSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     return await handleUpdate(req);
-  } catch {
-    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("[bot-webhook] Telegram update failed", error);
+    return NextResponse.json({ error: "Update processing failed" }, { status: 500 });
   }
 }

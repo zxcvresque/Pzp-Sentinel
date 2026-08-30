@@ -15,6 +15,7 @@ import {
   pageToursDisabledStorageKey,
 } from "@/lib/guidance-storage";
 import type { Role } from "@/generated/prisma/enums";
+import { applyAccentColor, applySubtextColor } from "@/lib/appearance";
 
 interface UserData {
   id: string;
@@ -22,29 +23,11 @@ interface UserData {
   telegramUser: string;
   photoUrl: string | null;
   themeColor?: string;
+  subtextColor?: string;
   formLayout?: "SECTION_CARDS" | "ACCENT_RAILS" | "NUMBERED_WORKFLOW" | "INFORMATION_BANDS";
   onboardingVersion: number;
   githubUsername?: string | null;
   roles: Role[];
-}
-
-function applyThemeColor(hex: string) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  document.documentElement.style.setProperty("--lime", hex);
-  document.documentElement.style.setProperty(
-    "--lime-dim",
-    `rgba(${r}, ${g}, ${b}, 0.08)`,
-  );
-  document.documentElement.style.setProperty(
-    "--lime-glow",
-    `rgba(${r}, ${g}, ${b}, 0.12)`,
-  );
-  document.documentElement.style.setProperty(
-    "--border-active",
-    `rgba(${r}, ${g}, ${b}, 0.3)`,
-  );
 }
 
 function highestRoleRoute(roles: Role[]): string {
@@ -96,7 +79,10 @@ export default function DashboardLayout({
         setTourRole(initialRole);
         setUser(loadedUser);
         if (data.user.themeColor) {
-          applyThemeColor(data.user.themeColor);
+          applyAccentColor(data.user.themeColor);
+        }
+        if (data.user.subtextColor) {
+          applySubtextColor(data.user.subtextColor);
         }
         document.documentElement.dataset.formLayout = data.user.formLayout || "SECTION_CARDS";
       } catch {

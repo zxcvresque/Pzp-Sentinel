@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 type Invite = {
   id: string;
@@ -34,10 +35,14 @@ export default function OneTimeDonationLinks() {
   const [allowRazorpay, setAllowRazorpay] = useState(false);
   const [createdBotLink, setCreatedBotLink] = useState("");
   const [message, setMessage] = useState("");
+  const [revokeTarget, setRevokeTarget] = useState<Invite | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/payments/razorpay/invites", { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || "Could not load payment links");
+    }
     const data = await response.json();
     setInvites(data.invites || []);
   }, []);
@@ -69,10 +74,22 @@ export default function OneTimeDonationLinks() {
   }
 
   async function revoke(id: string) {
-    const response = await fetch("/api/payments/razorpay/invites", {
-      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
-    });
-    if (response.ok) await load();
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/payments/razorpay/invites", {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "Could not revoke link");
+      await load();
+      setMessage("Payment link revoked.");
+      setRevokeTarget(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not revoke link");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function copyLink() {
@@ -82,7 +99,8 @@ export default function OneTimeDonationLinks() {
 
   return (
     <section data-tour="guest-payment-links" className="mb-8 overflow-hidden rounded-[20px] border border-[var(--border)] bg-bg-deep">
-      <button type="button" onClick={() => { if (!open) void load(); setOpen((value) => !value); }} className="flex w-full items-center justify-between gap-4 p-4 text-left sm:p-5">
+      <ConfirmDialog open={revokeTarget !== null} onClose={() => setRevokeTarget(null)} onConfirm={() => { if (revokeTarget) void revoke(revokeTarget.id); }} title="Revoke this payment link?" message={revokeTarget ? `${revokeTarget.guestName} will no longer be able to use it.` : "The link will stop working."} confirmLabel="Revoke" loading={loading} />
+      <button type="button" onClick={() => { if (!open) void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load payment links")); setOpen((value) => !value); }} className="flex w-full items-center justify-between gap-4 p-4 text-left sm:p-5">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-violet/20 bg-violet/8 text-violet">
             <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 10h6M10 7v6"/><rect x="2.5" y="3" width="15" height="14" rx="3"/><path d="M6 3V1.8M14 3V1.8"/></svg>
@@ -136,7 +154,7 @@ export default function OneTimeDonationLinks() {
                 const active = state === "Awaiting claim" || state === "Identity verified" || state === "Checkout started";
                 return <div key={invite.id} className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-black/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0"><div className="truncate text-sm font-medium">{invite.guestName}{invite.telegramUser && <span className="font-normal text-text-tertiary"> @{invite.telegramUser}</span>}</div><div className="mt-1 font-mono text-[9px] text-text-tertiary">{invite.telegramId ? `TG ${invite.telegramId} · ` : "Identity pending · "}{invite.allowRazorpay ? "BMC + Razorpay" : "BMC"} · expires {new Date(invite.expiresAt).toLocaleString()}</div></div>
-                  <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 font-mono text-[9px] uppercase ${state === "Used" ? "bg-mint/10 text-mint" : active ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{state}</span>{active && <button type="button" onClick={() => revoke(invite.id)} className="rounded-full border border-coral/20 px-2.5 py-1 text-[10px] text-coral">Revoke</button>}</div>
+                  <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 font-mono text-[9px] uppercase ${state === "Used" ? "bg-mint/10 text-mint" : active ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{state}</span>{active && <button type="button" onClick={() => setRevokeTarget(invite)} className="rounded-full border border-coral/20 px-2.5 py-1 text-[10px] text-coral">Revoke</button>}</div>
                 </div>;
               })}
             </div>

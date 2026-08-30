@@ -14,6 +14,14 @@ import {
   pageToursDisabledStorageKey,
 } from "@/lib/guidance-storage";
 import type { GuidanceRole } from "@/lib/guidance-storage";
+import {
+  applyAccentColor,
+  applySubtextColor,
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_SUBTEXT_COLOR,
+  isReadableSubtextColor,
+  SUBTEXT_COLOR_PRESETS,
+} from "@/lib/appearance";
 
 interface UserProfile {
   id: string;
@@ -22,6 +30,7 @@ interface UserProfile {
   telegramUser: string;
   photoUrl: string | null;
   themeColor?: string;
+  subtextColor?: string;
   formLayout: FormLayout;
   chatId: string | null;
   roles: GuidanceRole[];
@@ -72,6 +81,7 @@ export default function ProfilePage() {
   const [layoutSaving, setLayoutSaving] = useState(false);
   const [layoutPreview, setLayoutPreview] = useState<FormLayout | null>(null);
   const [hexDraft, setHexDraft] = useState<string | null>(null);
+  const [subtextHexDraft, setSubtextHexDraft] = useState<string | null>(null);
   const { showExamples, hideExamples, enableExamples } = useFormExamples();
 
   useEffect(() => {
@@ -185,13 +195,7 @@ export default function ProfilePage() {
     async (hex: string) => {
       if (!user) return;
       setUser((prev) => (prev ? { ...prev, themeColor: hex } : prev));
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
-      document.documentElement.style.setProperty("--lime", hex);
-      document.documentElement.style.setProperty("--lime-dim", `rgba(${r},${g},${b},0.08)`);
-      document.documentElement.style.setProperty("--lime-glow", `rgba(${r},${g},${b},0.12)`);
-      document.documentElement.style.setProperty("--border-active", `rgba(${r},${g},${b},0.3)`);
+      applyAccentColor(hex);
       setThemeSaved("saving");
       setThemeError("");
       try {
@@ -216,9 +220,59 @@ export default function ProfilePage() {
     [user],
   );
 
+  const [subtextSaved, setSubtextSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [subtextError, setSubtextError] = useState("");
+
+  const handleSubtextChange = useCallback(
+    async (hex: string) => {
+      if (!user) return;
+      const normalized = hex.toUpperCase();
+      if (!isReadableSubtextColor(normalized)) {
+        setSubtextError("Choose a lighter color for readable text");
+        setSubtextSaved("error");
+        return;
+      }
+
+      setUser((current) => current ? { ...current, subtextColor: normalized } : current);
+      applySubtextColor(normalized);
+      setSubtextSaved("saving");
+      setSubtextError("");
+      try {
+        const response = await fetch("/api/auth/me", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subtextColor: normalized }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || `HTTP ${response.status}`);
+        }
+        setSubtextSaved("saved");
+        setTimeout(() => setSubtextSaved("idle"), 1500);
+      } catch (error) {
+        setSubtextError(error instanceof Error ? error.message : "Save failed");
+        setSubtextSaved("error");
+      }
+    },
+    [user],
+  );
+
+  function commitSubtextHex(rawValue: string) {
+    const raw = rawValue.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+    setSubtextHexDraft(null);
+    if (raw.length !== 6) return;
+    const color = `#${raw}`;
+    if (isReadableSubtextColor(color)) {
+      handleSubtextChange(color);
+    } else {
+      setSubtextError("Choose a lighter color for readable text");
+      setSubtextSaved("error");
+    }
+  }
+
   async function saveColorToSlot(index: number) {
     if (!user) return;
-    const currentColor = user.themeColor || "#6FD1D7";
+    const currentColor = user.themeColor || DEFAULT_ACCENT_COLOR;
     const newSaved = [...savedColors];
     newSaved[index] = currentColor;
     while (newSaved.length <= index) newSaved.push(currentColor);
@@ -530,7 +584,7 @@ export default function ProfilePage() {
 
           <div className="mt-auto">
             <ThemeColorPicker
-              value={user.themeColor || "#6FD1D7"}
+              value={user.themeColor || DEFAULT_ACCENT_COLOR}
               onChange={handleThemeChange}
             />
           </div>
@@ -539,7 +593,7 @@ export default function ProfilePage() {
           <div className="mt-4 flex items-center gap-1.5 sm:gap-2">
             <div
               className="w-5 h-5 rounded-full border border-[var(--border)] shrink-0"
-              style={{ background: user.themeColor || "#6FD1D7" }}
+              style={{ background: user.themeColor || DEFAULT_ACCENT_COLOR }}
             />
             <div className="relative flex-1 min-w-0">
               <span className="absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-text-tertiary pointer-events-none">
@@ -549,7 +603,7 @@ export default function ProfilePage() {
                 type="text"
                 maxLength={6}
                 placeholder="FFFFFF"
-                value={hexDraft !== null ? hexDraft : (user.themeColor || "#6FD1D7").replace("#", "").toUpperCase()}
+                value={hexDraft !== null ? hexDraft : (user.themeColor || DEFAULT_ACCENT_COLOR).replace("#", "").toUpperCase()}
                 onChange={(e) => {
                   const raw = e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
                   setHexDraft(raw.toUpperCase());
@@ -576,6 +630,88 @@ export default function ProfilePage() {
               {themeSaved === "saved" && <span className="text-mint uppercase">saved</span>}
               {themeSaved === "error" && <span className="text-coral">{themeError || "failed"}</span>}
             </span>
+          </div>
+
+          <div className="my-5 border-t border-[var(--border)]" />
+
+          <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary mb-2">
+            Subtext Colour
+          </div>
+          <div className="text-xs text-text-secondary mb-3">
+            Make labels, dates and supporting details easier to read across the app.
+          </div>
+
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Suggested subtext colors">
+            {SUBTEXT_COLOR_PRESETS.map((preset) => {
+              const active = (user.subtextColor || DEFAULT_SUBTEXT_COLOR).toUpperCase() === preset.color;
+              return (
+                <button
+                  key={preset.color}
+                  type="button"
+                  onClick={() => handleSubtextChange(preset.color)}
+                  aria-pressed={active}
+                  className={`flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors ${active ? "border-[var(--border-active)] bg-lime/[.06]" : "border-[var(--border)] bg-white/[.015] hover:border-[var(--border-hover)]"}`}
+                >
+                  <span className="h-4 w-4 shrink-0 rounded-full border border-white/20" style={{ background: preset.color }} />
+                  <span className="truncate text-[10px] font-semibold" style={{ color: preset.color }}>{preset.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <label
+              className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-[var(--border)]"
+              title="Open custom color selector"
+            >
+              <span className="sr-only">Choose a custom subtext color</span>
+              <input
+                type="color"
+                value={user.subtextColor || DEFAULT_SUBTEXT_COLOR}
+                onChange={(event) => handleSubtextChange(event.target.value)}
+                className="absolute -inset-2 h-12 w-12 cursor-pointer border-0 bg-transparent p-0"
+              />
+            </label>
+            <div className="relative min-w-0 flex-1">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[10px] text-text-tertiary">#</span>
+              <input
+                type="text"
+                maxLength={6}
+                aria-label="Custom subtext hex color"
+                value={subtextHexDraft !== null ? subtextHexDraft : (user.subtextColor || DEFAULT_SUBTEXT_COLOR).replace("#", "").toUpperCase()}
+                onChange={(event) => {
+                  const raw = event.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+                  setSubtextHexDraft(raw.toUpperCase());
+                  if (raw.length === 6) {
+                    if (isReadableSubtextColor(`#${raw}`)) {
+                      handleSubtextChange(`#${raw}`);
+                      setSubtextHexDraft(null);
+                    } else {
+                      setSubtextError("Choose a lighter color for readable text");
+                      setSubtextSaved("error");
+                    }
+                  }
+                }}
+                onBlur={(event) => commitSubtextHex(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitSubtextHex(event.currentTarget.value);
+                }}
+                className="w-full rounded-md border border-[var(--border)] bg-bg-elevated py-1.5 pl-5 pr-2 font-mono text-[11px] uppercase tracking-wider text-text-primary outline-none transition-colors focus:border-[var(--border-active)]"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSubtextChange(DEFAULT_SUBTEXT_COLOR)}
+              className="h-8 rounded-lg border border-[var(--border)] px-2.5 font-mono text-[9px] uppercase tracking-wider text-text-secondary hover:border-[var(--border-hover)]"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="mt-2 min-h-4 font-mono text-[9px] tracking-wider" aria-live="polite">
+            {subtextSaved === "saving" && <span className="text-text-tertiary uppercase">saving</span>}
+            {subtextSaved === "saved" && <span className="text-mint uppercase">saved</span>}
+            {subtextSaved === "error" && <span className="text-coral">{subtextError}</span>}
           </div>
         </div>
 

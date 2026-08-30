@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       telegramUser: invite.telegramUser,
       note: invite.note,
       allowRazorpay: invite.allowRazorpay,
+      lockedRazorpayAmount: invite.order ? invite.order.amount / 100 : null,
       expiresAt: invite.expiresAt,
       state,
     },

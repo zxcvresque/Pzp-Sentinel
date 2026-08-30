@@ -10,6 +10,8 @@ import RazorpayAccessBanner from "@/components/RazorpayAccessBanner";
 import PaymentMethodBadge from "@/components/PaymentMethodBadge";
 import CurrencyToggle from "@/components/CurrencyToggle";
 import AttachmentViewer, { attachmentName } from "@/components/AttachmentViewer";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import FormDialog from "@/components/FormDialog";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import {
   convertCurrencyAmount,
@@ -47,6 +49,7 @@ export default function DonorDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [formError, setFormError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [paymentAccess, setPaymentAccess] = useState<{
     bmc: boolean;
     razorpay: boolean;
@@ -59,6 +62,12 @@ export default function DonorDashboard() {
   const [totalPages, setTotalPages] = useState(1);
   const [summary, setSummary] = useState<SummaryRow[]>([]);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<Transaction | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<Transaction | null>(null);
+  const [appealTarget, setAppealTarget] = useState<Transaction | null>(null);
+  const [appealMessage, setAppealMessage] = useState("");
 
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>("USD");
   const [usdToInr, setUsdToInr] = useState<number | null>(null);
@@ -87,6 +96,7 @@ export default function DonorDashboard() {
     setTransactions(data.transactions || []);
     setSummary(data.summary || []);
     setTotalPages(data.totalPages || 1);
+    setLoadError("");
   }, [page, statusFilter]);
 
   const loadPaymentAccess = useCallback(async () => {
@@ -107,7 +117,7 @@ export default function DonorDashboard() {
     // Both callbacks intentionally populate client state from external APIs.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshDashboard()
-      .catch(() => setTransactions([]))
+      .catch((error) => setLoadError(error instanceof Error ? error.message : "Could not load donations"))
       .finally(() => setLoading(false));
   }, [refreshDashboard]);
 
@@ -171,23 +181,44 @@ export default function DonorDashboard() {
     fetch("/api/auth/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferredCurrency: next }) }).catch(() => {});
   }
 
-  async function editPending(tx: Transaction) {
-    const nextAmount = window.prompt("Donation amount", tx.amount);
-    if (nextAmount === null) return;
-    const nextDescription = window.prompt("Description or payment reference", tx.description);
-    if (nextDescription === null) return;
+  function editPending(tx: Transaction) {
+    setEditTarget(tx);
+    setEditAmount(tx.amount);
+    setEditDescription(tx.description);
+    setFormError("");
+  }
+
+  async function submitPendingEdit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editTarget) return;
+    const tx = editTarget;
     setMutatingId(tx.id);
     try {
-      const response = await fetch(`/api/transactions/${tx.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: nextAmount, description: nextDescription }) });
+      const response = await fetch(`/api/transactions/${tx.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: editAmount, description: editDescription }) });
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.error || "Could not update donation");
       await load();
+      setEditTarget(null);
     } catch (error) { setFormError(error instanceof Error ? error.message : "Could not update donation"); }
     finally { setMutatingId(null); }
   }
 
   async function attachProof(tx: Transaction, fileList: FileList | null) {
     if (!fileList?.length) return;
+    const existingCount = tx.attachments?.length ?? 0;
+    if (existingCount >= 10) {
+      setFormError("This donation already has the maximum of 10 proof files.");
+      return;
+    }
+    if (fileList.length > 10 - existingCount) {
+      setFormError(`You can add only ${10 - existingCount} more proof file${10 - existingCount === 1 ? "" : "s"}.`);
+      return;
+    }
+    const invalid = Array.from(fileList).find((file) => !file.type.startsWith("image/"));
+    if (invalid) {
+      setFormError(`“${invalid.name}” is not an image.`);
+      return;
+    }
     setMutatingId(tx.id);
     try {
       const form = new FormData();
@@ -203,33 +234,53 @@ export default function DonorDashboard() {
     finally { setMutatingId(null); }
   }
 
-  async function cancelPending(tx: Transaction) {
-    if (!window.confirm("Cancel this pending submission?")) return;
+  function cancelPending(tx: Transaction) {
+    setCancelTarget(tx);
+  }
+
+  async function confirmCancelPending() {
+    if (!cancelTarget) return;
+    const tx = cancelTarget;
     setMutatingId(tx.id);
     try {
       const response = await fetch(`/api/transactions/${tx.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Cancelled by donor" }) });
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.error || "Could not cancel donation");
       await load();
+      setCancelTarget(null);
     } catch (error) { setFormError(error instanceof Error ? error.message : "Could not cancel donation"); }
     finally { setMutatingId(null); }
   }
 
-  async function appealRejected(tx: Transaction) {
-    const message = window.prompt("Tell the admins why this contribution should be reviewed again", tx.donorAppealMessage || "");
-    if (!message?.trim()) return;
+  function appealRejected(tx: Transaction) {
+    setAppealTarget(tx);
+    setAppealMessage(tx.donorAppealMessage || "");
+    setFormError("");
+  }
+
+  async function submitAppeal(event: React.FormEvent) {
+    event.preventDefault();
+    if (!appealTarget || !appealMessage.trim()) return;
+    const tx = appealTarget;
     setMutatingId(tx.id);
     try {
-      const response = await fetch(`/api/transactions/${tx.id}/appeal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
+      const response = await fetch(`/api/transactions/${tx.id}/appeal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: appealMessage }) });
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(data?.error || "Could not send appeal");
       await load();
+      setAppealTarget(null);
     } catch (error) { setFormError(error instanceof Error ? error.message : "Could not send appeal"); }
     finally { setMutatingId(null); }
   }
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || []);
+    const remaining = 10 - files.length;
+    if (selected.length > remaining) {
+      setFormError(`You can select only ${remaining} more proof image${remaining === 1 ? "" : "s"}.`);
+      e.target.value = "";
+      return;
+    }
     const valid = selected.filter(f => {
       if (f.size > 20 * 1024 * 1024) { setFormError(`${f.name} exceeds 20MB`); return false; }
       if (!f.type.startsWith("image/")) { setFormError(`${f.name} is not an image`); return false; }
@@ -324,6 +375,17 @@ export default function DonorDashboard() {
 
   return (
     <div className="pb-20 md:pb-0">
+      <ConfirmDialog open={cancelTarget !== null} onClose={() => setCancelTarget(null)} onConfirm={() => { void confirmCancelPending(); }} title="Cancel this pending submission?" message="It will remain in the audit history as voided." confirmLabel="Cancel submission" loading={Boolean(cancelTarget && mutatingId === cancelTarget.id)} />
+      <FormDialog open={editTarget !== null} title="Edit pending donation" description="Update the amount and payment reference before an admin reviews it." submitLabel="Save changes" loading={Boolean(editTarget && mutatingId === editTarget.id)} error={formError} onClose={() => setEditTarget(null)} onSubmit={submitPendingEdit}>
+        <label htmlFor="edit-donation-amount" className="block text-xs font-semibold text-text-secondary">Amount</label>
+        <input id="edit-donation-amount" autoFocus required inputMode="decimal" pattern="^\d+(\.\d{1,2})?$" value={editAmount} onChange={(event) => setEditAmount(event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-3 py-2 text-text-primary" />
+        <label htmlFor="edit-donation-description" className="block text-xs font-semibold text-text-secondary">Description or reference</label>
+        <input id="edit-donation-description" required value={editDescription} onChange={(event) => setEditDescription(event.target.value)} className="w-full rounded-lg border border-[var(--border)] bg-bg-deep px-3 py-2 text-text-primary" />
+      </FormDialog>
+      <FormDialog open={appealTarget !== null} title="Request another review" description="Explain what the admins should reconsider." submitLabel="Send appeal" loading={Boolean(appealTarget && mutatingId === appealTarget.id)} error={formError} onClose={() => setAppealTarget(null)} onSubmit={submitAppeal}>
+        <label htmlFor="donation-appeal-message" className="block text-xs font-semibold text-text-secondary">Appeal message</label>
+        <textarea id="donation-appeal-message" autoFocus required rows={4} value={appealMessage} onChange={(event) => setAppealMessage(event.target.value)} className="w-full resize-none rounded-lg border border-[var(--border)] bg-bg-deep px-3 py-2 text-text-primary" />
+      </FormDialog>
       {/* Header */}
       <div className="flex items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8">
         <div>
@@ -345,6 +407,7 @@ export default function DonorDashboard() {
           {showForm ? "Cancel" : "Record Manual"}
         </button>
       </div>
+      {loadError && <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-coral/20 bg-coral/8 p-3 text-sm text-coral"><span>{loadError}</span><button type="button" onClick={() => { void refreshDashboard().catch((error) => setLoadError(error instanceof Error ? error.message : "Could not load donations")); }} className="rounded-lg border border-coral/30 px-3 py-1 text-xs font-semibold">Retry</button></div>}
 
       {/* Manual submission opens directly below its trigger. */}
       {success && (
@@ -377,10 +440,11 @@ export default function DonorDashboard() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="manual-donation-amount" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Amount
                 </label>
                 <input
+                  id="manual-donation-amount"
                   type="text"
                   inputMode="decimal"
                   value={amount}
@@ -391,10 +455,11 @@ export default function DonorDashboard() {
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="manual-donation-currency" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Currency
                 </label>
                 <Dropdown
+                  id="manual-donation-currency"
                   value={formCurrency}
                   options={[
                     { value: "INR", label: "INR (₹)" },
@@ -404,10 +469,11 @@ export default function DonorDashboard() {
                 />
               </div>
               <div>
-                <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+                <label htmlFor="manual-donation-method" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                   Method
                 </label>
                 <Dropdown
+                  id="manual-donation-method"
                   value={method}
                   options={[
                     { value: "UPI", label: "UPI" },
@@ -421,10 +487,11 @@ export default function DonorDashboard() {
             </div>
 
             <div className="mb-5">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+              <label htmlFor="manual-donation-reference" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
                 Reference / Proof Note
               </label>
               <input
+                id="manual-donation-reference"
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
@@ -446,6 +513,7 @@ export default function DonorDashboard() {
                     <Image src={src} alt="" fill unoptimized className="object-cover" />
                     <button
                       type="button"
+                      aria-label={`Remove proof image ${i + 1}`}
                       onClick={() => removeFile(i)}
                       className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                     >
@@ -453,13 +521,14 @@ export default function DonorDashboard() {
                     </button>
                   </div>
                 ))}
-                <label className="w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] hover:border-[var(--border-hover)] cursor-pointer flex flex-col items-center justify-center transition-colors">
+                <label className={`w-20 h-20 rounded-lg border-2 border-dashed border-[var(--border)] flex flex-col items-center justify-center transition-colors ${files.length >= 10 ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:border-[var(--border-hover)]"}`}>
                   <span className="text-text-tertiary text-xl">+</span>
                   <span className="text-text-tertiary text-[8px] uppercase tracking-wider">Photo</span>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
+                    disabled={files.length >= 10}
                     onChange={handleFiles}
                     className="hidden"
                   />
@@ -631,9 +700,9 @@ export default function DonorDashboard() {
                 {tx.status === "PENDING" && !tx.providerVerified && (
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button disabled={mutatingId === tx.id} onClick={() => editPending(tx)} className="btn-secondary px-2.5 py-1 text-[11px]">Edit</button>
-                    <label className="btn-secondary px-2.5 py-1 text-[11px] cursor-pointer">
-                      Add proof
-                      <input type="file" multiple className="hidden" onChange={(event) => { void attachProof(tx, event.target.files); event.target.value = ""; }} />
+                    <label className={`btn-secondary px-2.5 py-1 text-[11px] ${(tx.attachments?.length ?? 0) >= 10 ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}>
+                      {(tx.attachments?.length ?? 0) >= 10 ? "Proof limit reached" : `Add proof (${10 - (tx.attachments?.length ?? 0)} left)`}
+                      <input type="file" accept="image/*" multiple disabled={(tx.attachments?.length ?? 0) >= 10} className="hidden" onChange={(event) => { void attachProof(tx, event.target.files); event.target.value = ""; }} />
                     </label>
                     <button disabled={mutatingId === tx.id} onClick={() => cancelPending(tx)} className="px-2.5 py-1 text-[11px] text-coral">Cancel</button>
                   </div>

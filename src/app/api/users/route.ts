@@ -6,6 +6,7 @@ import { logUserCreated } from "@/lib/telegram-log";
 import { logUserAction } from "@/lib/github-log";
 import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { isImmutableAdmin } from "@/lib/protected-admins";
+import { isTelegramId, normalizeTelegramUsername, trimmedString, USER_ROLES, USER_STATUSES } from "@/lib/validation";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -39,9 +40,14 @@ export async function POST(req: NextRequest) {
   }
 
   const { telegramId, telegramUser, name, roles, githubUsername } = await req.json();
+  const cleanName = trimmedString(name, { min: 1, max: 100 });
+  const cleanTelegramUser = normalizeTelegramUsername(telegramUser);
 
-  if (!telegramId || !name) {
-    return NextResponse.json({ error: "Telegram ID and name are required" }, { status: 400 });
+  if (!isTelegramId(telegramId) || !cleanName) {
+    return NextResponse.json({ error: "Telegram ID must be 5–20 digits and name is required" }, { status: 400 });
+  }
+  if (cleanTelegramUser === null) {
+    return NextResponse.json({ error: "Telegram username must be 5–32 letters, numbers, or underscores" }, { status: 400 });
   }
 
   const existing = await prisma.user.findUnique({ where: { telegramId } });
@@ -50,15 +56,18 @@ export async function POST(req: NextRequest) {
   }
 
   const requestedRoles = Array.isArray(roles) ? roles : ["DONOR"];
+  if (!requestedRoles.length || requestedRoles.some((role) => !USER_ROLES.includes(role))) {
+    return NextResponse.json({ error: "Select one or more valid roles" }, { status: 400 });
+  }
   if (requestedRoles.includes("ADMIN") && !isImmutableAdmin(telegramId)) {
     return NextResponse.json({ error: "Administrator IDs are code-managed and cannot be granted through Sentinel" }, { status: 403 });
   }
   const newUser = await prisma.user.create({
     data: {
       telegramId,
-      telegramUser: telegramUser || "",
-      name,
-      roles: requestedRoles,
+      telegramUser: cleanTelegramUser,
+      name: cleanName,
+      roles: [...new Set(requestedRoles)],
       githubUsername: typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") || null : null,
       createdById: user.id,
     },
@@ -124,6 +133,16 @@ export async function PATCH(req: NextRequest) {
   if (!target) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+  if (roles !== undefined && (!Array.isArray(roles) || roles.some((role) => !USER_ROLES.includes(role)))) {
+    return NextResponse.json({ error: "Invalid user role" }, { status: 400 });
+  }
+  if (status !== undefined && !USER_STATUSES.includes(status)) {
+    return NextResponse.json({ error: "Invalid user status" }, { status: 400 });
+  }
+  const cleanName = name === undefined ? undefined : trimmedString(name, { min: 1, max: 100 });
+  if (name !== undefined && !cleanName) return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  const cleanTelegramUser = telegramUser === undefined ? undefined : normalizeTelegramUsername(telegramUser);
+  if (telegramUser !== undefined && cleanTelegramUser === null) return NextResponse.json({ error: "Invalid Telegram username" }, { status: 400 });
 
   if (target.roles.includes("ADMIN")) {
     const removesAdmin = roles !== undefined && (!Array.isArray(roles) || !roles.includes("ADMIN"));
@@ -137,10 +156,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data: Record<string, unknown> = {};
-  if (roles !== undefined) data.roles = roles;
+  if (roles !== undefined) data.roles = [...new Set(roles)];
   if (status !== undefined) data.status = status;
-  if (name !== undefined) data.name = name;
-  if (telegramUser !== undefined) data.telegramUser = telegramUser;
+  if (cleanName !== undefined) data.name = cleanName;
+  if (cleanTelegramUser !== undefined) data.telegramUser = cleanTelegramUser;
   if (githubUsername !== undefined) {
     const normalized = typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") : "";
     if (normalized && !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(normalized)) {

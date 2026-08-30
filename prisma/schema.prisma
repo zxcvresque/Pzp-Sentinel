@@ -182,6 +182,7 @@ model User {
   name              String
   photoUrl          String?
   themeColor        String     @default("#6FD1D7")
+  subtextColor      String     @default("#AEB4BF")
   formLayout        FormLayout @default(SECTION_CARDS)
   onboardingVersion Int        @default(0)
   savedColors       String[]   @default([])
@@ -980,6 +981,20 @@ model LoginToken {
   status     LoginTokenStatus @default(PENDING)
   expiresAt  DateTime
   createdAt  DateTime         @default(now())
+
+  @@index([expiresAt])
+}
+
+// Fixed-window counters used by anonymous authentication endpoints. Keys are
+// hashes or server-defined scopes; raw IP addresses are never stored here.
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
 }
 
 model TrackedRepo {

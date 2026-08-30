@@ -18,6 +18,8 @@ interface DropdownProps {
   className?: string;
   size?: "sm" | "md";
   onClick?: (e: React.MouseEvent) => void;
+  id?: string;
+  ariaLabel?: string;
 }
 
 export default function Dropdown({
@@ -28,6 +30,8 @@ export default function Dropdown({
   className = "",
   size = "md",
   onClick,
+  id,
+  ariaLabel,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -91,6 +95,8 @@ export default function Dropdown({
   return (
     <div className={`relative ${className}`}>
       <button
+        id={id}
+        aria-label={ariaLabel}
         ref={triggerRef}
         type="button"
         onClick={(e) => {

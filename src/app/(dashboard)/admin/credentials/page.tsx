@@ -59,7 +59,8 @@ interface DevUser {
 }
 
 function installCommand(key: string): string {
-  return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo ${JSON.stringify(key)} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
+  const quotedKey = `'${key.replace(/'/g, `'"'"'`)}'`;
+  return `mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\\n' ${quotedKey} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,6 +145,7 @@ export default function CredentialsPage() {
 
   const [platform, setPlatform] = useState("");
   const [fields, setFields] = useState<{ label: string; value: string }[]>([{ label: "", value: "" }]);
+  const [visibleSecretFields, setVisibleSecretFields] = useState<Set<number>>(new Set());
   const [accessMap, setAccessMap] = useState<Record<string, AccessLevel>>({});
   const [submitting, setSubmitting] = useState(false);
   const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
@@ -152,6 +154,7 @@ export default function CredentialsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Credential | null>(null);
   const [undoDelete, setUndoDelete] = useState<{ credential: Credential; until: number } | null>(null);
   const [undoSeconds, setUndoSeconds] = useState(0);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (!undoDelete) return;
@@ -172,16 +175,16 @@ export default function CredentialsPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/credentials").then((r) => (r.ok ? r.json() : { credentials: [] })),
-      fetch("/api/users").then((r) => (r.ok ? r.json() : { users: [] })),
-      fetch("/api/services").then((r) => (r.ok ? r.json() : { services: [] })),
+      fetch("/api/credentials").then((r) => { if (!r.ok) throw new Error("Could not load credentials"); return r.json(); }),
+      fetch("/api/users").then((r) => { if (!r.ok) throw new Error("Could not load developers"); return r.json(); }),
+      fetch("/api/services").then((r) => { if (!r.ok) throw new Error("Could not load services"); return r.json(); }),
     ]).then(([credData, userData, serviceData]) => {
       setCredentials(credData.credentials || []);
       const allUsers = userData.users || [];
       setDevs(allUsers.filter((u: { roles: string[] }) => u.roles.includes("DEV")));
       setServices(serviceData.services || []);
-      setLoading(false);
-    });
+      setLoadError("");
+    }).catch((error) => setLoadError(error instanceof Error ? error.message : "Could not load credentials")).finally(() => setLoading(false));
   }, []);
 
   async function revealValue(id: string, purpose: "REVEAL" | "COPY" = "REVEAL") {
@@ -216,6 +219,7 @@ export default function CredentialsPage() {
     setEditId(cred.id);
     setPlatform(cred.platform);
     setFields([{ label: cred.label, value }]);
+    setVisibleSecretFields(new Set());
     setAccessMap(Object.fromEntries(cred.accesses.map((a) => [a.userId, a.accessLevel])));
     setServiceId(cred.service?.id || "");
     setExpiresAt(cred.expiresAt?.slice(0, 10) || "");
@@ -226,6 +230,7 @@ export default function CredentialsPage() {
     setEditId(null);
     setPlatform("");
     setFields([{ label: "", value: "" }]);
+    setVisibleSecretFields(new Set());
     setAccessMap({});
     setServiceId("");
     setExpiresAt("");
@@ -378,15 +383,17 @@ export default function CredentialsPage() {
           </button>
         </div>
       </div>
+      {loadError && <div role="alert" className="mb-4 rounded-lg border border-coral/20 bg-coral/8 px-4 py-3 text-sm text-coral">{loadError}</div>}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="card p-6 mb-6">
           <FormExample lines={["Platform: AWS Console", "Fields: Username → admin@pzp.dev, Password → ••••••"]} />
           <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+            <label htmlFor="credential-platform" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Platform
             </label>
             <input
+              id="credential-platform"
               type="text"
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
@@ -397,15 +404,15 @@ export default function CredentialsPage() {
           </div>
 
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
-            <div><label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Linked service</label><Dropdown value={serviceId} options={[{ value: "", label: "No service" }, ...services.map((service) => ({ value: service.id, label: service.name }))]} onChange={setServiceId} /></div>
-            <div><label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Expires / rotate by</label><input type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" /></div>
+            <div><label htmlFor="credential-service" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Linked service</label><Dropdown id="credential-service" value={serviceId} options={[{ value: "", label: "No service" }, ...services.map((service) => ({ value: service.id, label: service.name }))]} onChange={setServiceId} /></div>
+            <div><label htmlFor="credential-expiry" className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">Expires / rotate by</label><input id="credential-expiry" type="date" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary focus:outline-none focus:border-lime/30" /></div>
           </div>
 
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
                 Credentials
-              </label>
+              </span>
               {!editId && (
                 <button
                   type="button"
@@ -421,6 +428,7 @@ export default function CredentialsPage() {
                 <div key={i} className="flex items-start gap-3">
                   <div className="flex-1">
                     <input
+                      aria-label={`Credential label ${i + 1}`}
                       type="text"
                       value={field.label}
                       onChange={(e) => updateField(i, "label", e.target.value)}
@@ -429,19 +437,25 @@ export default function CredentialsPage() {
                       className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary text-sm focus:outline-none focus:border-lime/30"
                     />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 relative">
                     <input
-                      type="text"
+                      aria-label={`Credential value ${i + 1}`}
+                      type={visibleSecretFields.has(i) ? "text" : "password"}
+                      autoComplete="new-password"
                       value={field.value}
                       onChange={(e) => updateField(i, "value", e.target.value)}
                       placeholder="Value"
                       required
-                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-lime/30"
+                      className="w-full bg-bg-deep border border-[var(--border)] rounded-lg py-3 pl-4 pr-16 text-text-primary font-mono text-sm focus:outline-none focus:border-lime/30"
                     />
+                    <button type="button" aria-label={`${visibleSecretFields.has(i) ? "Hide" : "Reveal"} credential value ${i + 1}`} onClick={() => setVisibleSecretFields((current) => { const next = new Set(current); if (next.has(i)) next.delete(i); else next.add(i); return next; })} className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-text-tertiary hover:text-text-primary">
+                      {visibleSecretFields.has(i) ? "Hide" : "Show"}
+                    </button>
                   </div>
                   {fields.length > 1 && (
                     <button
                       type="button"
+                      aria-label={`Remove credential field ${i + 1}`}
                       onClick={() => removeField(i)}
                       className="text-text-tertiary hover:text-coral text-sm mt-3 transition-colors"
                     >
@@ -454,9 +468,9 @@ export default function CredentialsPage() {
           </div>
 
           <div className="mb-4">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary block mb-2">
               Share with Developers
-            </label>
+            </span>
             <p className="text-[11px] text-text-tertiary mb-3 leading-relaxed">
               Pick an access level per developer.{" "}
               <span className="text-mint">Public-key</span>: the dev submits their own SSH key, you install it — they never see the secret.{" "}

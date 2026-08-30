@@ -48,10 +48,14 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  if (nextFire <= new Date()) {
+    return NextResponse.json({ error: "First send must be in the future" }, { status: 400 });
+  }
   if (!frequency || !channel) {
     return NextResponse.json({ error: "Invalid frequency or delivery channel" }, { status: 400 });
   }
   if (escalationAt && Number.isNaN(escalationAt.getTime())) return NextResponse.json({ error: "Invalid escalation time" }, { status: 400 });
+  if (escalationAt && escalationAt <= nextFire) return NextResponse.json({ error: "Escalation must be after the first send" }, { status: 400 });
   if (!await prisma.user.findFirst({ where: { id: ownerId, roles: { has: "ADMIN" }, status: "ACTIVE" }, select: { id: true } })) return NextResponse.json({ error: "Reminder owner must be an active admin" }, { status: 400 });
   if (frequency === "CUSTOM" && (
     !Number.isInteger(repeatEvery) || repeatEvery < 1 || repeatEvery > 10_000 || !repeatUnit

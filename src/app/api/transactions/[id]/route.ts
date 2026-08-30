@@ -16,6 +16,8 @@ import { parseDonationFrequency } from "@/lib/donation-frequency";
 import { isCustomRepeatUnit, isServiceFrequency } from "@/lib/service-billing";
 import { isProviderVerified } from "@/lib/provider-verification";
 
+class TransactionEditValidationError extends Error {}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -72,7 +74,7 @@ export async function PATCH(
   if (method !== undefined && !["UPI", "RAZORPAY", "BMC", "BANK", "OTHER"].includes(method)) {
     return NextResponse.json({ error: "Invalid payment method" }, { status: 400 });
   }
-  if (method !== undefined && ["RAZORPAY", "BMC"].includes(method) && !isProviderVerified(transaction)) {
+  if (method !== undefined && method === "RAZORPAY" && !isProviderVerified(transaction)) {
     return NextResponse.json({ error: "Provider methods can only come from a verified provider payment" }, { status: 400 });
   }
   if (description !== undefined && (typeof description !== "string" || !description.trim())) {
@@ -165,6 +167,9 @@ export async function PATCH(
       }
     }
   }
+  let atomicResult;
+  try {
+    atomicResult = await prisma.$transaction(async (tx) => {
   let createdServiceId: string | null = null;
   if (createService) {
     const serviceName = typeof createService.name === "string" ? createService.name.trim() : "";
@@ -174,9 +179,9 @@ export async function PATCH(
     const customRepeatUnit = serviceFrequency === "CUSTOM" && isCustomRepeatUnit(createService.customRepeatUnit) ? createService.customRepeatUnit : null;
     const renewalAt = createService.nextRenewal ? new Date(createService.nextRenewal) : null;
     if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !serviceName || !serviceCategory || !serviceFrequency || (serviceFrequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit)) || !renewalAt || Number.isNaN(renewalAt.getTime())) {
-      return NextResponse.json({ error: "Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal" }, { status: 400 });
+      throw new TransactionEditValidationError("Creating a service requires an outgoing subscription, name, category, billing frequency and next renewal");
     }
-    const service = await prisma.service.create({
+    const service = await tx.service.create({
       data: {
         name: serviceName,
         category: serviceCategory,
@@ -199,7 +204,7 @@ export async function PATCH(
     createdServiceId = service.id;
     const repeat = serviceReminderRepeat(serviceFrequency, customRepeatEvery, customRepeatUnit);
     if (repeat) {
-      await prisma.reminder.create({
+      await tx.reminder.create({
         data: {
           createdById: user.id,
           message: `Renew ${serviceName} (${service.currency} ${service.price})`,
@@ -221,10 +226,10 @@ export async function PATCH(
   const targetServiceId = createdServiceId || (typeof serviceId === "string" && serviceId ? serviceId : transaction.serviceId);
   if (updateService) {
     if (effectiveDirection !== "OUT" || effectiveType !== "SUBSCRIPTION" || !targetServiceId) {
-      return NextResponse.json({ error: "Service details can only be edited for a linked outgoing subscription" }, { status: 400 });
+      throw new TransactionEditValidationError("Service details can only be edited for a linked outgoing subscription");
     }
-    const existingService = await prisma.service.findUnique({ where: { id: targetServiceId } });
-    if (!existingService) return NextResponse.json({ error: "Linked service not found" }, { status: 400 });
+    const existingService = await tx.service.findUnique({ where: { id: targetServiceId } });
+    if (!existingService) throw new TransactionEditValidationError("Linked service not found");
     const serviceName = typeof updateService.name === "string" ? updateService.name.trim() : "";
     const serviceCategory = typeof updateService.category === "string" ? updateService.category.trim() : "";
     const serviceFrequency = isServiceFrequency(updateService.frequency) ? updateService.frequency : null;
@@ -232,7 +237,7 @@ export async function PATCH(
     const customRepeatUnit = serviceFrequency === "CUSTOM" && isCustomRepeatUnit(updateService.customRepeatUnit) ? updateService.customRepeatUnit : null;
     const renewalAt = updateService.nextRenewal ? new Date(updateService.nextRenewal) : null;
     if (!serviceName || !serviceCategory || !serviceFrequency || (serviceFrequency === "CUSTOM" && (!Number.isInteger(customRepeatEvery) || Number(customRepeatEvery) <= 0 || !customRepeatUnit)) || !renewalAt || Number.isNaN(renewalAt.getTime())) {
-      return NextResponse.json({ error: "Complete the linked service name, category, billing frequency and next renewal" }, { status: 400 });
+      throw new TransactionEditValidationError("Complete the linked service name, category, billing frequency and next renewal");
     }
     serviceBeforeForAudit = {
       name: existingService.name,
@@ -246,7 +251,7 @@ export async function PATCH(
       columns: existingService.columns,
       entries: existingService.entries,
     };
-    const updatedService = await prisma.service.update({
+    const updatedService = await tx.service.update({
       where: { id: targetServiceId },
       data: {
         name: serviceName,
@@ -264,7 +269,7 @@ export async function PATCH(
       },
     });
     const repeat = serviceReminderRepeat(updatedService.frequency, updatedService.customRepeatEvery, updatedService.customRepeatUnit);
-    const existingReminder = await prisma.reminder.findFirst({ where: { serviceId: targetServiceId } });
+    const existingReminder = await tx.reminder.findFirst({ where: { serviceId: targetServiceId } });
     if (repeat) {
       const reminderData = {
         message: `Renew ${updatedService.name} (${updatedService.currency} ${updatedService.price})`,
@@ -275,10 +280,10 @@ export async function PATCH(
         active: updatedService.status === "ACTIVE",
         recipientRoles: ["ADMIN" as const],
       };
-      if (existingReminder) await prisma.reminder.update({ where: { id: existingReminder.id }, data: reminderData });
-      else await prisma.reminder.create({ data: { ...reminderData, createdById: user.id, channel: "BOTH", serviceId: targetServiceId } });
+      if (existingReminder) await tx.reminder.update({ where: { id: existingReminder.id }, data: reminderData });
+      else await tx.reminder.create({ data: { ...reminderData, createdById: user.id, channel: "BOTH", serviceId: targetServiceId } });
     } else if (existingReminder?.active) {
-      await prisma.reminder.update({ where: { id: existingReminder.id }, data: { active: false } });
+      await tx.reminder.update({ where: { id: existingReminder.id }, data: { active: false } });
     }
     serviceAfterForAudit = {
       name: updatedService.name,
@@ -296,7 +301,7 @@ export async function PATCH(
 
   if (credentials !== undefined) {
     if (!targetServiceId || !Array.isArray(credentials) || credentials.length > 10) {
-      return NextResponse.json({ error: "Enter at most 10 credentials for a linked service" }, { status: 400 });
+      throw new TransactionEditValidationError("Enter at most 10 credentials for a linked service");
     }
     for (const rawCredential of credentials as Array<Record<string, unknown>>) {
       const credentialId = typeof rawCredential.id === "string" ? rawCredential.id : "";
@@ -304,12 +309,12 @@ export async function PATCH(
       const value = typeof rawCredential.value === "string" ? rawCredential.value : "";
       const expiresAt = rawCredential.expiresAt ? new Date(String(rawCredential.expiresAt)) : null;
       if (!label || (expiresAt && Number.isNaN(expiresAt.getTime())) || (!credentialId && !value)) {
-        return NextResponse.json({ error: "Each new credential needs a label and secret; expiry dates must be valid" }, { status: 400 });
+        throw new TransactionEditValidationError("Each new credential needs a label and secret; expiry dates must be valid");
       }
       if (credentialId) {
-        const existingCredential = await prisma.credential.findFirst({ where: { id: credentialId, serviceId: targetServiceId, parentId: null, deletedAt: null } });
-        if (!existingCredential) return NextResponse.json({ error: "A linked credential could not be found" }, { status: 400 });
-        const updatedCredential = await prisma.credential.update({
+        const existingCredential = await tx.credential.findFirst({ where: { id: credentialId, serviceId: targetServiceId, parentId: null, deletedAt: null } });
+        if (!existingCredential) throw new TransactionEditValidationError("A linked credential could not be found");
+        const updatedCredential = await tx.credential.update({
           where: { id: credentialId },
           data: {
             label,
@@ -322,7 +327,7 @@ export async function PATCH(
             : existingCredential.credKind === "VPS_SSH_KEY" ? "sshKeyFileUrl"
               : null;
           if (vpsColumn) {
-            await prisma.vpsServer.update({ where: { id: existingCredential.vpsServerId }, data: { [vpsColumn]: encryptSecret(value) } });
+            await tx.vpsServer.update({ where: { id: existingCredential.vpsServerId }, data: { [vpsColumn]: encryptSecret(value) } });
           }
         }
         credentialAuditRows.push({
@@ -332,7 +337,7 @@ export async function PATCH(
           after: { label: updatedCredential.label, expiresAt: updatedCredential.expiresAt, valueChanged: Boolean(value) },
         });
       } else {
-        const createdCredential = await prisma.credential.create({
+        const createdCredential = await tx.credential.create({
           data: {
             platform: typeof rawCredential.platform === "string" && rawCredential.platform.trim() ? rawCredential.platform.trim() : (typeof updateService?.name === "string" ? updateService.name.trim() : "Service"),
             label,
@@ -371,16 +376,11 @@ export async function PATCH(
     serviceId: transaction.serviceId,
   };
 
-  const updated = await prisma.transaction.update({
+  const updated = await tx.transaction.update({
     where: { id },
     data,
     include: { fromUser: true, createdBy: true, reviewedBy: true, voidedBy: true, linkedService: { select: { id: true, name: true } } },
   });
-
-  if (serviceBeforeForAudit && serviceAfterForAudit && targetServiceId) {
-    await logAudit({ userId: user.id, action: "SERVICE_UPDATE", entityType: "Service", entityId: targetServiceId, transactionId: id, before: serviceBeforeForAudit, after: serviceAfterForAudit, userName: user.name, request: req });
-  }
-  await Promise.all(credentialAuditRows.map((row) => logAudit({ userId: user.id, action: row.action, entityType: "Credential", entityId: row.id, transactionId: id, before: row.before, after: row.after, userName: user.name, request: req })));
 
   if (isBmcReconciliation && updated.fromUserId) {
     if (bmcReceipt?.supporterId) {
@@ -396,7 +396,7 @@ export async function PATCH(
         }
       }
       const supporterDetailsEncrypted = encryptSecret(JSON.stringify({ supporterName, supporterEmail }));
-      await prisma.bmcSupporterLink.upsert({
+      await tx.bmcSupporterLink.upsert({
         where: {
           accountSlug_supporterId: {
             accountSlug: bmcAccountSlug(),
@@ -420,11 +420,30 @@ export async function PATCH(
       });
     }
     if (bmcReceipt) {
-      await prisma.bmcWebhookEvent.update({
+      await tx.bmcWebhookEvent.update({
         where: { id: bmcReceipt.id },
         data: { attributionStatus: "ADMIN_RECONCILED" },
       });
     }
+  }
+
+  return { updated, before, serviceBeforeForAudit, serviceAfterForAudit, credentialAuditRows, targetServiceId };
+    });
+  } catch (error) {
+    if (error instanceof TransactionEditValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+
+  const { updated, before, serviceBeforeForAudit, serviceAfterForAudit, credentialAuditRows, targetServiceId } = atomicResult;
+
+  if (serviceBeforeForAudit && serviceAfterForAudit && targetServiceId) {
+    await logAudit({ userId: user.id, action: "SERVICE_UPDATE", entityType: "Service", entityId: targetServiceId, transactionId: id, before: serviceBeforeForAudit, after: serviceAfterForAudit, userName: user.name, request: req });
+  }
+  await Promise.all(credentialAuditRows.map((row) => logAudit({ userId: user.id, action: row.action, entityType: "Credential", entityId: row.id, transactionId: id, before: row.before, after: row.after, userName: user.name, request: req })));
+
+  if (isBmcReconciliation && updated.fromUserId) {
     if (updated.fromUser) {
       const symbol = updated.currency === "INR" ? "₹" : "$";
       await notify({

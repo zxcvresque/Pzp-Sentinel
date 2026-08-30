@@ -1243,6 +1243,22 @@ async function checkDonateReminders() {
 
 // ── VPS subscription auto-renewals ─────────────────────────────────────
 const SUB_RENEWAL_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // daily
+const AUTH_CLEANUP_INTERVAL = 60 * 60 * 1000; // hourly
+
+async function cleanupExpiredAuthState() {
+  try {
+    const now = new Date();
+    const [tokens, buckets] = await Promise.all([
+      prisma.loginToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+      prisma.rateLimitBucket.deleteMany({ where: { expiresAt: { lt: now } } }),
+    ]);
+    if (tokens.count || buckets.count) {
+      console.log(`[auth-cleanup] Removed ${tokens.count} expired login token(s) and ${buckets.count} rate-limit bucket(s).`);
+    }
+  } catch (error) {
+    console.error("[auth-cleanup] Cleanup failed:", error);
+  }
+}
 
 // Auto-renewing VPS subscriptions create a PENDING expense. An admin must approve
 // it before the expense counts and the service billing cycle advances.
@@ -1376,6 +1392,11 @@ async function checkSubscriptionRenewals() {
       setTimeout(backfillServiceOperations, 55_000);
       console.log("[service-backfill] Existing service links/reminders will be checked in 55s");
       console.log("[sub-renewal] Scheduled — first check in 30s, then every 24h");
+      setTimeout(() => {
+        cleanupExpiredAuthState();
+        setInterval(cleanupExpiredAuthState, AUTH_CLEANUP_INTERVAL);
+      }, 60_000);
+      console.log("[auth-cleanup] Scheduled — first check in 60s, then hourly");
     },
   });
 })();
