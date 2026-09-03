@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { readApiJson } from "@/lib/api-response";
 import { RAZORPAY_CHECKOUT_TIMEOUT_SECONDS } from "@/lib/razorpay-checkout";
 
 type CheckoutSuccess = {
@@ -19,6 +20,28 @@ type RazorpayInstance = {
 };
 
 type RazorpayConstructor = new (options: Record<string, unknown>) => RazorpayInstance;
+
+type CheckoutOrder = {
+  id: string;
+  amount: number;
+  currency: string;
+  description: string;
+  keyId: string;
+  testMode: boolean;
+  prefill: { name: string };
+};
+
+function isCheckoutOrder(value: unknown): value is CheckoutOrder {
+  if (typeof value !== "object" || value === null) return false;
+  const order = value as Partial<CheckoutOrder>;
+  return typeof order.id === "string"
+    && typeof order.amount === "number"
+    && typeof order.currency === "string"
+    && typeof order.description === "string"
+    && typeof order.keyId === "string"
+    && typeof order.testMode === "boolean"
+    && typeof order.prefill?.name === "string";
+}
 
 declare global {
   interface Window { Razorpay?: RazorpayConstructor }
@@ -118,21 +141,24 @@ export default function RazorpayDonationCard({
       const createUrl = monthly
         ? "/api/payments/razorpay/subscriptions"
         : guestToken ? "/api/payments/razorpay/guest/orders" : "/api/payments/razorpay/orders";
-      const [orderResponse] = await Promise.all([
-        fetch(createUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: parsed, description: note.trim() || undefined, token: guestToken }),
-        }),
-        loadCheckout(),
-      ]);
-      const orderData = await orderResponse.json();
-      if (!orderResponse.ok) throw new Error(orderData.error || "Could not create checkout");
-
-      const order = (monthly ? orderData.subscription : orderData.order) as {
-        id: string; amount: number; currency: string; description: string; keyId: string; testMode: boolean;
-        prefill: { name: string };
-      };
+      // Load the checkout client before creating a provider order/subscription so a
+      // script failure cannot leave an unused Razorpay resource behind.
+      await loadCheckout();
+      const orderResponse = await fetch(createUrl, {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        cache: "no-store",
+        credentials: "same-origin",
+        body: JSON.stringify({ amount: parsed, description: note.trim() || undefined, token: guestToken }),
+      });
+      const orderData = await readApiJson<{ order?: unknown; subscription?: unknown }>(
+        orderResponse,
+        "Could not create checkout",
+      );
+      const order = monthly ? orderData.subscription : orderData.order;
+      if (!isCheckoutOrder(order)) {
+        throw new Error("Could not create checkout. Sentinel received an incomplete response from the checkout service.");
+      }
       if (guestToken) {
         setAmount(String(order.amount / 100));
         setGuestAmountLocked(true);
@@ -171,11 +197,15 @@ export default function RazorpayDonationCard({
               : guestToken ? "/api/payments/razorpay/guest/verify" : "/api/payments/razorpay/verify";
             const verifyResponse = await fetch(verifyUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Accept": "application/json", "Content-Type": "application/json" },
+              cache: "no-store",
+              credentials: "same-origin",
               body: JSON.stringify({ ...response, token: guestToken }),
             });
-            const verified = await verifyResponse.json();
-            if (!verifyResponse.ok) throw new Error(verified.error || "Payment verification failed");
+            const verified = await readApiJson<{ paymentRecorded?: boolean }>(
+              verifyResponse,
+              "Payment verification could not be confirmed. If money was debited, do not retry immediately",
+            );
             setMessage({
               type: "success",
               text: monthly
