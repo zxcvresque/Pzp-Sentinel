@@ -18,6 +18,7 @@ import {
   type NormalizedRazorpaySubscriptionEvent,
 } from "@/lib/razorpay-subscription-events";
 import { RAZORPAY_MONTHLY_TOTAL_COUNT, razorpaySubscriptionExpireBy } from "@/lib/razorpay-checkout";
+import { parseRazorpayPayload, razorpayProviderError } from "@/lib/razorpay-response";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -172,25 +173,58 @@ function basicAuth() {
 }
 
 async function razorpayRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${RAZORPAY_API}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      Authorization: basicAuth(),
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${RAZORPAY_API}${path}`, {
+      ...init,
+      cache: "no-store",
+      signal: init?.signal ?? AbortSignal.timeout(15_000),
+      headers: {
+        Accept: "application/json",
+        Authorization: basicAuth(),
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    console.error("[razorpay] upstream connection failed", {
+      path,
+      reason: error instanceof Error ? error.name : "UnknownError",
+    });
+    throw new RazorpayError(
+      timedOut
+        ? "Razorpay did not respond in time. Please try again shortly"
+        : "Sentinel could not reach Razorpay. Please try again shortly",
+      503,
+    );
+  }
 
-  const payload = await response.json().catch(() => null) as
-    | { error?: { description?: string } }
-    | T
-    | null;
+  const payload = parseRazorpayPayload(await response.text());
   if (!response.ok) {
-    const message = payload && typeof payload === "object" && "error" in payload
-      ? payload.error?.description
-      : undefined;
-    throw new RazorpayError(message || "Razorpay request failed", 502);
+    const failure = razorpayProviderError(response.status, payload);
+    console.error("[razorpay] upstream request failed", {
+      path,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      requestId: response.headers.get("x-razorpay-request-id") || response.headers.get("x-request-id"),
+      code: failure.code,
+      reason: failure.reason,
+      source: failure.source,
+      step: failure.step,
+    });
+    // 424 accurately identifies Razorpay as the failed dependency and avoids
+    // reverse proxies replacing an intentional JSON 502 response with HTML.
+    throw new RazorpayError(failure.message, 424);
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    console.error("[razorpay] upstream returned an invalid success response", {
+      path,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      requestId: response.headers.get("x-razorpay-request-id") || response.headers.get("x-request-id"),
+    });
+    throw new RazorpayError("Razorpay returned an invalid checkout response. Please try again shortly", 424);
   }
   return payload as T;
 }
