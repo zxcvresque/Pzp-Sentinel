@@ -9,6 +9,7 @@ import { registerRazorpayFeedbackHandlers } from "@/lib/razorpay-feedback-bot";
 import { registerBmcFeedbackHandlers } from "@/lib/bmc-feedback-bot";
 import { notifyAdmins } from "@/lib/notifications";
 import { handleSharedLinkStart } from "@/lib/shared-link-bot";
+import { handleDonorEntry } from "@/lib/donor-entry-bot";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -19,6 +20,7 @@ bot.command("start", async (ctx) => {
   if (!telegramId) return;
 
   const payload = ctx.match?.trim();
+  if (await handleDonorEntry(ctx, payload)) return;
   if (await handleSharedLinkStart(ctx, payload)) return;
 
   if (payload?.startsWith("auth_")) {

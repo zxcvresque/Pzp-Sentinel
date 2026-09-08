@@ -50,10 +50,10 @@ export default function BmcSupportCard({
     setPreparing(true);
     setError("");
     try {
-      const response = await fetch("/api/bmc/checkout-intents", {
+      const response = await fetch(guestToken ? "/api/payments/razorpay/guest/bmc" : "/api/bmc/checkout-intents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ donationFrequency }),
+        body: JSON.stringify({ donationFrequency, token: guestToken }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not prepare BMC checkout");
@@ -115,7 +115,7 @@ export default function BmcSupportCard({
             </div>
           </div>
         </div>
-        {config.checkoutUrl && (adminPreview || guestToken) ? (
+        {config.checkoutUrl && adminPreview ? (
           <a
             href={config.checkoutUrl}
             target="_blank"
@@ -145,7 +145,7 @@ export default function BmcSupportCard({
           <span className="shrink-0 rounded-full border border-amber/20 px-4 py-2 font-mono text-[10px] uppercase tracking-[.1em] text-amber">Unavailable</span>
         )}
       </div>
-      {intent && !adminPreview && !guestToken && (
+      {intent && !adminPreview && (
         <div className="relative mt-5 rounded-2xl border border-amber/25 bg-black/20 p-4 sm:p-5">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div>

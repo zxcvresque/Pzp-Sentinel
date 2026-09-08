@@ -34,6 +34,9 @@ async function sessionPayload(req: NextRequest) {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // These routes enforce a separate server-to-server secret.
+  if (pathname.startsWith("/api/sentry-bridge/")) return NextResponse.next();
+  if (pathname === "/api/bmc/config") return NextResponse.next(); // route verifies session or guest invitation
 
   // Public pages
   if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/")) || /^\/[A-Za-z0-9_-]{8}$/.test(pathname)) {

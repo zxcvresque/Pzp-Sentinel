@@ -118,7 +118,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
       : null;
 
     let intent = null;
-    if (!knownLink && code) {
+    if (code) {
       intent = await db.bmcCheckoutIntent.findFirst({
         where: {
           codeHash: hashBmcAttributionCode(code),
@@ -141,7 +141,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
       }
     }
 
-    const fromUserId = knownLink?.userId || intent?.userId || null;
+    const fromUserId = intent?.userId || knownLink?.userId || null;
     const donationFrequency = event.donationFrequency;
     const transaction = await db.transaction.create({
       data: {
@@ -169,6 +169,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
       await db.bmcSupporterLink.update({
         where: { id: knownLink.id },
         data: {
+          ...(intent ? { userId: intent.userId } : {}),
           supporterEmail: null,
           supporterDetailsEncrypted: encryptedBmcDetails(event),
           lastSeenAt: new Date(),
@@ -192,6 +193,13 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         where: { id: intent.id },
         data: { transactionId: transaction.id },
       });
+      // An ordinary reference has no guest invitation. Probe for the additive
+      // bridge table so existing BMC deliveries still work before bridge setup.
+      const exists = await db.$queryRaw<Array<{ table_name: string | null }>>`SELECT to_regclass('donor_bridge_bmc_intents')::text AS table_name`;
+      if (exists[0]?.table_name) {
+        const links = await db.$queryRaw<Array<{ invite_id: string }>>`SELECT invite_id FROM donor_bridge_bmc_intents WHERE intent_id=${intent.id}`;
+        if (links[0]) await db.oneTimeDonationInvite.update({ where: { id: links[0].invite_id }, data: { usedAt: new Date() } });
+      }
     }
     if (fromUserId) {
       const reminderUpdate = monthlyReminderUpdate(donationFrequency, event.occurredAt);
@@ -201,7 +209,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
     return {
       transaction,
       duplicate: false,
-      attribution: knownLink ? "SUPPORTER_LINK" : intent ? "CHECKOUT_CODE" : "UNMATCHED",
+      attribution: intent ? "CHECKOUT_CODE" : knownLink ? "SUPPORTER_LINK" : "UNMATCHED",
     } as const;
   });
 
