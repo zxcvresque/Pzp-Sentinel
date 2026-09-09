@@ -13,7 +13,7 @@ export type Donation = {
 
 export function bridgeAuthorized(request: Request): boolean {
   const secret = process.env.SENTRY_BRIDGE_SECRET?.trim() || "";
-  const provided = request.headers.get("authorization")?.replace(/^Bearer /, "") || "";
+  const provided = request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1] || "";
   if (secret.length < 32) return false;
   const a = Buffer.from(secret), b = Buffer.from(provided);
   return a.length === b.length && timingSafeEqual(a, b);

@@ -22,6 +22,7 @@ describe("donor bridge", () => {
     vi.stubEnv("SENTRY_BRIDGE_SECRET", "a".repeat(40));
     expect(bridgeAuthorized(new Request("https://sentinel.test", { headers: { Authorization: `Bearer ${"a".repeat(40)}` } }))).toBe(true);
     expect(bridgeAuthorized(new Request("https://sentinel.test", { headers: { Authorization: `Bearer ${"b".repeat(40)}` } }))).toBe(false);
+    expect(bridgeAuthorized(new Request("https://sentinel.test", { headers: { Authorization: "a".repeat(40) } }))).toBe(false);
   });
   it("excludes payments before the IST cutoff", async () => {
     await storeProviderDonation({ ...donation, occurredAt: "2026-08-12T18:29:59Z" });
