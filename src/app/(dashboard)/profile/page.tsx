@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -329,11 +331,7 @@ export default function ProfilePage() {
     .slice(0, 2);
 
   const joinedDate = user.createdAt
-    ? new Date(user.createdAt).toLocaleDateString("en-IN", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
+    ? displayDate(new Date(user.createdAt))
     : null;
 
   return (

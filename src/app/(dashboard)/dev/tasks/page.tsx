@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useEffect, useState, useCallback } from "react";
 import Dropdown from "@/components/Dropdown";
@@ -638,7 +640,7 @@ function TaskRow({
             {task.deadline && (
               <>
                 <span className="opacity-30">|</span>
-                <span>Due {new Date(task.deadline).toLocaleDateString()}</span>
+                <span>Due {displayDate(new Date(task.deadline))}</span>
               </>
             )}
           </div>

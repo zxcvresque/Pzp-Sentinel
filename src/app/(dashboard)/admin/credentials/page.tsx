@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useEffect, useState } from "react";
 import TgUser from "@/components/TgUser";
@@ -633,10 +635,7 @@ export default function CredentialsPage() {
                                     <TgUser name={rev.createdBy.name} telegramUser={rev.createdBy.telegramUser} photoUrl={rev.createdBy.photoUrl} size={18} />
                                   </span>
                                   <span className="font-mono text-[10px] text-text-tertiary">
-                                    {new Date(rev.createdAt).toLocaleString(undefined, {
-                                      dateStyle: "medium",
-                                      timeStyle: "short",
-                                    })}
+                                    {displayDateTime(new Date(rev.createdAt))}
                                   </span>
                                 </div>
                                 <div className="text-sm mb-1">

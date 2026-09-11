@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -63,7 +65,7 @@ function timeAgo(dateStr: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
-  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return displayDate(new Date(dateStr));
 }
 
 const COLUMNS: { key: string; label: string }[] = [
@@ -1194,7 +1196,7 @@ export default function DevDashboard() {
                 {editingTask.deadline && (
                   <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--bg-deep)" }}>
                     <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary block mb-1">Deadline</span>
-                    <span className="text-sm text-text-primary font-medium">{new Date(editingTask.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                    <span className="text-sm text-text-primary font-medium">{displayDate(new Date(editingTask.deadline))}</span>
                   </div>
                 )}
                 <div className="rounded-lg px-3 py-2.5" style={{ background: "var(--bg-deep)" }}>
@@ -1457,7 +1459,7 @@ function TaskCard({
       )}
       {task.deadline && (
         <div className="text-text-tertiary text-xs mb-2">
-          Due {new Date(task.deadline).toLocaleDateString()}
+          Due {displayDate(new Date(task.deadline))}
         </div>
       )}
 

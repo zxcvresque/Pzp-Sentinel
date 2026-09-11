@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -298,7 +300,7 @@ export default function BroadcastsPage() {
         onConfirm={sendBroadcast}
         title={repeat ? "Schedule this repeating broadcast?" : "Send this broadcast now?"}
         message={repeat
-          ? `This will first notify ${destinations} on ${firstSend ? new Date(firstSend).toLocaleString() : "the selected date"}, then repeat.`
+          ? `This will first notify ${destinations} on ${firstSend ? displayDateTime(new Date(firstSend)) : "the selected date"}, then repeat.`
           : `This will immediately notify ${destinations}.`}
         confirmLabel={repeat ? "Schedule broadcast" : "Send broadcast"}
         variant="default"
@@ -712,7 +714,7 @@ export default function BroadcastsPage() {
                   <p className="truncate text-sm font-semibold text-text-primary">{schedule.title}</p>
                   <p className="mt-1 text-xs text-text-tertiary">
                     {schedule.audience.toLowerCase()} · every {schedule.repeatEvery} {schedule.repeatUnit.toLowerCase()}{schedule.repeatEvery === 1 ? "" : "s"}
-                    {" · "}next {new Date(schedule.nextFire).toLocaleString()} · by <TgUser name={schedule.createdBy.name} photoUrl={schedule.createdBy.photoUrl} telegramUser={schedule.createdBy.telegramUser} size={18} nameClassName="!text-xs !text-text-tertiary" />
+                    {" · "}next {displayDateTime(new Date(schedule.nextFire))} · by <TgUser name={schedule.createdBy.name} photoUrl={schedule.createdBy.photoUrl} telegramUser={schedule.createdBy.telegramUser} size={18} nameClassName="!text-xs !text-text-tertiary" />
                   </p>
                   {schedule.lastError && <p className="mt-1 text-xs text-coral">Last delivery: {schedule.lastError}</p>}
                 </div>

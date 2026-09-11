@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
@@ -68,7 +70,7 @@ export default function OneTimeDonationPage({ token }: { token: string }) {
           <>
             <section className="mb-5 rounded-2xl border border-[var(--border)] bg-bg-deep/70 p-4 sm:flex sm:items-center sm:justify-between sm:p-5">
               <div><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Prepared for</p><h1 className="mt-1 text-xl font-extrabold">{invite.guestName}</h1>{invite.telegramUser && <p className="mt-1 text-xs text-text-secondary">@{invite.telegramUser}</p>}</div>
-              <div className="mt-4 text-left sm:mt-0 sm:text-right"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Valid until</p><p className="mt-1 text-sm text-text-secondary">{new Date(invite.expiresAt).toLocaleString()}</p></div>
+              <div className="mt-4 text-left sm:mt-0 sm:text-right"><p className="font-mono text-[9px] uppercase tracking-[.14em] text-text-tertiary">Valid until</p><p className="mt-1 text-sm text-text-secondary">{displayDateTime(new Date(invite.expiresAt))}</p></div>
             </section>
             <BmcSupportCard guestToken={token} />
             {invite.allowRazorpay && <RazorpayDonationCard guestToken={token} lockedGuestAmount={invite.lockedRazorpayAmount} onSuccess={() => setComplete(true)} />}

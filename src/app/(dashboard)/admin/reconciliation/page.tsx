@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -56,16 +58,16 @@ export default function ReconciliationPage() {
     <div className="mb-6 grid gap-3 sm:grid-cols-4"><Stat label="Total flags" value={total} /><Stat label="BMC unmatched" value={data.unmatchedBmc.length} /><Stat label="Razorpay unmatched" value={data.unmatchedRazorpayOrders.length + data.pendingRazorpayEvents.length} /><Stat label="Possible duplicates" value={data.possibleDuplicates.length} /></div>
 
     <Section title="Unmatched BMC payments" empty="No unmatched BMC payments.">
-      {data.unmatchedBmc.map((transaction) => <Row key={transaction.id} title={`${transaction.currency} ${Number(transaction.amount).toLocaleString()} · ${transaction.bmcWebhookEvents[0]?.supporterName || "Unknown supporter"}`} detail={`${transaction.description} · ${new Date(transaction.date).toLocaleString()}`}><Link href={`/admin/transactions?transactionId=${encodeURIComponent(transaction.id)}&reconcile=1`} className="pill">Assign donor</Link></Row>)}
+      {data.unmatchedBmc.map((transaction) => <Row key={transaction.id} title={`${transaction.currency} ${Number(transaction.amount).toLocaleString()} · ${transaction.bmcWebhookEvents[0]?.supporterName || "Unknown supporter"}`} detail={`${transaction.description} · ${displayDateTime(new Date(transaction.date))}`}><Link href={`/admin/transactions?transactionId=${encodeURIComponent(transaction.id)}&reconcile=1`} className="pill">Assign donor</Link></Row>)}
     </Section>
     <Section title="Unmatched Razorpay orders" empty="No paid Razorpay orders are missing ledger entries.">
       {data.unmatchedRazorpayOrders.map((order) => <Row key={order.id} title={<span className="inline-flex items-center gap-2">{order.currency} {(order.amount / 100).toLocaleString()} · {order.user ? <TgUser name={order.user.name} photoUrl={order.user.photoUrl} telegramUser={order.user.telegramUser} size={20} /> : "Unlinked payer"}</span>} detail={`${order.razorpayOrderId} · ${order.paymentId || "No payment ID"}`}><button disabled={working === order.id || !order.paymentId} onClick={() => captureOrder(order.id)} className="pill text-lime disabled:opacity-40">Create ledger entry</button></Row>)}
     </Section>
     <Section title="Incomplete Razorpay webhooks" empty="No incomplete Razorpay webhook events.">
-      {data.pendingRazorpayEvents.map((event) => <Row key={event.id} title={event.eventType} detail={`${event.resourceId || "Unknown resource"} · ${event.status} · ${new Date(event.createdAt).toLocaleString()}`} />)}
+      {data.pendingRazorpayEvents.map((event) => <Row key={event.id} title={event.eventType} detail={`${event.resourceId || "Unknown resource"} · ${event.status} · ${displayDateTime(new Date(event.createdAt))}`} />)}
     </Section>
     <Section title="Possible duplicate transactions" empty="No likely duplicate transactions in the last 90 days.">
-      {data.possibleDuplicates.map((group, index) => <div key={index} className="border-b border-[var(--border)] py-4 last:border-0"><p className="text-xs text-amber">{group.reason}</p>{group.transactions.map((transaction) => <p key={transaction.id} className="mt-2 text-sm"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span> · {transaction.description} · {new Date(transaction.date).toLocaleString()} <code className="text-[10px] text-text-tertiary">{transaction.id}</code></p>)}<Link href="/admin/transactions" className="mt-3 inline-block text-xs text-lime">Review and void duplicate →</Link></div>)}
+      {data.possibleDuplicates.map((group, index) => <div key={index} className="border-b border-[var(--border)] py-4 last:border-0"><p className="text-xs text-amber">{group.reason}</p>{group.transactions.map((transaction) => <p key={transaction.id} className="mt-2 text-sm"><span className="font-semibold">{transaction.currency} {Number(transaction.amount).toLocaleString()}</span> · {transaction.description} · {displayDateTime(new Date(transaction.date))} <code className="text-[10px] text-text-tertiary">{transaction.id}</code></p>)}<Link href="/admin/transactions" className="mt-3 inline-block text-xs text-lime">Review and void duplicate →</Link></div>)}
     </Section>
   </div>;
 }

@@ -14,10 +14,22 @@ beforeEach(() => { vi.clearAllMocks(); mocks.findMany.mockResolvedValue([]); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("live donation queries", () => {
-  it("clamps historical reads to the inclusive IST cutoff", () => {
+  it("allows the full history by default and respects explicit historical filters", () => {
+    expect(parseDonationQuery(new URLSearchParams()).from).toBeUndefined();
     const q = parseDonationQuery(new URLSearchParams("from=2020-01-01T00:00:00Z"));
-    expect(q.from.toISOString()).toBe("2026-08-12T18:30:00.000Z");
+    expect(q.from?.toISOString()).toBe("2020-01-01T00:00:00.000Z");
     expect(q.states).toEqual(["PAID", "REVERSED"]);
+  });
+  it("keeps old records accessible in both list and detail, and reads reversals fresh", async () => {
+    const historic = { ...row, date: new Date("2020-01-01T00:00:00Z") };
+    mocks.findMany.mockResolvedValue([historic]);
+    const page = await listDonations(parseDonationQuery(new URLSearchParams()));
+    expect(page).toMatchObject({ cutoff: null, donations: [{ occurredAt: "2020-01-01T00:00:00.000Z", state: "PAID" }] });
+    expect(mocks.findMany.mock.calls[0][0].where).not.toHaveProperty("date");
+    expect(await getDonation("tx1")).toMatchObject({ state: "PAID" });
+    expect(mocks.findMany.mock.calls[1][0].where.AND[0]).not.toHaveProperty("date");
+    mocks.findMany.mockResolvedValue([{ ...historic, providerState: "REFUNDED" }]);
+    expect(await getDonation("tx1")).toMatchObject({ state: "REVERSED" });
   });
   it.each(["state=ACTIVE", "state=PAID%7C", "limit=501", "limit=-1", "limit=1.5", "offset=2147483648", "from=2026-08-13", "from=2026-02-30T00:00:00Z", "from=2026-09-01T00:00:00Z&to=2026-08-14T00:00:00Z"])("rejects invalid filters: %s", params => {
     expect(() => parseDonationQuery(new URLSearchParams(params))).toThrow();

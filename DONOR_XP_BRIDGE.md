@@ -14,9 +14,9 @@ Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. U
 
 - `state`: `PAID`, `REVERSED`, or `PAID|REVERSED` (default: both).
 - `from` and `to`: optional ISO timestamps with explicit timezones, both inclusive. Encode `+` as `%2B` in URLs.
-- The fixed inclusive cutoff is **2026-08-12T18:30:00Z**, or **13 August 2026, 00:00 IST**. Earlier `from` values are clamped to it.
+- With no date filters, the API exposes the entire recorded donation history. There is no fixed start-date cutoff; `cutoff` is `null`.
 - `limit`: 1–500, default 100. `offset`: 0–2,147,483,647, default 0.
-- Fixed filters: `isTest=false`, `direction=IN`, `type=DONATION`, `status=APPROVED`, positive amount and the cutoff.
+- Fixed filters: `isTest=false`, `direction=IN`, `type=DONATION`, `status=APPROVED`, positive amount.
 - Rows are sorted by payment date ascending, then immutable transaction ID.
 
 ```json
@@ -42,7 +42,7 @@ Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. U
   "offset": 0,
   "hasMore": false,
   "nextOffset": null,
-  "cutoff": "2026-08-12T18:30:00.000Z"
+  "cutoff": null
 }
 ```
 
@@ -51,6 +51,8 @@ Amounts and rates are decimal strings; Telegram IDs are strings or null. Names a
 USD rows have `inrEstimate=null` and `fxRate=null`: the ledger has no saved historical FX rate. **GET `/api/exchange-rate` remains available**, returning `rate` (INR per USD), `updatedAt`, and optionally `stale`. Sentry resolves an estimate on demand and saves it with the grant. Missing FX blocks approval. This estimate is not a historical settlement rate or actual provider net proceeds.
 
 Each list request performs one bounded ledger query. It does not refresh the event feed, call providers, write bridge tables or drain history. Records edited between pages can shift offsets; refresh to restart. Sentry filters already reviewed donation/transaction IDs locally, so pages can be sparse; `hasMore`/`nextOffset` still work.
+
+Follow `nextOffset` until `hasMore=false` to read all historical records. Sentinel and Sentry are independent: existing verified Razorpay/BMC webhooks and admin-approved manual entries update Sentinel's ledger, and subsequent API reads immediately reflect saved additions, corrections and reversals. There is no outbound webhook to Sentry or second payment intake endpoint. A date-filtered recent-payment query alone cannot discover reversals of older payments; recheck previously awarded IDs through the detail endpoint. These APIs expose each payment's current state, not an append-only revision log. Display dates in Sentinel use DD/MM/YYYY; API timestamps remain ISO 8601.
 
 ### Single-payment live verification
 
@@ -87,3 +89,5 @@ Sentinel: `npm test` and `npm run build`.
 Sentry: `python -B -m unittest discover -s donor_xp -t . -q` and `node --check webapp/static/donor-xp.js`.
 
 Tests use temporary SQLite databases, fake Sentinel responses and mocked Telegram delivery. They do not contact production.
+
+After upgrading the VPS, run `npx tsx scripts/verify-donation-ledger.ts 604642404` with `SENTINEL_URL` and `SENTRY_BRIDGE_SECRET` configured there. This read-only check traverses all pages, checks that no cutoff/caching remains and verifies matching payments through the live detail API. It reports when the user has no eligible payment; it never fabricates a payment or grants XP.

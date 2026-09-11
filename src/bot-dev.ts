@@ -1,3 +1,5 @@
+
+import { displayDateTime, displayDate } from "./lib/date-format";
 import "dotenv/config";
 import { Bot, Context } from "grammy";
 import { PrismaClient, Prisma } from "./generated/prisma/client";
@@ -24,6 +26,7 @@ import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
 import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
 import { handleSharedLinkStart } from "./lib/shared-link-bot";
 import { handleDonorEntry } from "./lib/donor-entry-bot";
+import { startMessage } from "./lib/start-message";
 import {
   deliverTelegramWithRetry,
   isPermanentTelegramRecipientError,
@@ -869,13 +872,7 @@ bot.command("start", async (ctx) => {
       await replaceProgressReply(
         ctx,
         progressReply,
-        `<blockquote><b>🎉 Welcome to Sentinel</b></blockquote>\n` +
-        `<b>Hey ${firstName}!</b>\n\n` +
-        `💰 Tracks community treasury\n` +
-        `📋 Manages developer tasks & boards\n` +
-        `🔔 Sends payment reminders & notifications\n` +
-        `📊 Keeps everything transparent\n\n` +
-        `<i>You're not registered yet. An admin will review and assign your access shortly.</i>`,
+        startMessage(created).text,
       );
     } catch (err) {
       console.error("Failed to reply to new user:", err);
@@ -909,9 +906,7 @@ bot.command("start", async (ctx) => {
       await replaceProgressReply(
         ctx,
         progressReply,
-        `<blockquote><b>🚫 Account Deactivated</b></blockquote>\n` +
-        `<b>Hey ${user.name},</b>\n` +
-        `<i>Your account has been deactivated. Contact an admin if you think this is a mistake.</i>`,
+        startMessage(user).text,
       );
     } catch (err) {
       console.error("Failed to reply to deactivated user:", err);
@@ -925,9 +920,7 @@ bot.command("start", async (ctx) => {
       await replaceProgressReply(
         ctx,
         progressReply,
-        `<blockquote><b>⏳ Pending Approval</b></blockquote>\n` +
-        `<b>Hey ${user.name}!</b>\n` +
-        `<i>You're in the system but don't have access yet. An admin will assign your role shortly.</i>`,
+        startMessage(user).text,
       );
     } catch (err) {
       console.error("Failed to reply to unassigned user:", err);
@@ -936,27 +929,14 @@ bot.command("start", async (ctx) => {
     return;
   }
 
-  const roleLabels: Record<string, string> = {
-    ADMIN: "🛡️ <b>Admin</b> — full treasury control",
-    DONOR: "💚 <b>Donor</b> — submit & track donations",
-    DEV: "⚡ <b>Dev</b> — project board & tasks",
-  };
-
-  const yourRoles = user.roles
-    .map((r) => roleLabels[r] || r)
-    .join("\n");
-  const donorWebsite = user.roles.includes("DONOR")
-    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piratezparty.com">sentinel.piratezparty.com</a>.`
-    : "";
+  const welcome = startMessage(user);
 
   try {
     await replaceProgressReply(
       ctx,
       progressReply,
-      `<b><i>👋 Welcome back, ${user.name}!</i></b>\n\n` +
-      `<blockquote><b>Your Access</b></blockquote>\n` +
-      `${yourRoles}${donorWebsite}`,
-      [[{ text: "Open Sentinel", web_app: { url: webappUrl } }]],
+      welcome.text,
+      welcome.route && welcome.button ? [[{ text: welcome.button, web_app: { url: new URL(welcome.route, webappUrl).toString() } }]] : undefined,
     );
   } catch (err) {
     console.error("Failed to reply to returning user:", err);
@@ -1069,7 +1049,7 @@ async function checkVpsAvailability() {
         vpsServerId: server.id,
         kind: "VPS_OFFLINE",
         title: `${server.name} is offline`,
-        message: `No heartbeat since ${server.lastSeen.toLocaleString()}.`,
+        message: `No heartbeat since ${displayDateTime(server.lastSeen)}.`,
       });
     }
   } catch (error) {
@@ -1094,7 +1074,7 @@ async function checkServiceExpiry() {
         kind: "OVERDUE_PAYMENT",
         severity: "HIGH",
         title: `Renewal overdue: ${service.name}`,
-        message: `${service.name} passed its renewal date on ${service.expiryDate!.toLocaleDateString()}. Confirm payment, renewal or cancellation.`,
+        message: `${service.name} passed its renewal date on ${displayDate(service.expiryDate!)}. Confirm payment, renewal or cancellation.`,
         dueAt: service.expiryDate,
         serviceId: service.id,
       });
@@ -1129,7 +1109,7 @@ async function checkServiceExpiry() {
     for (const svc of expiring) {
       const expiryDate = svc.expiryDate!;
       const daysLeft = Math.ceil((expiryDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
-      const dateStr = expiryDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const dateStr = displayDate(expiryDate);
       const daysLabel = daysLeft === 1 ? "1 day" : `${daysLeft} days`;
 
       let emoji: string, heading: string, priority: string;

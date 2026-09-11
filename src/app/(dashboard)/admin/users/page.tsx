@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -29,6 +31,7 @@ interface EditState {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [roleFilter, setRoleFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -225,9 +228,10 @@ export default function UsersPage() {
     setDeleting(false);
   }
 
-  const pendingUsers = users.filter((u) => u.roles.length === 0);
-  const activeUsers = users.filter((u) => u.roles.length > 0 && u.status === "ACTIVE");
-  const inactiveUsers = users.filter((u) => u.roles.length > 0 && u.status === "INACTIVE");
+  const filteredUsers = users.filter((u) => roleFilter === "ALL" || u.roles.includes(roleFilter));
+  const pendingUsers = filteredUsers.filter((u) => u.roles.length === 0);
+  const activeUsers = filteredUsers.filter((u) => u.roles.length > 0 && u.status === "ACTIVE");
+  const inactiveUsers = filteredUsers.filter((u) => u.roles.length > 0 && u.status === "INACTIVE");
 
   // Suggestions: users who /started the bot but have no roles and bot isn't blocked (chatId exists)
   const suggestions = users.filter(
@@ -336,7 +340,7 @@ export default function UsersPage() {
           <span className={`w-2 h-2 rounded-full inline-block ${u.chatId ? "bg-mint" : "bg-text-tertiary"}`} />
         </td>
         <td className="p-4 text-right text-text-secondary text-sm">
-          {new Date(u.createdAt).toLocaleDateString()}
+          {displayDate(new Date(u.createdAt))}
         </td>
         <td className="p-4 text-center">
           <div className="flex gap-1 justify-center items-center">
@@ -487,7 +491,7 @@ export default function UsersPage() {
           </span>
         </div>
         <div className="text-text-tertiary text-xs">
-          @{u.telegramUser || "—"} &middot; {u.telegramId} &middot; joined {new Date(u.createdAt).toLocaleDateString()}
+          @{u.telegramUser || "—"} &middot; {u.telegramId} &middot; joined {displayDate(new Date(u.createdAt))}
         </div>
         {u.roles.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -552,7 +556,7 @@ export default function UsersPage() {
           <div>
             <TgUser name={u.name} telegramUser={u.telegramUser} photoUrl={u.photoUrl} size={24} />
             <div className="text-text-tertiary text-xs mt-0.5">
-              @{u.telegramUser || u.telegramId} &middot; started bot {new Date(u.createdAt).toLocaleDateString()}
+              @{u.telegramUser || u.telegramId} &middot; started bot {displayDate(new Date(u.createdAt))}
             </div>
           </div>
           {isEditing ? (
@@ -684,6 +688,20 @@ export default function UsersPage() {
         >
           {showForm ? "Cancel" : "Add User"}
         </button>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2" role="group" aria-label="Filter users by role">
+        {[["ALL", "All"], ["DONOR", "Donors"], ["DEV", "Developers"], ["ADMIN", "Admins"]].map(([role, label]) => (
+          <button
+            key={role}
+            type="button"
+            aria-pressed={roleFilter === role}
+            onClick={() => setRoleFilter(role)}
+            className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${roleFilter === role ? "border-lime bg-lime text-bg-void" : "border-[var(--border)] text-text-secondary hover:border-lime/40 hover:text-text-primary"}`}
+          >
+            {label} <span className="ml-1 opacity-70">{users.filter((u) => role === "ALL" || u.roles.includes(role)).length}</span>
+          </button>
+        ))}
       </div>
 
       {showForm && (
@@ -831,8 +849,8 @@ export default function UsersPage() {
 
       {activeUsers.length === 0 && pendingUsers.length === 0 && inactiveUsers.length === 0 ? (
         <div className="card p-8 text-center">
-          <p className="text-text-secondary mb-2">No users yet.</p>
-          <p className="text-text-tertiary text-sm">Users will appear here when they start the bot.</p>
+          <p className="text-text-secondary mb-2">{roleFilter === "ALL" ? "No users yet." : "No users with this role."}</p>
+          <p className="text-text-tertiary text-sm">{roleFilter === "ALL" ? "Users will appear here when they start the bot." : "Choose another role or All to see more users."}</p>
         </div>
       ) : (
         <>

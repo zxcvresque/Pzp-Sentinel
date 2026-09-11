@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ShareButton from "@/components/ShareButton";
@@ -37,7 +39,7 @@ type Account = {
 
 const money = (value: unknown) => `$${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 const compact = (value: unknown) => Number(value || 0).toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
-const stamp = (value: string | null) => value ? new Date(value).toLocaleString() : "Never";
+const stamp = (value: string | null) => value ? displayDateTime(new Date(value)) : "Never";
 
 function Progress({ used, limit }: { used: number; limit: number | null }) {
   const pct = limit && limit > 0 ? Math.min(100, Math.max(0, used / limit * 100)) : 0;

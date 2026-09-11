@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -75,8 +77,8 @@ function emptyTransactionForm() {
 function formatDate(value: string) {
   const date = new Date(value);
   return {
-    day: date.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }),
-    time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase(),
+    day: displayDate(date),
+    time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).toLowerCase(),
   };
 }
 

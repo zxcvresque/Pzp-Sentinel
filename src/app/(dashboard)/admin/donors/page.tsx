@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
@@ -158,7 +160,7 @@ export default function DonorsLeaderboard() {
                     <TgUser name={donor.name} telegramUser={donor.telegramUser} photoUrl={donor.photoUrl} size={24} />
                     {donor.razorpayAccessRequestedAt && !donor.razorpayAccess ? (
                       <p className="mt-1 inline-flex rounded-full border border-sky-400/25 bg-sky-400/[.08] px-2 py-1 font-mono text-[9px] uppercase tracking-[.08em] text-sky-300">
-                        Razorpay requested {new Date(donor.razorpayAccessRequestedAt).toLocaleDateString()}
+                        Razorpay requested {displayDate(new Date(donor.razorpayAccessRequestedAt))}
                       </p>
                     ) : (
                       <p className="mt-1 font-mono text-[9px] uppercase tracking-[.08em] text-text-tertiary">Payment access managed per donor</p>

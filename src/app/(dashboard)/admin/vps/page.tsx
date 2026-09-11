@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime, displayDate } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
@@ -103,13 +105,7 @@ function usageColor(pct: number): string {
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return displayDateTime(d);
 }
 
 function formatUptime(seconds: number): string {
@@ -231,7 +227,7 @@ function formatRate(sub: Subscription): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(new Date(iso));
 }
 
 function toDateInput(iso: string | null | undefined): string {

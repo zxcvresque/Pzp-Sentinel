@@ -2,6 +2,7 @@ import { google, sheets_v4 } from "googleapis";
 import { InputFile } from "grammy";
 import { prisma } from "@/lib/db";
 import { bot } from "@/lib/bot";
+import { displayDate, displayDateTime } from "./date-format";
 
 const SHEET_NAMES = [
   "Dashboard",
@@ -267,8 +268,8 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
     const row = index + 2;
     transactionRows.push([
       tx.id,
-      tx.date.toISOString(),
-      tx.createdAt.toISOString(),
+      `'${displayDate(tx.date)}`,
+      `'${displayDateTime(tx.createdAt)}`,
       safeText(tx.description),
       Number(tx.amount),
       tx.currency,
@@ -322,13 +323,13 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
     const amount = Number(service.price || 0);
     const inr = toInr(amount, service.currency || "INR", usdToInr);
     const monthlyCost = service.frequency === "YEARLY" ? inr / 12 : service.frequency === "WEEKLY" ? inr * 52 / 12 : service.frequency === "ONE_TIME" || service.frequency === "LIFETIME" ? 0 : inr;
-    serviceRows.push([safeText(service.name), safeText(service.category), service.status || "", amount, service.currency || "", service.frequency || "", monthlyCost, service.expiryDate?.toISOString() || ""]);
+    serviceRows.push([safeText(service.name), safeText(service.category), service.status || "", amount, service.currency || "", service.frequency || "", monthlyCost, service.expiryDate ? `'${displayDate(service.expiryDate)}` : ""]);
   }
 
   const auditRows: unknown[][] = [["Timestamp", "Action", "Transaction ID", "Actor", "Before", "After"]];
   for (const audit of audits) {
     auditRows.push([
-      audit.timestamp.toISOString(),
+      `'${displayDateTime(audit.timestamp)}`,
       audit.action,
       audit.entityId,
       safeText(userNames.get(audit.userId) || audit.userId),
@@ -344,7 +345,7 @@ export async function syncFinanceWorkbook(event: FinanceAutomationEvent) {
     [],
     ["A READ-ONLY FINANCIAL OVERVIEW · MANAGED BY SENTINEL"],
     [],
-    ["Last synchronized", new Date().toISOString()],
+    ["Last synchronized", `'${displayDateTime(new Date())}`],
     [],
     ["Approved incoming (INR)", `=SUMIFS(Transactions!R:R,Transactions!J:J,"APPROVED",Transactions!G:G,"IN",Transactions!S:S,FALSE)`],
     ["Approved outgoing (INR)", `=SUMIFS(Transactions!R:R,Transactions!J:J,"APPROVED",Transactions!G:G,"OUT",Transactions!S:S,FALSE)`],

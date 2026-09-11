@@ -1,14 +1,14 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./db";
 import { bmcAccountSlug } from "./bmc-attribution";
-import { BRIDGE_START, type Donation } from "./donor-bridge";
+import type { Donation } from "./donor-bridge";
 import { donorPaymentIdentity } from "./donor-payment-id";
 
 export class DonationQueryError extends Error {}
 
 export type DonationQuery = {
   states: Donation["state"][];
-  from: Date;
+  from?: Date;
   to?: Date;
   limit: number;
   offset: number;
@@ -41,12 +41,12 @@ export function parseDonationQuery(params: URLSearchParams): DonationQuery {
   if (states.some(state => state !== "PAID" && state !== "REVERSED")) {
     throw new DonationQueryError("state must be PAID, REVERSED or PAID|REVERSED");
   }
-  const from = timestamp(params.get("from") || BRIDGE_START, "from");
+  const from = params.get("from") ? timestamp(params.get("from")!, "from") : undefined;
   const to = params.get("to") ? timestamp(params.get("to")!, "to") : undefined;
-  if (to && to < from) throw new DonationQueryError("to must be on or after from");
+  if (from && to && to < from) throw new DonationQueryError("to must be on or after from");
   return {
     states: states as Donation["state"][],
-    from: new Date(Math.max(from.getTime(), new Date(BRIDGE_START).getTime())),
+    from,
     to,
     limit: integer(params.get("limit"), 100, 1, 500, "limit"),
     offset: integer(params.get("offset"), 0, 0, 2147483647, "offset"),
@@ -74,10 +74,11 @@ const reversed: Prisma.TransactionWhereInput = {
   ],
 };
 
-function eligible(from = new Date(BRIDGE_START), to?: Date): Prisma.TransactionWhereInput {
+function eligible(from?: Date, to?: Date): Prisma.TransactionWhereInput {
   return {
     isTest: false, direction: "IN", type: "DONATION", status: "APPROVED",
-    amount: { gt: 0 }, date: { gte: from, ...(to ? { lte: to } : {}) },
+    amount: { gt: 0 },
+    ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
   };
 }
 
@@ -121,7 +122,7 @@ export async function listDonations(query: DonationQuery) {
     donations: rows.slice(0, query.limit).map(serializeDonation),
     limit: query.limit, offset: query.offset, hasMore,
     nextOffset: hasMore ? query.offset + query.limit : null,
-    cutoff: BRIDGE_START,
+    cutoff: null,
   };
 }
 

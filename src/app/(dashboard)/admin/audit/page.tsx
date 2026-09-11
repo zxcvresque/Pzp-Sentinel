@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Dropdown from "@/components/Dropdown";
@@ -297,7 +299,7 @@ export default function AuditPage() {
             const actor = userMap[log.userId];
             return (
               <div key={group.id} data-share-target={`audit:${log.id}`} className="relative">
-                <ShareButton entityType="audit" entityId={log.id} label="" contextTitle={`${log.action.replaceAll("_", " ")} · ${log.entityType}`} contextDetails={`${actor?.name || `User ${log.userId.slice(0, 8)}`} · ${new Date(log.timestamp).toLocaleString()} · record ${log.entityId.slice(0, 8)}`} className="absolute right-3 top-1/2 z-10 h-8 w-8 -translate-y-1/2 px-0" />
+                <ShareButton entityType="audit" entityId={log.id} label="" contextTitle={`${log.action.replaceAll("_", " ")} · ${log.entityType}`} contextDetails={`${actor?.name || `User ${log.userId.slice(0, 8)}`} · ${displayDateTime(new Date(log.timestamp))} · record ${log.entityId.slice(0, 8)}`} className="absolute right-3 top-1/2 z-10 h-8 w-8 -translate-y-1/2 px-0" />
                 <button
                   type="button"
                   onClick={() => setExpandedId(expanded ? null : group.id)}
@@ -324,7 +326,7 @@ export default function AuditPage() {
                   <div className="flex items-center gap-3 sm:gap-4 text-xs w-full justify-between sm:w-auto sm:justify-end shrink-0 sm:pl-4">
                     {actor ? <TgUser name={actor.name} photoUrl={actor.photoUrl} telegramUser={actor.telegramUser} size={20} /> : <span className="text-text-secondary">{log.userId.substring(0, 8)}</span>}
                     <span className="text-text-tertiary whitespace-nowrap">
-                      {new Date(log.timestamp).toLocaleString()}
+                      {displayDateTime(new Date(log.timestamp))}
                     </span>
                     <span className="text-text-tertiary shrink-0 hidden sm:inline">
                       {expanded ? "▲" : "▼"}

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   const rows = transactions.map((tx) => [
     tx.fromUser?.telegramId || tx.razorpayOrder?.invite?.telegramId || "",
-    new Date(tx.date).toISOString().split("T")[0],
+    displayDate(tx.date),
     escapeCsv(tx.description),
     Number(tx.amount).toFixed(2),
     tx.currency,
@@ -82,3 +82,4 @@ export async function GET(request: NextRequest) {
     },
   });
 }
+import { displayDate } from "@/lib/date-format";

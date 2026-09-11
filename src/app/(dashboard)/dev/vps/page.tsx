@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useState } from "react";
 import PageTour from "@/components/PageTour";
@@ -68,13 +70,7 @@ function usageColor(pct: number): string {
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return displayDateTime(d);
 }
 
 function formatUptime(seconds: number): string {

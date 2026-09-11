@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
@@ -63,7 +65,7 @@ function expiryInfo(date: string | null): { label: string; color: string } | nul
   if (daysLeft <= 3) return { label: `${daysLeft}d left`, color: "var(--coral)" };
   if (daysLeft <= 7) return { label: `${daysLeft}d left`, color: "var(--amber)" };
   if (daysLeft <= 30) return { label: `${daysLeft}d left`, color: "var(--amber)" };
-  return { label: exp.toLocaleDateString(), color: "var(--text-tertiary)" };
+  return { label: displayDate(exp), color: "var(--text-tertiary)" };
 }
 
 export default function ServicesPage() {

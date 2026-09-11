@@ -10,6 +10,7 @@ import { registerBmcFeedbackHandlers } from "@/lib/bmc-feedback-bot";
 import { notifyAdmins } from "@/lib/notifications";
 import { handleSharedLinkStart } from "@/lib/shared-link-bot";
 import { handleDonorEntry } from "@/lib/donor-entry-bot";
+import { startMessage } from "@/lib/start-message";
 
 bot.command("start", async (ctx) => {
   const telegramId = ctx.from?.id.toString();
@@ -113,16 +114,7 @@ bot.command("start", async (ctx) => {
       ]);
     });
 
-    await ctx.reply(
-      `Hey ${firstName}! 👋\n\n` +
-      `I'm Sentinel — the bot for PzP's finance & developer hub.\n\n` +
-      `Here's what PzP Sentinel does:\n` +
-      `💰 Tracks community treasury — donations, expenses, subscriptions\n` +
-      `📋 Manages developer tasks & project boards\n` +
-      `🔔 Sends payment reminders & notifications\n` +
-      `📊 Keeps everything transparent for the community\n\n` +
-      `You're not registered yet. An admin will review and assign your access shortly. Sit tight!`,
-    );
+    await ctx.reply(startMessage(created).text, { parse_mode: "HTML" });
     return;
   }
 
@@ -144,43 +136,13 @@ bot.command("start", async (ctx) => {
     ]);
   });
 
-  // In database but no roles — waiting for admin approval
-  if (user.roles.length === 0) {
-    await ctx.reply(
-      `Hey ${user.name}! 👋\n\n` +
-      `You're in the system but don't have access yet. An admin will assign your role shortly.\n\n` +
-      `Once approved, you'll be able to open Sentinel from right here.`,
-    );
-    return;
-  }
-
-  // Registered user with roles
-  const roleLabels: Record<string, string> = {
-    ADMIN: "🛡️ Admin — full treasury control",
-    DONOR: "💚 Donor — submit & track donations",
-    DEV: "⚡ Dev — project board & tasks",
-  };
-
-  const yourRoles = user.roles
-    .map((r) => roleLabels[r] || r)
-    .join("\n");
-  const donorWebsite = user.roles.includes("DONOR")
-    ? `\n\nYou can also use Sentinel directly at <a href="https://sentinel.piratezparty.com">sentinel.piratezparty.com</a>.`
-    : "";
-
-  await ctx.reply(
-    `Welcome back, ${escapeTelegramHtml(user.name)}! 🏦\n\n` +
-    `Your access:\n${yourRoles}\n\n` +
-    `Open Sentinel to get started.${donorWebsite}`,
-    {
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Open Sentinel", web_app: { url: webappUrl } }],
-        ],
-      },
-    }
-  );
+  const welcome = startMessage(user);
+  await ctx.reply(welcome.text, {
+    parse_mode: "HTML",
+    ...(welcome.route && welcome.button ? {
+      reply_markup: { inline_keyboard: [[{ text: welcome.button, web_app: { url: new URL(welcome.route, webappUrl).toString() } }]] },
+    } : {}),
+  });
 });
 
 registerRazorpayFeedbackHandlers(bot, prisma);

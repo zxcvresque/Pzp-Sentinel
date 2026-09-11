@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime, displayDate } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import PageTour from "@/components/PageTour";
@@ -602,7 +604,7 @@ export default function AdminDashboard() {
           <CurrencyToggle value={bmcCurrency} onChange={chooseBmcCurrency} exchangeRate={exchangeRate} />
           <span
             title={bmcStats?.lastWebhookAt
-              ? `Last delivery: ${new Date(bmcStats.lastWebhookAt).toLocaleString()} · ${bmcStats.lastWebhookStatus}`
+              ? `Last delivery: ${displayDateTime(new Date(bmcStats.lastWebhookAt))} · ${bmcStats.lastWebhookStatus}`
               : bmcStats?.webhookConfigured ? "Secret configured, but Sentinel has never received a valid delivery" : "Webhook secret is missing"}
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[9px] uppercase tracking-[.1em] ${bmcStats?.webhookVerified ? "border-mint/20 bg-mint/8 text-mint" : "border-amber/20 bg-amber/8 text-amber"}`}
           >
@@ -675,7 +677,7 @@ export default function AdminDashboard() {
                           {tx.description}
                         </div>
                         <div className="text-text-tertiary text-[10px] font-mono mt-0.5">
-                          {new Date(tx.date).toLocaleDateString()}
+                          {displayDate(new Date(tx.date))}
                         </div>
                       </div>
                       <div className="text-mint font-semibold text-sm ml-3 shrink-0">
@@ -703,7 +705,7 @@ export default function AdminDashboard() {
                     <div className="min-w-0">
                       <div className="truncate text-xs font-semibold text-text-primary">{event.eventType.replaceAll("_", " ")}</div>
                       <div className="mt-0.5 truncate font-mono text-[9px] uppercase tracking-[.07em] text-text-tertiary">
-                        {event.supporterName || "Anonymous"} · {new Date(event.createdAt).toLocaleString()}
+                        {event.supporterName || "Anonymous"} · {displayDateTime(new Date(event.createdAt))}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
@@ -744,7 +746,7 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <div className="card overflow-hidden">
-            <div className="divide-y divide-[var(--border)] sm:hidden">{transactions.map((tx) => <article key={tx.id} className="min-w-0 p-4"><div className="flex min-w-0 items-start justify-between gap-3"><p className="min-w-0 break-words text-sm font-semibold">{tx.description}</p><span className={`shrink-0 text-sm font-bold ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}>{tx.direction === "IN" ? "+" : "-"}{tx.currency === "INR" ? "₹" : "$"}{Number(tx.amount).toLocaleString()}</span></div><div className="mt-2"><TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={24} /></div><div className="mt-3 flex items-center justify-between gap-2"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span><span className="text-xs text-text-tertiary">{new Date(tx.date).toLocaleDateString()}</span></div></article>)}</div>
+            <div className="divide-y divide-[var(--border)] sm:hidden">{transactions.map((tx) => <article key={tx.id} className="min-w-0 p-4"><div className="flex min-w-0 items-start justify-between gap-3"><p className="min-w-0 break-words text-sm font-semibold">{tx.description}</p><span className={`shrink-0 text-sm font-bold ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}>{tx.direction === "IN" ? "+" : "-"}{tx.currency === "INR" ? "₹" : "$"}{Number(tx.amount).toLocaleString()}</span></div><div className="mt-2"><TransactionAttribution fromUser={tx.fromUser} createdBy={tx.createdBy} method={tx.method} detail={tx.paymentMethodDetail} size={24} /></div><div className="mt-3 flex items-center justify-between gap-2"><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span><span className="text-xs text-text-tertiary">{displayDate(new Date(tx.date))}</span></div></article>)}</div>
             <div className="hidden sm:block">
               <table className="w-full">
                 <thead>
@@ -799,7 +801,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="p-4 text-right text-text-secondary text-sm">
-                        {new Date(tx.date).toLocaleDateString()}
+                        {displayDate(new Date(tx.date))}
                       </td>
                     </tr>
                   ))}

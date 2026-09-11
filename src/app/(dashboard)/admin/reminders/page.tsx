@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useEffect, useState } from "react";
 import Dropdown from "@/components/Dropdown";
@@ -454,9 +456,9 @@ export default function RemindersPage() {
                   </span>
                 </div>
                 <div className="text-text-tertiary text-xs mt-2">
-                  Next: {new Date(rem.nextFire).toLocaleString()} · owner {rem.owner ? <TgUser name={rem.owner.name} telegramUser={rem.owner.telegramUser} photoUrl={rem.owner.photoUrl} size={18} /> : "admin"} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
+                  Next: {displayDateTime(new Date(rem.nextFire))} · owner {rem.owner ? <TgUser name={rem.owner.name} telegramUser={rem.owner.telegramUser} photoUrl={rem.owner.photoUrl} size={18} /> : "admin"} · by <TgUser name={rem.createdBy.name} telegramUser={rem.createdBy.telegramUser} photoUrl={rem.createdBy.photoUrl} size={18} />
                 </div>
-                {rem.escalationAt && <div className="mt-1 text-[10px] text-amber">Escalates {new Date(rem.escalationAt).toLocaleString()}{rem.escalatedAt ? " · escalated" : ""}</div>}
+                {rem.escalationAt && <div className="mt-1 text-[10px] text-amber">Escalates {displayDateTime(new Date(rem.escalationAt))}{rem.escalatedAt ? " · escalated" : ""}</div>}
                 {rem.acknowledgedAt && <div className="mt-1 flex items-center gap-1 text-[10px] text-mint">Acknowledged by {rem.acknowledgedBy ? <TgUser name={rem.acknowledgedBy.name} telegramUser={rem.acknowledgedBy.telegramUser} photoUrl={rem.acknowledgedBy.photoUrl} size={18} nameClassName="!text-[10px] !text-mint" /> : "admin"}</div>}
               </div>
               <div className="flex gap-2 shrink-0">

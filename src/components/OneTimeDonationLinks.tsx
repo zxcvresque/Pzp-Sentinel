@@ -1,4 +1,6 @@
 "use client";
+import { displayDateTime } from "@/lib/date-format";
+
 
 import { useCallback, useState } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -153,7 +155,7 @@ export default function OneTimeDonationLinks() {
                 const state = inviteState(invite);
                 const active = state === "Awaiting claim" || state === "Identity verified" || state === "Checkout started";
                 return <div key={invite.id} className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-black/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0"><div className="truncate text-sm font-medium">{invite.guestName}{invite.telegramUser && <span className="font-normal text-text-tertiary"> @{invite.telegramUser}</span>}</div><div className="mt-1 font-mono text-[9px] text-text-tertiary">{invite.telegramId ? `TG ${invite.telegramId} · ` : "Identity pending · "}{invite.allowRazorpay ? "BMC + Razorpay" : "BMC"} · expires {new Date(invite.expiresAt).toLocaleString()}</div></div>
+                  <div className="min-w-0"><div className="truncate text-sm font-medium">{invite.guestName}{invite.telegramUser && <span className="font-normal text-text-tertiary"> @{invite.telegramUser}</span>}</div><div className="mt-1 font-mono text-[9px] text-text-tertiary">{invite.telegramId ? `TG ${invite.telegramId} · ` : "Identity pending · "}{invite.allowRazorpay ? "BMC + Razorpay" : "BMC"} · expires {displayDateTime(new Date(invite.expiresAt))}</div></div>
                   <div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 font-mono text-[9px] uppercase ${state === "Used" ? "bg-mint/10 text-mint" : active ? "bg-amber/10 text-amber" : "bg-coral/10 text-coral"}`}>{state}</span>{active && <button type="button" onClick={() => setRevokeTarget(invite)} className="rounded-full border border-coral/20 px-2.5 py-1 text-[10px] text-coral">Revoke</button>}</div>
                 </div>;
               })}

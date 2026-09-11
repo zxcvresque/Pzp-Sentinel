@@ -1,4 +1,6 @@
 "use client";
+import { displayDate } from "@/lib/date-format";
+
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
@@ -664,7 +666,7 @@ export default function DonorDashboard() {
                   {tx.isTest && <span className="ml-2 rounded bg-violet/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-violet">Test</span>}
                 </div>
                 <div className="text-text-tertiary text-xs mt-1">
-                  <span className="mr-2">{new Date(tx.date).toLocaleDateString()}</span>
+                  <span className="mr-2">{displayDate(new Date(tx.date))}</span>
                   <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
                   <span className="ml-1">&middot; paid in {tx.currency}</span>
                 </div>
