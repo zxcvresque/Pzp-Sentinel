@@ -7,6 +7,23 @@ datasource db {
   provider = "postgresql"
 }
 
+// Rows are enqueued atomically by scripts/sentry-webhook-triggers.sql.
+// No FK: removal of a payment must still notify the consumer.
+model SentryWebhookDelivery {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId String?
+  body          String?
+  createdAt     DateTime  @default(now())
+  nextAttemptAt DateTime  @default(now())
+  attempts      Int       @default(0)
+  lease         String?   @db.Uuid
+  lockedUntil   DateTime?
+  deliveredAt   DateTime?
+  lastError     String?
+
+  @@index([deliveredAt, nextAttemptAt])
+}
+
 enum Role {
   ADMIN
   DONOR

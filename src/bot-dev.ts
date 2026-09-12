@@ -27,6 +27,7 @@ import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
 import { handleSharedLinkStart } from "./lib/shared-link-bot";
 import { handleDonorEntry } from "./lib/donor-entry-bot";
 import { startMessage } from "./lib/start-message";
+import { drainSentryWebhooks } from "./lib/sentry-webhook";
 import {
   deliverTelegramWithRetry,
   isPermanentTelegramRecipientError,
@@ -1334,6 +1335,9 @@ async function checkSubscriptionRenewals() {
   bot.start({
     onStart: () => {
       console.log("Sentinel bot is live! Send /start to @" + process.env.BOT_USERNAME);
+      // Durable outbound delivery for every ledger source, independent of Sheets.
+      void drainSentryWebhooks();
+      setInterval(() => void drainSentryWebhooks(), 5_000);
 
       // Run first expiry check after 10s (let DB connections warm up), then every 24h
       setTimeout(() => {

@@ -130,6 +130,9 @@ SQL
 step "Applying Prisma schema…"
 npx prisma db push --accept-data-loss
 
+step "Installing durable donation webhook triggers…"
+npx prisma db execute --file scripts/sentry-webhook-triggers.sql
+
 step "Regenerating Prisma client…"
 npx prisma generate
 
