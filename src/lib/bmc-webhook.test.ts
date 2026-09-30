@@ -139,6 +139,17 @@ describe("Buy Me a Coffee webhook", () => {
       .toEqual(bmcTransactionKeys(updated.type, updated.resourceId));
     expect(bmcTransactionKeys(started.type, started.resourceId))
       .not.toEqual(bmcTransactionKeys(nextMonth.type, nextMonth.resourceId));
+    expect(started.occurredAt.getTime()).toBe(baseData.current_period_start * 1000);
+    expect(nextMonth.occurredAt.getTime()).toBe(1789517787 * 1000);
+    expect(nextMonth.occurredAt).not.toEqual(started.occurredAt);
+  });
+
+  it("dates an actual September renewal by its period, not its August start", () => {
+    const event = parseBmcWebhook(JSON.stringify({
+      event_id: 705333, type: "recurring_donation.updated", created: 1790674397,
+      data: { id: 1083393, psp_id: "sub_example", started_at: 1787995940, current_period_start: 1790674334, amount: 25 },
+    }));
+    expect(event.occurredAt.toISOString()).toBe("2026-09-29T09:32:14.000Z");
   });
 
   it("normalizes BMC recurring subscription fields into a paid monthly event", () => {

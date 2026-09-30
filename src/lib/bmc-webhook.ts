@@ -208,8 +208,14 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     || text(data.extra_note)
     || text(data.supporter_feedback)
     || text(data.subscription_message);
+  const frequency = donationFrequency(type, data);
+  // started_at is the subscription's original start, even on later renewals.
+  // Use the current billing period so a paid renewal does not look overdue.
+  const periodStart = frequency === "MONTHLY"
+    ? data.current_period_start ?? data.subscription_current_period_start
+    : undefined;
   const occurredAt = dateValue(
-    data.created_at ?? data.started_at ?? data.support_created_on ?? data.extra_created_on
+    periodStart ?? data.created_at ?? data.started_at ?? data.support_created_on ?? data.extra_created_on
       ?? data.commission_order_created_on ?? data.wishlist_payment_created_on
       ?? data.subscription_current_period_start ?? data.subscription_created_on,
     createdAt,
@@ -236,7 +242,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     itemLabel: itemLabel(type, data),
     occurredAt,
     eventKey,
-    donationFrequency: donationFrequency(type, data),
+    donationFrequency: frequency,
   };
 }
 

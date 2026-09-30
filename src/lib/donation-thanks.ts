@@ -200,5 +200,5 @@ export function donateReminderMessage(name: string, isFirst: boolean): string {
 
 /** Public nudge used only for donors who explicitly selected monthly giving. */
 export function monthlyDonationReminderGroupMessage(handle: string): string {
-  return `🏴‍☠️ Friendly monthly support reminder for ${handle} — today matches your chosen giving date. No pressure, and thank you for keeping PzP sailing!\n\n#monthly`;
+  return `🏴‍☠️ Friendly monthly support reminder for ${handle} — we haven’t received your expected monthly contribution yet. If autopay didn’t go through, you can check it in Sentinel. No pressure, and thank you for keeping PzP sailing!\n\n#monthly`;
 }

@@ -19,6 +19,9 @@ Sentinel combines a responsive Next.js dashboard, Telegram bot, PostgreSQL ledge
 - Pending approvals before service and VPS costs affect the treasury.
 - Service catalogue with templates, billing history, receipts, reminders, credentials, and operational alerts.
 - Razorpay and Buy Me a Coffee transaction verification and reconciliation.
+- Captured Razorpay payments are reconciled every 15 minutes, including one-time
+  orders missed by webhooks or checkout callbacks. Recovery updates the donor's
+  history and sends a funds-group thank-you through the same delivery claim.
 - Donor management, payment access controls, broadcasts, reminders, and contribution leaderboard.
 - Encrypted credential vault with audited reveal, grant, revoke, rotation, and recovery flows.
 - VPS inventory, live telemetry, maintainer assignment, access requests, and granular alert preferences.
@@ -31,6 +34,8 @@ Sentinel combines a responsive Next.js dashboard, Telegram bot, PostgreSQL ledge
 - Manual contribution proof submission, later proof attachment, and pending-submission management.
 - Contribution history, provider/currency-aware totals, leaderboard, receipts, and status updates.
 - Appeals for rejected submissions plus notification and reminder preferences.
+- Monthly giving reminders wait 12 hours after the expected payment time, anchored
+  to the first approved monthly contribution, and skip paid billing months.
 
 ### Developer
 
