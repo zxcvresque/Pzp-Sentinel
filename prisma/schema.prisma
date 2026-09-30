@@ -256,14 +256,14 @@ model User {
   // Donor donate-reminder settings (default monthly; OFF disables nudges).
   donateReminderCadence  DonateCadence @default(MONTHLY)
   lastDonateReminderAt   DateTime?
-  // A donor who explicitly chooses monthly giving is reminded on this local
-  // day-of-month instead of the generic 5th-of-the-month default.
+  // Monthly giving uses the first approved monthly donation's local date/time,
+  // with a 12-hour grace period. This is the fallback when ledger history is absent.
   donateReminderAnchorAt DateTime?
   // CUSTOM cadence: remind every N units (e.g. every 3 DAYs / 2 WEEKs / 1 MONTH).
   donateReminderEveryN   Int?
   donateReminderUnit     ReminderUnit?
   // Time of day the nudge fires (minutes from local midnight; 540 = 09:00) in the
-  // donor's timezone. Applies to ALL cadences. Default IST.
+  // donor's timezone. Anchored monthly giving uses payment time + 12h instead. Default IST.
   donateReminderTimeMin  Int           @default(540)
   donateReminderTz       String        @default("Asia/Kolkata")
 
@@ -285,8 +285,8 @@ model Transaction {
   direction                     Direction
   type                          TxType            @default(OTHER)
   donationFrequency             DonationFrequency @default(ONE_TIME)
-  // Provider payment ID for recurring rails whose charges do not use a
-  // Sentinel RazorpayOrder. Unique so webhook retries cannot duplicate income.
+  // Provider payment ID for one-time and recurring payments. Unique so
+  // webhook retries and recovery checks cannot duplicate income.
   providerPaymentId             String?           @unique
   razorpaySubscriptionId        String?
   // Encrypted provider metadata (payer email/name/note/payment context). Never

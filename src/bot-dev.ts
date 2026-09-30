@@ -255,22 +255,29 @@ async function prepareTelegramPolling() {
 
 // ── Admin reminders and repeating broadcasts ─────────────────────────────────
 const ADMIN_MESSAGE_CHECK_INTERVAL = 60 * 1000;
-const PROVIDER_RECONCILIATION_INTERVAL = 6 * 60 * 60 * 1000;
+const PROVIDER_RECONCILIATION_INTERVAL = 15 * 60 * 1000;
+let providerReconciliationRunning = false;
 
 async function reconcileProviderPayments() {
+  if (providerReconciliationRunning) return;
+  providerReconciliationRunning = true;
   try {
-    const result = await reconcileRecentRazorpaySubscriptionPayments();
-    console.log(`[razorpay-reconcile] checked=${result.checked}, recovered=${result.recovered}, skipped=${result.skipped}, errors=${result.errors.length}`);
-    if (result.errors.length) console.warn("[razorpay-reconcile]", result.errors.slice(0, 5));
-  } catch (error) {
-    console.error("[razorpay-reconcile] Failed:", error);
-  }
+    try {
+      const result = await reconcileRecentRazorpaySubscriptionPayments();
+      console.log(`[razorpay-reconcile] checked=${result.checked}, recovered=${result.recovered}, skipped=${result.skipped}, errors=${result.errors.length}`);
+      if (result.errors.length) console.warn("[razorpay-reconcile]", result.errors.slice(0, 5));
+    } catch (error) {
+      console.error("[razorpay-reconcile] Failed:", error);
+    }
 
-  try {
-    const result = await reconcileDonationAnnouncements();
-    console.log(`[donation-announcements] checked=${result.checked}, sent=${result.sent}, skipped=${result.skipped}, failed=${result.failed}`);
-  } catch (error) {
-    console.error("[donation-announcements] Reconciliation failed:", error);
+    try {
+      const result = await reconcileDonationAnnouncements();
+      console.log(`[donation-announcements] checked=${result.checked}, sent=${result.sent}, skipped=${result.skipped}, failed=${result.failed}`);
+    } catch (error) {
+      console.error("[donation-announcements] Reconciliation failed:", error);
+    }
+  } finally {
+    providerReconciliationRunning = false;
   }
 }
 
@@ -1195,28 +1202,50 @@ async function checkDonateReminders() {
           donateReminderTimeMin: true,
           donateReminderTz: true,
           telegramUser: true,
+          transactionsFrom: {
+            where: { type: "DONATION", direction: "IN", donationFrequency: "MONTHLY", status: "APPROVED", isTest: false, voidedAt: null },
+            orderBy: { date: "asc" },
+            select: { date: true },
+          },
         },
       }),
     );
 
     let sent = 0;
     for (const d of donors) {
-      if (!reminderDue(d, now)) continue;
+      const payments = d.transactionsFrom;
+      const schedule = {
+        ...d,
+        donateReminderAnchorAt: payments[0]?.date ?? d.donateReminderAnchorAt,
+        lastMonthlyDonationAt: payments.at(-1)?.date,
+      };
+      if (!reminderDue(schedule, now)) continue;
       if (!d.chatId) continue;
+      // Claim before sending: concurrent polls/processes can only claim once.
+      const claim = await dbRetry(() => prisma.user.updateMany({
+        where: {
+          id: d.id,
+          lastDonateReminderAt: d.lastDonateReminderAt,
+          donateReminderAnchorAt: d.donateReminderAnchorAt,
+          donateReminderCadence: d.donateReminderCadence,
+        },
+        data: { lastDonateReminderAt: now },
+      }));
+      if (claim.count !== 1) continue;
       const isFirst = !d.lastDonateReminderAt;
       try {
         await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name, isFirst), { parse_mode: "HTML" });
-        if (d.donateReminderCadence === "MONTHLY" && d.donateReminderAnchorAt) {
-          await postDonationThanks(monthlyDonationReminderGroupMessage(donorHandle(d.name, d.telegramUser)));
-        }
         sent++;
       } catch (e) {
         console.error(`[donate-reminder] DM failed for ${d.id}:`, (e as Error).message);
       }
-      // Stamp so the next nudge waits for the next cadence window.
-      await dbRetry(() =>
-        prisma.user.update({ where: { id: d.id }, data: { lastDonateReminderAt: now } }),
-      ).catch(() => {});
+      if (d.donateReminderCadence === "MONTHLY" && schedule.donateReminderAnchorAt) {
+        try {
+          await postDonationThanks(monthlyDonationReminderGroupMessage(donorHandle(d.name, d.telegramUser)));
+        } catch (e) {
+          console.error(`[donate-reminder] Group reminder failed for ${d.id}:`, (e as Error).message);
+        }
+      }
     }
     console.log(`[donate-reminder] Done. ${sent} reminder(s) sent of ${donors.length} eligible donor(s).`);
   } catch (err) {
@@ -1346,12 +1375,12 @@ async function checkSubscriptionRenewals() {
       }, 10_000);
       console.log("[expiry] Scheduled — first check in 10s, then every 24h");
 
-      // Donor donate-reminders: first check after 20s, then every 6h
+      // Donor donate-reminders: first check after 20s, then every 30 min
       setTimeout(() => {
         checkDonateReminders();
         setInterval(checkDonateReminders, DONATE_REMINDER_CHECK_INTERVAL);
       }, 20_000);
-      console.log("[donate-reminder] Scheduled — first check in 20s, then every 6h");
+      console.log("[donate-reminder] Scheduled — first check in 20s, then every 30 min");
 
       // VPS subscription auto-renewals: first check after 30s, then every 24h
       setTimeout(() => {
@@ -1374,7 +1403,7 @@ async function checkSubscriptionRenewals() {
         reconcileProviderPayments();
         setInterval(reconcileProviderPayments, PROVIDER_RECONCILIATION_INTERVAL);
       }, 45_000);
-      console.log("[provider-reconcile] Razorpay safety sync starts in 45s, then every 6h");
+      console.log("[provider-reconcile] Razorpay safety sync starts in 45s, then every 15 min");
       setTimeout(backfillServiceOperations, 55_000);
       console.log("[service-backfill] Existing service links/reminders will be checked in 55s");
       console.log("[sub-renewal] Scheduled — first check in 30s, then every 24h");

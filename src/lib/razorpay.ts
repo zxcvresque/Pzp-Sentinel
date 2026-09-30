@@ -19,6 +19,7 @@ import {
 } from "@/lib/razorpay-subscription-events";
 import { RAZORPAY_MONTHLY_TOTAL_COUNT, razorpaySubscriptionExpireBy } from "@/lib/razorpay-checkout";
 import { parseRazorpayPayload, razorpayProviderError } from "@/lib/razorpay-response";
+import { capturedPaymentPages } from "@/lib/razorpay-reconciliation";
 
 const RAZORPAY_API = "https://api.razorpay.com/v1";
 const MIN_DONATION_PAISE = 100;
@@ -766,15 +767,14 @@ export async function finalizeMonthlyPaymentByReference(params: {
 
 /**
  * Safety net for webhook outages. Razorpay remains the source of truth: recent
- * captured payments are fetched from its API, invoice-mapped to subscriptions,
+ * captured payments are fetched from its API, matched to orders or subscriptions,
  * and passed through the same idempotent finalizer as live webhooks.
  */
 export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays = 35) {
   const since = Math.floor((Date.now() - Math.max(1, lookbackDays) * 86_400_000) / 1000);
-  const collection = await razorpayRequest<RazorpayPaymentCollection>(
-    `/payments?from=${since}&count=100&skip=0`,
-  );
-  const payments = (collection.items || []).filter((payment) => payment.status === "captured" && payment.captured);
+  const payments = await capturedPaymentPages((skip) => razorpayRequest<RazorpayPaymentCollection>(
+    `/payments?from=${since}&count=100&skip=${skip}`,
+  ));
   let recovered = 0;
   let skipped = 0;
   const errors: string[] = [];
@@ -803,10 +803,15 @@ export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays =
         skipped++;
         continue;
       }
-      const result = await finalizeMonthlyPaymentByReference({
-        paymentId: payment.id,
-        invoiceId: payment.invoice_id,
-      });
+      const order = payment.order_id ? await prisma.razorpayOrder.findUnique({
+        where: { razorpayOrderId: payment.order_id },
+        select: { razorpayOrderId: true },
+      }) : null;
+      const result = order
+        ? { matched: true, ...await finalizeCapturedDonation({
+          orderId: order.razorpayOrderId, paymentId: payment.id, actorName: "Razorpay reconciliation",
+        }) }
+        : await finalizeMonthlyPaymentByReference({ paymentId: payment.id, invoiceId: payment.invoice_id });
       if (result.matched && !result.duplicate) recovered++;
       else skipped++;
     } catch (error) {
@@ -829,7 +834,10 @@ export async function finalizeCapturedDonation(params: {
   if (!stored || (params.expectedUserId && stored.userId !== params.expectedUserId)) {
     throw new RazorpayError("Payment order was not found", 404);
   }
-  if (stored.transaction) return { transaction: stored.transaction, duplicate: true };
+  if (stored.transaction) {
+    if (!stored.testMode) await announceDonationTransaction(stored.transaction.id);
+    return { transaction: stored.transaction, duplicate: true };
+  }
 
   const payment = await fetchPayment(params.paymentId);
   if (
@@ -877,6 +885,7 @@ export async function finalizeCapturedDonation(params: {
           direction: "IN",
           type: "DONATION",
           donationFrequency: stored.donationFrequency,
+          providerPaymentId: payment.id,
           fromUserId: stored.userId,
           description: `${stored.testMode ? "[TEST] " : ""}${stored.description}${stored.invite ? `${stored.invite.telegramUser ? ` · @${stored.invite.telegramUser}` : ""} · TG ${stored.invite.telegramId}` : ""} · ${payment.id}`,
           date: payment.created_at ? new Date(payment.created_at * 1000) : new Date(),
@@ -900,6 +909,10 @@ export async function finalizeCapturedDonation(params: {
       if (stored.inviteId) {
         await db.oneTimeDonationInvite.update({ where: { id: stored.inviteId }, data: { usedAt: new Date() } });
       }
+      if (stored.userId && !stored.testMode) {
+        const update = monthlyReminderUpdate(stored.donationFrequency, created.date);
+        if (update) await db.user.update({ where: { id: stored.userId }, data: update });
+      }
       return created;
     });
   } catch (error) {
@@ -907,7 +920,10 @@ export async function finalizeCapturedDonation(params: {
       where: { razorpayOrderId: params.orderId },
       include: { transaction: true },
     });
-    if (existing?.transaction) return { transaction: existing.transaction, duplicate: true };
+    if (existing?.transaction) {
+      if (!stored.testMode) await announceDonationTransaction(existing.transaction.id);
+      return { transaction: existing.transaction, duplicate: true };
+    }
     throw error;
   }
 
@@ -975,7 +991,7 @@ export async function finalizeCapturedDonation(params: {
     ),
   }).catch(() => {});
 
-  if (!stored.testMode) announceDonationTransaction(transaction.id).catch(() => {});
+  if (!stored.testMode) await announceDonationTransaction(transaction.id);
   scheduleFinanceAutomation({
     action: stored.testMode ? "RAZORPAY_TEST_CAPTURED" : "RAZORPAY_CAPTURED",
     actorName,
