@@ -4,7 +4,8 @@ export async function capturedPaymentPages<T extends { status: string; captured:
 ) {
   const payments: T[] = [];
   for (let skip = 0; ; skip += 100) {
-    const page = (await fetchPage(skip)).items || [];
+    const page = (await fetchPage(skip)).items;
+    if (!Array.isArray(page)) throw new Error("Razorpay returned an invalid payment collection");
     payments.push(...page.filter((payment) => payment.status === "captured" && payment.captured));
     if (page.length < 100) return payments;
   }

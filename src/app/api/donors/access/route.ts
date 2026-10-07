@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { removeUndonatedAccounts } from "@/lib/undonated-account-cleanup";
 import { logAudit } from "@/lib/audit";
 import { notify, formatTgMessage } from "@/lib/notifications";
 import { escapeTelegramHtml } from "@/lib/telegram-format";
@@ -16,6 +17,7 @@ export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
 
+  await removeUndonatedAccounts(prisma);
   const donors = await prisma.user.findMany({
     where: { roles: { has: "DONOR" }, status: "ACTIVE" },
     orderBy: { name: "asc" },

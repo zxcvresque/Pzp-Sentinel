@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { grantPzpMemberAccess } from "@/lib/member-access";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS, verifyOtpHash } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
@@ -92,6 +93,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const signedInUser = await grantPzpMemberAccess(prisma, user);
+  if (signedInUser.status !== "ACTIVE" || signedInUser.roles.length === 0) {
+    return NextResponse.json({ error: "No active role assigned. Ask an admin to assign your role.", awaitingRole: true }, { status: 403 });
+  }
+
   // Only invalidate the OTP before returning success. Avatar archival and
   // audit fan-out run after the browser has received its authenticated session.
   const [consumed, token] = await Promise.all([
@@ -110,18 +116,18 @@ export async function POST(req: NextRequest) {
         otpLockedUntil: null,
       },
     }),
-    signToken({ userId: user.id, roles: user.roles }),
+    signToken({ userId: signedInUser.id, roles: signedInUser.roles }),
   ]);
   if (consumed.count !== 1) {
     return NextResponse.json({ error: "OTP was already used or has expired" }, { status: 401 });
   }
 
-  const defaultRole = highestRole(user.roles);
+  const defaultRole = highestRole(signedInUser.roles);
   const redirectMap: Record<string, string> = { ADMIN: "/admin", DEV: "/dev", DONOR: "/donor" };
 
   const response = NextResponse.json({
     success: true,
-    user: { id: user.id, name: user.name, roles: user.roles },
+    user: { id: signedInUser.id, name: signedInUser.name, roles: signedInUser.roles },
     redirect: redirectMap[defaultRole] || "/donor",
   });
 

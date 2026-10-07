@@ -206,6 +206,9 @@ model User {
   chatId            String?
   roles             Role[]
   status            UserStatus @default(ACTIVE)
+  // Hide unused accounts without losing late payment attribution or history.
+  autoRemovedAt     DateTime?
+  donorAccessGrantedAt DateTime?
   dmPreferences     String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
   inAppPreferences  String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
   preferredCurrency Currency   @default(USD)

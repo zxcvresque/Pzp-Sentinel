@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { grantPzpMemberAccess } from "@/lib/member-access";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 import { setSessionCookies } from "@/lib/session-cookies";
@@ -36,14 +37,16 @@ export async function GET(req: NextRequest) {
   }
 
   const telegramId = loginToken.telegramId!;
-  const [user] = await Promise.all([
+  const [storedUser] = await Promise.all([
     prisma.user.findUnique({ where: { telegramId } }),
     prisma.loginToken.delete({ where: { id: loginToken.id } }).catch(() => undefined),
   ]);
 
-  if (!user) {
+  if (!storedUser) {
     return NextResponse.json({ error: "User not found" }, { status: 404, ...noStore });
   }
+
+  const user = await grantPzpMemberAccess(prisma, storedUser);
 
   if (user.status === "INACTIVE") {
     return NextResponse.json(

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import {
   finalizeCapturedDonation,
-  finalizeMonthlyPaymentByReference,
+  finalizeCapturedOrderPayments,
+  finalizeCapturedPaymentByReference,
   finalizeMonthlySubscriptionCharge,
   handleRazorpaySubscriptionLifecycle,
   RazorpayError,
@@ -88,7 +89,6 @@ export async function POST(request: NextRequest) {
     const body = JSON.parse(rawBody) as WebhookPayload;
     const event = body.event || "unknown";
     const paymentId = body.payload?.payment?.entity?.id;
-    const invoiceId = body.payload?.payment?.entity?.invoice_id;
     const orderId = body.payload?.order?.entity?.id || body.payload?.payment?.entity?.order_id;
     const subscription = body.payload?.subscription?.entity;
     const refund = body.payload?.refund?.entity;
@@ -129,20 +129,26 @@ export async function POST(request: NextRequest) {
       if (event !== "subscription.charged") {
         await handleRazorpaySubscriptionLifecycle(subscriptionEvent);
       }
-    } else if ((event === "payment.captured" || event === "order.paid") && orderId && paymentId) {
+    } else if ((event === "payment.captured" || event === "order.paid") && paymentId) {
       // Subscription invoice payments also emit payment events, but their order
       // IDs are not Sentinel one-time orders. The subscription.charged event is
       // the authoritative path for those payments.
-      const storedOrder = await prisma.razorpayOrder.findUnique({
+      const storedOrder = orderId ? await prisma.razorpayOrder.findUnique({
         where: { razorpayOrderId: orderId },
         select: { id: true },
-      });
-      if (storedOrder) {
+      }) : null;
+      if (storedOrder && orderId) {
         await finalizeCapturedDonation({ orderId, paymentId, actorName: "Razorpay webhook" });
       } else {
-        const recovered = await finalizeMonthlyPaymentByReference({ paymentId, invoiceId });
+        const recovered = await finalizeCapturedPaymentByReference(paymentId);
         if (!recovered.matched) processingStatus = "UNMATCHED";
       }
+    } else if (event === "order.paid" && orderId) {
+      const recovered = await finalizeCapturedOrderPayments(orderId);
+      if (!recovered.matched) processingStatus = "UNMATCHED";
+    } else if (event === "payment.captured" || event === "order.paid") {
+      // Malformed supported events must stay visible in the reconciliation inbox.
+      processingStatus = "UNMATCHED";
     } else if (subscriptionEvent) {
       await handleRazorpaySubscriptionLifecycle(subscriptionEvent);
     }

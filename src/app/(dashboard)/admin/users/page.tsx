@@ -20,6 +20,7 @@ interface User {
   chatId: string | null;
   githubUsername?: string | null;
   createdAt: string;
+  autoRemovedAt?: string | null;
 }
 
 interface EditState {
@@ -32,6 +33,7 @@ interface EditState {
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [roleFilter, setRoleFilter] = useState("ALL");
+  const [includeRemoved, setIncludeRemoved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -52,7 +54,7 @@ export default function UsersPage() {
   const [roles, setRoles] = useState<string[]>(["DONOR"]);
 
   useEffect(() => {
-    fetch("/api/users")
+    fetch(`/api/users${includeRemoved ? "?includeRemoved=true" : ""}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -60,7 +62,7 @@ export default function UsersPage() {
       .then((data) => setUsers(data.users || []))
       .catch((err) => console.error("Failed to load users:", err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [includeRemoved]);
 
   function toggleRole(role: string) {
     setRoles((prev) =>
@@ -103,6 +105,7 @@ export default function UsersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: existingNoRole.id,
+          ...(existingNoRole.autoRemovedAt ? { status: "ACTIVE" } : {}),
           roles,
           name: name || existingNoRole.name,
           telegramUser: telegramUser || existingNoRole.telegramUser,
@@ -166,6 +169,7 @@ export default function UsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id,
+        ...(users.find((u) => u.id === id && u.autoRemovedAt && u.roles.length === 0) && editState.roles.length ? { status: "ACTIVE" } : {}),
         roles: editState.roles,
         name: editState.name,
         telegramUser: editState.telegramUser,
@@ -177,7 +181,7 @@ export default function UsersPage() {
       setUsers((prev) =>
         prev.map((u) =>
           u.id === id
-            ? { ...u, roles: data.user.roles, name: data.user.name, telegramUser: data.user.telegramUser, githubUsername: data.user.githubUsername }
+            ? { ...u, roles: data.user.roles, status: data.user.status, autoRemovedAt: data.user.autoRemovedAt, name: data.user.name, telegramUser: data.user.telegramUser, githubUsername: data.user.githubUsername }
             : u
         )
       );
@@ -197,7 +201,7 @@ export default function UsersPage() {
       const data = await res.json();
       setUsers((prev) =>
         prev.map((existing) =>
-          existing.id === u.id ? { ...existing, status: data.user.status } : existing
+          existing.id === u.id ? { ...existing, status: data.user.status, autoRemovedAt: data.user.autoRemovedAt } : existing
         )
       );
     }
@@ -702,6 +706,10 @@ export default function UsersPage() {
             {label} <span className="ml-1 opacity-70">{users.filter((u) => role === "ALL" || u.roles.includes(role)).length}</span>
           </button>
         ))}
+        <label className="flex items-center gap-2 px-3 text-sm text-text-secondary">
+          <input type="checkbox" checked={includeRemoved} onChange={(event) => setIncludeRemoved(event.target.checked)} />
+          Include automatically removed accounts
+        </label>
       </div>
 
       {showForm && (

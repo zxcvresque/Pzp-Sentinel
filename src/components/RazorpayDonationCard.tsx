@@ -185,7 +185,7 @@ export default function RazorpayDonationCard({
               type: "info",
               text: monthly
                 ? "Checkout closed or expired. Start monthly autopay again to generate a fresh mandate and QR."
-                : "Checkout closed. No donation was recorded.",
+                : "Checkout closed. If money was debited, do not pay again yet. Bank confirmation may arrive later; Sentinel will recover captured payments automatically.",
             });
           },
         },
@@ -218,7 +218,7 @@ export default function RazorpayDonationCard({
             });
             await onSuccess?.();
           } catch (error) {
-            setMessage({ type: "error", text: error instanceof Error ? error.message : "Payment verification failed" });
+            setMessage({ type: "info", text: `${error instanceof Error ? error.message : "Payment verification is pending"}. If money was debited, do not pay again yet. Sentinel will check Razorpay and update your donation history after capture.` });
           } finally {
             setBusy(false);
           }
@@ -234,7 +234,7 @@ export default function RazorpayDonationCard({
       const checkout = new window.Razorpay(checkoutOptions);
       checkout.on("payment.failed", (response) => {
         setBusy(false);
-        setMessage({ type: "error", text: response.error?.description || "The payment failed. Please try again." });
+        setMessage({ type: "error", text: `${response.error?.description || "Razorpay could not confirm this payment."} If money was debited, wait for bank confirmation before paying again.` });
       });
       setMessage(null);
       checkout.open();

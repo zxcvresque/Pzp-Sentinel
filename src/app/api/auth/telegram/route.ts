@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
+import { registerTelegramUser } from "@/lib/member-access";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 import { setSessionCookies } from "@/lib/session-cookies";
@@ -8,7 +9,7 @@ import { setSessionCookies } from "@/lib/session-cookies";
 function validateInitData(initData: string, botToken: string): Record<string, string> | null {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) return null;
+  if (!hash || !/^[a-f0-9]{64}$/i.test(hash)) return null;
 
   params.delete("hash");
   const entries = [...params.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -17,20 +18,19 @@ function validateInitData(initData: string, botToken: string): Record<string, st
   const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
   const computed = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  if (computed !== hash) return null;
+  if (!timingSafeEqual(Buffer.from(computed, "hex"), Buffer.from(hash, "hex"))) return null;
 
   const authDate = params.get("auth_date");
-  if (authDate) {
-    const age = Math.floor(Date.now() / 1000) - parseInt(authDate);
-    if (age > 86400) return null;
-  }
+  const authTime = Number(authDate);
+  const age = Math.floor(Date.now() / 1000) - authTime;
+  if (!authDate || !Number.isSafeInteger(authTime) || age > 86400 || age < -60) return null;
 
   return Object.fromEntries(entries);
 }
 
 export async function POST(req: NextRequest) {
   const { initData } = await req.json();
-  if (!initData) {
+  if (!initData || typeof initData !== "string") {
     return NextResponse.json({ error: "initData is required" }, { status: 400 });
   }
 
@@ -55,23 +55,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Malformed user data" }, { status: 400 });
   }
+  if (!tgUser || !Number.isSafeInteger(tgUser.id) || tgUser.id <= 0) {
+    return NextResponse.json({ error: "Malformed user data" }, { status: 400 });
+  }
 
   const telegramId = String(tgUser.id);
   const name = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "User";
 
-  let user = await prisma.user.findUnique({ where: { telegramId } });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        telegramId,
-        telegramUser: tgUser.username || "",
-        name,
-        roles: [],
-        status: "ACTIVE",
-      },
-    });
-  }
+  const user = await registerTelegramUser(prisma, {
+    telegramId,
+    telegramUser: tgUser.username || "",
+    name,
+  });
 
   const storedUser = user;
   after(async () => {

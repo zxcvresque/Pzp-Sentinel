@@ -672,6 +672,43 @@ async function fetchPayment(paymentId: string) {
   return razorpayRequest<RazorpayPaymentResponse>(`/payments/${encodeURIComponent(paymentId)}`);
 }
 
+/** Handles order.paid deliveries even when the payment entity is absent. */
+export async function finalizeCapturedOrderPayments(orderId: string) {
+  const stored = await prisma.razorpayOrder.findUnique({
+    where: { razorpayOrderId: orderId }, select: { id: true },
+  });
+  if (!stored) return { matched: false, recovered: 0 };
+  // Unlike the account-wide payments API, this endpoint returns all attempts
+  // for the order and does not document count/skip pagination.
+  const collection = await razorpayRequest<RazorpayPaymentCollection>(
+    `/orders/${encodeURIComponent(orderId)}/payments`,
+  );
+  if (!Array.isArray(collection.items)) throw new RazorpayError("Razorpay returned an invalid order payment collection", 424);
+  const payments = collection.items.filter((payment) => payment.status === "captured" && payment.captured);
+  // A paid event may precede a consistent API response. Return an error so the
+  // durable receipt remains retryable instead of acknowledging lost income.
+  if (!payments.length) throw new RazorpayError("Paid order has no confirmed captured payment yet", 409);
+  let recovered = 0;
+  for (const payment of payments) {
+    const result = await finalizeCapturedDonation({ orderId, paymentId: payment.id, actorName: "Razorpay order recovery" });
+    if (!result.duplicate) recovered++;
+  }
+  return { matched: true, recovered };
+}
+
+export async function finalizeCapturedPaymentByReference(paymentId: string) {
+  const payment = await fetchPayment(paymentId);
+  const order = payment.order_id ? await prisma.razorpayOrder.findUnique({
+    where: { razorpayOrderId: payment.order_id }, select: { id: true },
+  }) : null;
+  if (order) {
+    return { matched: true as const, ...await finalizeCapturedDonation({
+      orderId: payment.order_id, paymentId, actorName: "Razorpay payment recovery",
+    }) };
+  }
+  return finalizeMonthlyPaymentByReference({ paymentId, invoiceId: payment.invoice_id });
+}
+
 export async function verifyMonthlySubscriptionCheckout(params: {
   subscriptionId: string;
   paymentId: string;
@@ -771,13 +808,22 @@ export async function finalizeMonthlyPaymentByReference(params: {
  * and passed through the same idempotent finalizer as live webhooks.
  */
 export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays = 35) {
-  const since = Math.floor((Date.now() - Math.max(1, lookbackDays) * 86_400_000) / 1000);
-  const payments = await capturedPaymentPages((skip) => razorpayRequest<RazorpayPaymentCollection>(
-    `/payments?from=${since}&count=100&skip=${skip}`,
-  ));
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - Math.max(1, lookbackDays) * 86_400;
   let recovered = 0;
   let skipped = 0;
   const errors: string[] = [];
+  let payments: RazorpayPaymentResponse[] = [];
+  try {
+    // Freeze the upper bound so payments arriving mid-scan cannot shift offsets.
+    payments = await capturedPaymentPages((skip) => razorpayRequest<RazorpayPaymentCollection>(
+      `/payments?from=${since}&to=${until}&count=100&skip=${skip}`,
+    ));
+  } catch (error) {
+    // Still retry durable receipt IDs and known subscription payments when the
+    // provider's collection endpoint is unavailable or malformed.
+    errors.push(`Payment scan: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   // Checkout may have stored the authorisation payment before a webhook was
   // delivered. Include those references even if the payments page is delayed.
@@ -786,6 +832,23 @@ export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays =
     select: { authorizationPaymentId: true },
   });
   const byId = new Map(payments.map((payment) => [payment.id, payment]));
+  const receipts = await prisma.razorpayWebhookEvent.findMany({
+    where: { status: { in: ["RECEIVED", "UNMATCHED"] }, eventType: { in: ["payment.captured", "order.paid", "subscription.charged"] } },
+    select: { eventId: true, resourceId: true }, take: 100, orderBy: { createdAt: "asc" },
+  });
+  for (const receipt of receipts) {
+    if (receipt.resourceId?.startsWith("pay_") && !byId.has(receipt.resourceId)) {
+      byId.set(receipt.resourceId, { id: receipt.resourceId } as RazorpayPaymentResponse);
+    } else if (receipt.resourceId?.startsWith("order_")) {
+      try {
+        const result = await finalizeCapturedOrderPayments(receipt.resourceId);
+        recovered += result.recovered;
+        if (result.matched) await prisma.razorpayWebhookEvent.update({ where: { eventId: receipt.eventId }, data: { status: "PROCESSED" } });
+      } catch (error) {
+        errors.push(`${receipt.resourceId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
   for (const subscription of initial) {
     const paymentId = subscription.authorizationPaymentId;
     if (paymentId && !byId.has(paymentId)) {
@@ -800,18 +863,23 @@ export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays =
         select: { id: true },
       });
       if (existing) {
+        await markRecoveredPaymentReceipts(payment.id);
         skipped++;
         continue;
       }
-      const order = payment.order_id ? await prisma.razorpayOrder.findUnique({
-        where: { razorpayOrderId: payment.order_id },
+      // Durable receipts may only contain a payment ID. Fetch its authoritative
+      // order/invoice mapping before choosing one-time versus recurring recovery.
+      const remote = payment.order_id ? payment : await fetchPayment(payment.id);
+      const order = remote.order_id ? await prisma.razorpayOrder.findUnique({
+        where: { razorpayOrderId: remote.order_id },
         select: { razorpayOrderId: true },
       }) : null;
       const result = order
         ? { matched: true, ...await finalizeCapturedDonation({
           orderId: order.razorpayOrderId, paymentId: payment.id, actorName: "Razorpay reconciliation",
         }) }
-        : await finalizeMonthlyPaymentByReference({ paymentId: payment.id, invoiceId: payment.invoice_id });
+        : await finalizeMonthlyPaymentByReference({ paymentId: payment.id, invoiceId: remote.invoice_id });
+      if (result.matched) await markRecoveredPaymentReceipts(payment.id);
       if (result.matched && !result.duplicate) recovered++;
       else skipped++;
     } catch (error) {
@@ -819,6 +887,16 @@ export async function reconcileRecentRazorpaySubscriptionPayments(lookbackDays =
     }
   }
   return { checked: byId.size, recovered, skipped, errors };
+}
+
+async function markRecoveredPaymentReceipts(paymentId: string) {
+  await prisma.razorpayWebhookEvent.updateMany({
+    where: {
+      resourceId: paymentId, status: { in: ["RECEIVED", "UNMATCHED"] },
+      eventType: { in: ["payment.captured", "order.paid", "subscription.charged"] },
+    },
+    data: { status: "PROCESSED" },
+  });
 }
 
 export async function finalizeCapturedDonation(params: {
@@ -867,13 +945,9 @@ export async function finalizeCapturedDonation(params: {
         include: { transaction: true },
       });
       if (latest?.transaction) return latest.transaction;
-      if (stored.inviteId) {
-        const availableInvite = await db.oneTimeDonationInvite.findFirst({
-          where: { id: stored.inviteId, usedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-          select: { id: true },
-        });
-        if (!availableInvite) throw new Error("One-time payment link is no longer available");
-      }
+      // This server-owned order already passed invitation checks at creation.
+      // A captured payment must be recorded even if its bank confirmation
+      // arrives after the invitation has expired or been revoked.
 
       const created = await db.transaction.create({
         data: {
@@ -897,7 +971,7 @@ export async function finalizeCapturedDonation(params: {
         },
       });
       const claimed = await db.razorpayOrder.updateMany({
-        where: { id: stored.id, status: "CREATED", transactionId: null },
+        where: { id: stored.id, transactionId: null },
         data: {
           paymentId: payment.id,
           transactionId: created.id,

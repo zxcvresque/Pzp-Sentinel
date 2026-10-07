@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { removeUndonatedAccounts } from "@/lib/undonated-account-cleanup";
 import { getCurrentUser, hasRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { logUserCreated } from "@/lib/telegram-log";
@@ -8,13 +9,15 @@ import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { isImmutableAdmin } from "@/lib/protected-admins";
 import { isTelegramId, normalizeTelegramUsername, trimmedString, USER_ROLES, USER_STATUSES } from "@/lib/validation";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user || !hasRole(user.roles, "ADMIN")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
+  await removeUndonatedAccounts(prisma);
   const users = await prisma.user.findMany({
+    where: req.nextUrl.searchParams.get("includeRemoved") === "true" ? {} : { autoRemovedAt: null },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -27,6 +30,7 @@ export async function GET() {
       chatId: true,
       githubUsername: true,
       createdAt: true,
+      autoRemovedAt: true,
     },
   });
 
@@ -70,6 +74,7 @@ export async function POST(req: NextRequest) {
       roles: [...new Set(requestedRoles)],
       githubUsername: typeof githubUsername === "string" ? githubUsername.trim().replace(/^@/, "") || null : null,
       createdById: user.id,
+      donorAccessGrantedAt: requestedRoles.includes("DONOR") ? new Date() : null,
     },
   });
 
@@ -156,8 +161,19 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data: Record<string, unknown> = {};
-  if (roles !== undefined) data.roles = [...new Set(roles)];
-  if (status !== undefined) data.status = status;
+  if (roles !== undefined) {
+    data.roles = [...new Set(roles)];
+    if (roles.includes("DONOR") && !target.roles.includes("DONOR")) data.donorAccessGrantedAt = new Date();
+    // A roleless account explicitly reviewed by an admin must not be promoted
+    // again by the automatic member grant on its next login.
+    if (!roles.length && !target.donorAccessGrantedAt) data.donorAccessGrantedAt = new Date();
+  }
+  if (status !== undefined) {
+    data.status = status;
+    // Explicit admin decisions supersede automatic removal/restoration.
+    data.autoRemovedAt = null;
+    if (status === "ACTIVE" && (target.autoRemovedAt || target.status === "INACTIVE")) data.donorAccessGrantedAt = new Date();
+  }
   if (cleanName !== undefined) data.name = cleanName;
   if (cleanTelegramUser !== undefined) data.telegramUser = cleanTelegramUser;
   if (githubUsername !== undefined) {

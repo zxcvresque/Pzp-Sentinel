@@ -12,7 +12,13 @@ describe("Razorpay payment recovery pages", () => {
   });
 
   it("stops on an empty page and surfaces API failures", async () => {
-    expect(await capturedPaymentPages(async () => ({}))).toEqual([]);
+    expect(await capturedPaymentPages(async () => ({ items: [] }))).toEqual([]);
+    await expect(capturedPaymentPages(async () => ({}))).rejects.toThrow("invalid payment collection");
     await expect(capturedPaymentPages(async () => { throw new Error("API unavailable"); })).rejects.toThrow("API unavailable");
+  });
+
+  it.each(["upi", "card", "netbanking", "wallet", "emi", "paylater", "bank_transfer"])("recovers captured %s payments without method filters", async (method) => {
+    const payment = { id: `pay_${method}`, method, status: "captured", captured: true };
+    expect(await capturedPaymentPages(async () => ({ items: [payment] }))).toEqual([payment]);
   });
 });

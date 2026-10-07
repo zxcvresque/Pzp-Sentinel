@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { prisma } from "./db";
 import type { Role } from "@/generated/prisma/enums";
 import { sessionTokens } from "./session-cookies";
+import { grantPzpMemberAccess } from "./member-access";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required");
@@ -53,8 +54,10 @@ export async function getCurrentUser() {
     where: { id: payload.userId },
   });
 
-  if (!user || user.status !== "ACTIVE") return null;
-  return user;
+  if (!user) return null;
+  const current = await grantPzpMemberAccess(prisma, user);
+  if (current.status !== "ACTIVE") return null;
+  return current;
 }
 
 export function generateOtp(): string {

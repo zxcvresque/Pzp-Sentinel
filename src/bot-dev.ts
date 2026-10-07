@@ -27,6 +27,8 @@ import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
 import { handleSharedLinkStart } from "./lib/shared-link-bot";
 import { handleDonorEntry } from "./lib/donor-entry-bot";
 import { startMessage } from "./lib/start-message";
+import { removeUndonatedAccounts } from "./lib/undonated-account-cleanup";
+import { grantPzpMemberAccess, registerTelegramUser } from "./lib/member-access";
 import { drainSentryWebhooks } from "./lib/sentry-webhook";
 import {
   deliverTelegramWithRetry,
@@ -566,6 +568,7 @@ async function replaceProgressReply(
 }
 
 bot.command("start", async (ctx) => {
+  if (ctx.chat.type !== "private") return;
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
   const username = ctx.from?.username || "";
@@ -752,23 +755,10 @@ bot.command("start", async (ctx) => {
       }
 
       // Ensure user exists in DB, create if needed
-      let authUser = existingAuthUser;
-      const isNewAuthUser = !authUser;
-
-      if (!authUser) {
-        authUser = await dbRetry(() =>
-          prisma.user.create({
-            data: {
-              telegramId,
-              telegramUser: username,
-              name: firstName,
-              chatId,
-              roles: [],
-            },
-          }),
-        );
-
-      }
+      const isNewAuthUser = !existingAuthUser;
+      const authUser = await dbRetry(() => registerTelegramUser(prisma, {
+        telegramId, telegramUser: username, name: firstName, chatId,
+      }));
 
       // Mark token as verified
       await dbRetry(() =>
@@ -803,6 +793,7 @@ bot.command("start", async (ctx) => {
       }
       refreshAvatarAfterReply(authUser.id, telegramId, firstName);
       if (isNewAuthUser) {
+        const registration = authUser.roles.length ? "PzP member — donor access granted" : "awaiting role assignment";
         void logAuditEvent({
           action: "BOT_REGISTER",
           entityType: "User",
@@ -813,13 +804,13 @@ bot.command("start", async (ctx) => {
         await notifyAdminsFromBot(prisma, bot, {
           type: "USER_REGISTERED",
           title: "New User Started Bot",
-          message: `${firstName} (@${username || telegramId}) registered via web login and is awaiting role assignment.`,
+          message: `${firstName} (@${username || telegramId}) registered via web login: ${registration}.`,
           entityId: authUser.id,
           priority: "HIGH",
           telegramMessage:
             `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
             `<b>${escapeBotHtml(firstName)}</b> (@${escapeBotHtml(username || telegramId)})\n` +
-            `<i>Registered via web login — awaiting role assignment</i>`,
+            `<i>Registered via web login — ${registration}</i>`,
         }).catch((error) => console.error(`[auth] Background admin notification failed for ${telegramId}:`, error));
       }
       void logAuditEvent({
@@ -849,7 +840,8 @@ bot.command("start", async (ctx) => {
     console.warn("[start] Immediate progress reply failed:", error);
     return null;
   });
-  const user = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
+  const storedUser = await dbRetry(() => prisma.user.findUnique({ where: { telegramId } }));
+  const user = storedUser ? await dbRetry(() => grantPzpMemberAccess(prisma, storedUser)) : null;
 
   if (user) {
     const updates: Record<string, string | null> = { chatId };
@@ -866,21 +858,20 @@ bot.command("start", async (ctx) => {
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
 
   if (!user) {
-    const created = await dbRetry(() => prisma.user.create({
-      data: {
-        telegramId,
-        telegramUser: username,
-        name: firstName,
-        chatId,
-        roles: [],
-      },
+    const created = await dbRetry(() => registerTelegramUser(prisma, {
+      telegramId, telegramUser: username, name: firstName, chatId,
     }));
+    const registration = created.roles.length ? "PzP member — donor access granted" : "awaiting role assignment";
+    const welcome = startMessage(created);
 
     try {
       await replaceProgressReply(
         ctx,
         progressReply,
-        startMessage(created).text,
+        welcome.text,
+        welcome.route && welcome.button
+          ? [[{ text: welcome.button, web_app: { url: new URL(welcome.route, webappUrl).toString() } }]]
+          : undefined,
       );
     } catch (err) {
       console.error("Failed to reply to new user:", err);
@@ -890,7 +881,7 @@ bot.command("start", async (ctx) => {
       entityType: "User",
       entityId: created.id,
       userName: firstName,
-      details: `@${username || telegramId} started the bot — awaiting role assignment`,
+      details: `@${username || telegramId} started the bot — ${registration}`,
     }).catch((error) => console.error(`[start] Background registration audit failed for ${telegramId}:`, error));
     refreshAvatarAfterReply(created.id, telegramId, firstName);
     // The user has already received the /start response. Keep the handler alive
@@ -898,13 +889,13 @@ bot.command("start", async (ctx) => {
     await notifyAdminsFromBot(prisma, bot, {
       type: "USER_REGISTERED",
       title: "New User Started Bot",
-      message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
+      message: `${firstName} (@${username || telegramId}) started the bot: ${registration}.`,
       entityId: created.id,
       priority: "HIGH",
       telegramMessage:
         `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
         `<b>${escapeBotHtml(firstName)}</b> (@${escapeBotHtml(username || telegramId)})\n` +
-        `<i>Awaiting role assignment</i>`,
+        `<i>${registration}</i>`,
     }).catch((error) => console.error(`[start] Background admin notification failed for ${telegramId}:`, error));
     return;
   }
@@ -1267,6 +1258,8 @@ async function cleanupExpiredAuthState() {
     if (tokens.count || buckets.count) {
       console.log(`[auth-cleanup] Removed ${tokens.count} expired login token(s) and ${buckets.count} rate-limit bucket(s).`);
     }
+    const accounts = await removeUndonatedAccounts(prisma, now);
+    if (accounts.removed) console.log(`[account-cleanup] Removed ${accounts.removed} accounts without donations after 15 days.`);
   } catch (error) {
     console.error("[auth-cleanup] Cleanup failed:", error);
   }

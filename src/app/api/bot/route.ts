@@ -11,8 +11,10 @@ import { notifyAdmins } from "@/lib/notifications";
 import { handleSharedLinkStart } from "@/lib/shared-link-bot";
 import { handleDonorEntry } from "@/lib/donor-entry-bot";
 import { startMessage } from "@/lib/start-message";
+import { grantPzpMemberAccess, registerTelegramUser } from "@/lib/member-access";
 
 bot.command("start", async (ctx) => {
+  if (ctx.chat.type !== "private") return;
   const telegramId = ctx.from?.id.toString();
   const chatId = ctx.chat.id.toString();
   const username = ctx.from?.username || "";
@@ -37,12 +39,9 @@ bot.command("start", async (ctx) => {
       return;
     }
 
-    let authUser = await prisma.user.findUnique({ where: { telegramId } });
-    if (!authUser) {
-      authUser = await prisma.user.create({
-        data: { telegramId, telegramUser: username, name: firstName, chatId, roles: [] },
-      });
-    }
+    const authUser = await registerTelegramUser(prisma, {
+      telegramId, telegramUser: username, name: firstName, chatId,
+    });
     await prisma.loginToken.update({ where: { nonce }, data: { telegramId, status: "VERIFIED" } });
 
     const resumeUrl = new URL("/login", process.env.WEBAPP_URL || "https://pzp.finance");
@@ -69,21 +68,18 @@ bot.command("start", async (ctx) => {
     return;
   }
 
-  const user = await prisma.user.findUnique({ where: { telegramId } });
+  const storedUser = await prisma.user.findUnique({ where: { telegramId } });
+  const user = storedUser ? await grantPzpMemberAccess(prisma, storedUser) : null;
 
   const webappUrl = process.env.WEBAPP_URL || "https://pzp.finance";
 
   // Unknown person — not in the database at all
   if (!user) {
-    const created = await prisma.user.create({
-      data: {
-        telegramId,
-        telegramUser: username,
-        name: firstName,
-        chatId,
-        roles: [],
-      },
+    const created = await registerTelegramUser(prisma, {
+      telegramId, telegramUser: username, name: firstName, chatId,
     });
+
+    const registration = created.roles.length ? "PzP member — donor access granted" : "awaiting role assignment";
 
     after(async () => {
       await Promise.allSettled([
@@ -97,24 +93,30 @@ bot.command("start", async (ctx) => {
           entityType: "User",
           entityId: created.id,
           userName: firstName,
-          details: `@${username || telegramId} started the bot — awaiting role assignment`,
+          details: `@${username || telegramId} started the bot — ${registration}`,
         }),
         notifyAdmins({
           type: "USER_REGISTERED",
           title: "New User Started Bot",
-          message: `${firstName} (@${username || telegramId}) started the bot and is awaiting role assignment.`,
+          message: `${firstName} (@${username || telegramId}) started the bot: ${registration}.`,
           entityId: created.id,
           priority: "HIGH",
           actionUrl: "/admin/users",
           telegramMessage:
             `<blockquote><b>🆕 New User Started Bot</b></blockquote>\n` +
             `<b>${escapeTelegramHtml(firstName)}</b> (@${escapeTelegramHtml(username || telegramId)})\n` +
-            `<i>Awaiting role assignment</i>`,
+            `<i>${registration}</i>`,
         }),
       ]);
     });
 
-    await ctx.reply(startMessage(created).text, { parse_mode: "HTML" });
+    const welcome = startMessage(created);
+    await ctx.reply(welcome.text, {
+      parse_mode: "HTML",
+      ...(welcome.route && welcome.button ? {
+        reply_markup: { inline_keyboard: [[{ text: welcome.button, web_app: { url: new URL(welcome.route, webappUrl).toString() } }]] },
+      } : {}),
+    });
     return;
   }
 
