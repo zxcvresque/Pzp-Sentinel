@@ -4,7 +4,7 @@ import "dotenv/config";
 import { Bot, Context } from "grammy";
 import { PrismaClient, Prisma } from "./generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import pg from "pg";
+import { databasePool as pool } from "./lib/database-pool";
 import { logAuditEvent, postDonationThanks } from "./lib/telegram-log";
 import {
   donateReminderMessage,
@@ -36,15 +36,6 @@ import {
   isPermanentTelegramRecipientError,
 } from "./lib/telegram-delivery";
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL!,
-  max: 5,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
-});
-pool.on("error", (err) => {
-  console.error("Bot DB pool error (non-fatal):", err.message);
-});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 const bot = new Bot(process.env.BOT_TOKEN!);
@@ -65,14 +56,10 @@ function isTransientDbError(err: unknown): boolean {
   );
 }
 
-// Retry wrapper — flush dead pool connections between retries
+// Retry transient failures; pg replaces broken connections as queries need them.
 async function dbRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   for (let i = 0; i <= retries; i++) {
     try {
-      if (i > 0) {
-        // Warm up: grab and release a fresh connection to flush dead ones
-        try { const c = await pool.connect(); c.release(); } catch { /* pool will reconnect */ }
-      }
       return await fn();
     } catch (err: unknown) {
       if (i < retries && isTransientDbError(err)) {

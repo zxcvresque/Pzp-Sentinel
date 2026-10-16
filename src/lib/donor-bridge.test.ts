@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), release: vi.fn(), connect: vi.fn() }));
 vi.mock("pg", () => ({ default: { Pool: class {
+  on = vi.fn();
   query = mocks.query;
   connect = mocks.connect;
 } } }));

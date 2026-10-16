@@ -1,9 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import pg from "pg";
+import { databasePool as bridgePool } from "./database-pool";
 import { donorPaymentIdentity } from "./donor-payment-id";
 
 export const BRIDGE_START = "2026-08-12T18:30:00.000Z";
-export const bridgePool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 3 });
+export { bridgePool };
 export type Donation = {
   id: string; provider: string; paymentId: string; telegramId: string | null;
   name: string; amount: string; currency: string; occurredAt: string;

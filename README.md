@@ -199,6 +199,13 @@ bash upgrade.sh
 
 The script fast-forwards `main`, installs locked dependencies, normalizes legacy uniqueness conflicts, applies the Prisma schema, regenerates the client, builds the app, restarts PM2, and verifies the agent installer endpoint. No separate migration SQL is required for the current schema update.
 
+Prisma, bot jobs, and raw donor-bridge/webhook queries share one PostgreSQL pool
+per process, capped at four connections. With one web process and one bot
+process, Sentinel can use up to eight sessions, leaving headroom under the
+current 15-session database pooler limit. Additional app instances, scripts, and
+other services using the same database each consume their own connection budget.
+Idle runtime connections are released after 10 seconds.
+
 For a small VPS, ensure enough RAM or swap for the production build. Override the default build heap when needed:
 
 ```bash
