@@ -277,6 +277,14 @@ model User {
   razorpayAccessRequestedAt DateTime?
 }
 
+// Global rotation plus each donor's previous variant, independently for DM/group.
+// Reserved in the same transaction as the reminder claim so restarts and other
+// bot processes share the rotation. Keys: "dm:global", "dm:donor:<id>", etc.
+model DonationReminderMessageState {
+  key         String @id
+  lastVariant Int    @default(-1)
+}
+
 model Transaction {
   id                            String            @id @default(cuid())
   amount                        Decimal

@@ -12,6 +12,7 @@ import {
   monthlyDonationReminderGroupMessage,
 } from "./lib/donation-thanks";
 import { reminderDue } from "./lib/donation-reminders";
+import { reserveDonationReminderVariant } from "./lib/donation-reminder-rotation";
 import { drainFinanceAutomationQueue } from "./lib/finance-sheets";
 import { hashInviteToken, INVITE_TOKEN_PATTERN } from "./lib/invite-token";
 import { fetchTelegramPhotoUrl } from "./lib/bot";
@@ -1213,26 +1214,34 @@ async function checkDonateReminders() {
       if (!reminderDue(schedule, now)) continue;
       if (!d.chatId) continue;
       // Claim before sending: concurrent polls/processes can only claim once.
-      const claim = await dbRetry(() => prisma.user.updateMany({
-        where: {
-          id: d.id,
-          lastDonateReminderAt: d.lastDonateReminderAt,
-          donateReminderAnchorAt: d.donateReminderAnchorAt,
-          donateReminderCadence: d.donateReminderCadence,
-        },
-        data: { lastDonateReminderAt: now },
+      const variants = await dbRetry(() => prisma.$transaction(async (tx) => {
+        const claim = await tx.user.updateMany({
+          where: {
+            id: d.id,
+            lastDonateReminderAt: d.lastDonateReminderAt,
+            donateReminderAnchorAt: d.donateReminderAnchorAt,
+            donateReminderCadence: d.donateReminderCadence,
+          },
+          data: { lastDonateReminderAt: now },
+        });
+        if (claim.count !== 1) return null;
+        const dm = await reserveDonationReminderVariant(tx, "dm", d.id);
+        const group = d.donateReminderCadence === "MONTHLY" && schedule.donateReminderAnchorAt
+          ? await reserveDonationReminderVariant(tx, "group", d.id)
+          : null;
+        return { dm, group };
       }));
-      if (claim.count !== 1) continue;
+      if (!variants) continue;
       const isFirst = !d.lastDonateReminderAt;
       try {
-        await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name, isFirst), { parse_mode: "HTML" });
+        await bot.api.sendMessage(d.chatId, donateReminderMessage(d.name, isFirst, variants.dm), { parse_mode: "HTML" });
         sent++;
       } catch (e) {
         console.error(`[donate-reminder] DM failed for ${d.id}:`, (e as Error).message);
       }
-      if (d.donateReminderCadence === "MONTHLY" && schedule.donateReminderAnchorAt) {
+      if (variants.group !== null) {
         try {
-          await postDonationThanks(monthlyDonationReminderGroupMessage(donorHandle(d.name, d.telegramUser)));
+          await postDonationThanks(monthlyDonationReminderGroupMessage(donorHandle(d.name, d.telegramUser), variants.group));
         } catch (e) {
           console.error(`[donate-reminder] Group reminder failed for ${d.id}:`, (e as Error).message);
         }

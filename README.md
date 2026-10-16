@@ -36,6 +36,10 @@ Sentinel combines a responsive Next.js dashboard, Telegram bot, PostgreSQL ledge
 - Appeals for rejected submissions plus notification and reminder preferences.
 - Monthly giving reminders wait 12 hours after the expected payment time, anchored
   to the first approved monthly contribution, and skip paid billing months.
+- Donation reminders have 15 DM variants and 15 monthly group variants. Each
+  channel rotates independently, skipping a donor's previous wording. Rotation
+  is stored in PostgreSQL and survives bot restarts. Apply the Prisma schema
+  before restarting the updated bot (`npm run db:push`, included in `upgrade.sh`).
 
 ### Developer
 
