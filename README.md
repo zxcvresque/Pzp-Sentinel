@@ -51,9 +51,9 @@ Sentinel combines a responsive Next.js dashboard, Telegram bot, PostgreSQL ledge
 ### Platform
 
 - Telegram OTP authentication with role-based workspaces.
-- PzP members receive donor access on their first verified Telegram login or bot
-  start, followed by the existing donor welcome slides and tours. Other users
-  remain pending until an admin assigns a role.
+- Eligible PzP members receive donor access when they sign in from the Telegram
+  WebApp, even before starting the Sentinel bot. First-time donors see the donor
+  welcome slides and tours.
 - Mobile-first layouts without horizontal scrolling for core dashboard flows.
 - In-app and Telegram notifications, durable reminders, and delivery history.
 - Soft deletion/archive for financial, service, and credential records where recovery matters.
@@ -100,7 +100,17 @@ Never commit live credentials. Use test payment keys locally and rotate any secr
 
 ### PzP member access and unused accounts
 
-The deployed allowlist is `src/lib/pzp-member-ids.json`, generated from the
+For Telegram WebApp sign-in, set `PZP_MEMBERSHIP_API_KEY` in Sentinel's server
+environment. Sentinel verifies Telegram's signed launch data before looking up
+the Telegram ID in the PzP partner API. New and pending accounts can receive
+donor access when the API returns `exists: true` and `banned: false`. The same
+check can reactivate disabled accounts and starts a fresh 15-day window. The API
+check grants the Sentinel donor role regardless of the upstream role. An
+unavailable lookup returns a retryable sign-in error.
+Admins can see automatic grants and reactivations in Audit Logs.
+
+The bot and browser sign-in flows use the deployed allowlist in
+`src/lib/pzp-member-ids.json`, generated from the
 Telegram IDs in `scripts/members.txt`; IDs in `scripts/members_bots.txt` are
 excluded. Run `npm run members:sync` after refreshing those exports. The deployed
 list contains IDs only, so the raw exports and Telegram export session are not
@@ -114,18 +124,19 @@ regenerate Prisma and build. Both new columns are nullable and additive.
 After more than 15 days without a contribution, donor/pending accounts are
 disabled and hidden from Sentinel's normal user lists. The window starts when
 donor access is granted, with registration time as a fallback for existing users.
-Opening Sentinel does not reset it. Real donations, including refunded donations,
-keep the account exempt; pending contributions are retained until admin review.
+The window starts again when an account is reactivated. Real donations,
+including refunded donations, keep the account exempt. Pending contributions
+are retained until admin review.
 Test payments and rejected submissions do not establish donor history. Admins
 and developers are exempt from this donor cleanup.
 
 Cleanup runs hourly in the polling bot, when admins load user/donor lists, and
 is enforced during authenticated access. Removal retains the database row and
 all provider references so delayed payments can still be credited. A real
-contribution received later restores automatic removal; explicit admin
-deactivation is preserved. Admins can select **Include automatically removed
-accounts** under Users to restore or delete an account. Restoring one starts a
-fresh 15-day window. The source PzP member list is never changed by cleanup.
+contribution received later restores accounts removed by cleanup. Admins can
+select **Include automatically removed accounts** under Users to restore or
+delete an account. Restoring one starts a fresh 15-day window. The source PzP
+member list is never changed by cleanup.
 
 ### Razorpay recovery
 

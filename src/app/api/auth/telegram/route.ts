@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
-import { registerTelegramUser } from "@/lib/member-access";
+import { registerTelegramWebAppUser } from "@/lib/member-access";
 import { signToken, highestRole, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 import { refreshStoredTelegramAvatar } from "@/lib/telegram-avatar-refresh";
 import { setSessionCookies } from "@/lib/session-cookies";
@@ -62,11 +62,14 @@ export async function POST(req: NextRequest) {
   const telegramId = String(tgUser.id);
   const name = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "User";
 
-  const user = await registerTelegramUser(prisma, {
+  const user = await registerTelegramWebAppUser(prisma, {
     telegramId,
     telegramUser: tgUser.username || "",
     name,
   });
+  if (!user) {
+    return NextResponse.json({ error: "Unable to verify PzP membership right now. Please try again." }, { status: 503 });
+  }
 
   const storedUser = user;
   after(async () => {
@@ -86,18 +89,18 @@ export async function POST(req: NextRequest) {
     ]);
   });
 
-  if (user.roles.length === 0) {
-    return NextResponse.json({
-      error: "No roles assigned yet. Ask an admin to assign your role.",
-      awaitingRole: true,
-    }, { status: 403 });
-  }
-
   if (user.status === "INACTIVE") {
     return NextResponse.json(
       { error: "Your account has been deactivated." },
       { status: 403 },
     );
+  }
+
+  if (user.roles.length === 0) {
+    return NextResponse.json({
+      error: "No roles assigned yet. Ask an admin to assign your role.",
+      awaitingRole: true,
+    }, { status: 403 });
   }
 
   const token = await signToken({ userId: user.id, roles: user.roles });
