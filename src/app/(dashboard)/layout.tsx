@@ -234,8 +234,13 @@ export default function DashboardLayout({
     "/dev/openrouter": "Dev / Services / OpenRouter",
     "/donor": "Donor / Overview",
     "/profile": "Settings / General",
+    "/notifications": "Notifications",
   };
-  const breadcrumb = breadcrumbMap[pathname] || pathname.split("/").filter(Boolean).join(" / ");
+  const breadcrumb = pathname.startsWith("/notifications/feedback/")
+    ? "Notifications / Support response"
+    : pathname.startsWith("/notifications/")
+      ? "Notifications / Message"
+      : breadcrumbMap[pathname] || pathname.split("/").filter(Boolean).join(" / ");
 
   if (!user) {
     return (
@@ -266,16 +271,16 @@ export default function DashboardLayout({
       />
       <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
         <header className="sticky top-0 z-40 flex items-center justify-between gap-3 px-6 md:px-8 py-3 border-b border-[var(--border)]" style={{ background: "rgba(17,17,22,0.6)", backdropFilter: "blur(40px) saturate(1.5)", WebkitBackdropFilter: "blur(40px) saturate(1.5)" }}>
-          <div data-tour="breadcrumb" className="flex items-center gap-1.5">
+          <div data-tour="breadcrumb" className="flex min-w-0 items-center gap-1.5 overflow-hidden" aria-label={breadcrumb}>
             {breadcrumb.split(" / ").map((seg, i, arr) => (
-              <span key={i} className="flex items-center gap-1.5">
+              <span key={i} className={`min-w-0 items-center gap-1.5 ${i < arr.length - 1 ? "hidden sm:flex" : "flex"}`}>
                 {i > 0 && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-text-tertiary opacity-40">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="hidden shrink-0 text-text-tertiary opacity-40 sm:block">
                     <path d="M3.5 2l3.5 3-3.5 3" />
                   </svg>
                 )}
                 <span
-                  className="font-mono text-[11px] uppercase tracking-widest"
+                  className="truncate font-mono text-[11px] uppercase tracking-widest"
                   style={{
                     color: i === arr.length - 1 ? "var(--text-secondary)" : "var(--text-tertiary)",
                     fontWeight: i === arr.length - 1 ? 500 : 400,
