@@ -4,11 +4,26 @@ import {
   bmcRecoverySignature,
   bmcTransactionKeys,
   parseBmcWebhook,
+  isConfirmedBmcPayment,
   verifyBmcRecoverySignature,
   verifyBmcSignature,
 } from "./bmc-webhook";
 
 describe("Buy Me a Coffee webhook", () => {
+  it.each(["recurring_donation.started", "recurring_donation.updated", "membership.started", "membership.updated"])("never treats %s lifecycle amounts as a captured charge", type => {
+    const event = parseBmcWebhook(JSON.stringify({ type, data: { id: 1083393, psp_id: "sub_example", amount: 25, status: "active", current_period_start: 1793266334 } }));
+    expect(isConfirmedBmcPayment(event)).toBe(false);
+  });
+  it.each(["failed", "pending", "requires_payment_method", "active", undefined])("rejects a payment with status %s", status => {
+    expect(isConfirmedBmcPayment(parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 123, amount: 25, status } })))).toBe(false);
+  });
+  it("records only successful payments and dates a monthly charge by its payment timestamp", () => {
+    const event = parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 123, amount: 25, status: "succeeded", object: "recurring_donation", current_period_start: 1793266334, created_at: "2026-11-25T10:35:10Z" } }));
+    expect(isConfirmedBmcPayment(event)).toBe(true);
+    expect(event.occurredAt.toISOString()).toBe("2026-11-25T10:35:10.000Z");
+    expect(isConfirmedBmcPayment({ ...event, data: { ...event.data, refunded: "true" } })).toBe(false);
+    expect(isConfirmedBmcPayment({ ...event, resourceId: "unknown" })).toBe(false);
+  });
   it("verifies the current x-signature-sha256 HMAC in constant-time format", () => {
     const body = JSON.stringify({ event_id: 1234, type: "donation.created", data: {} });
     const secret = "webhook-signing-secret";

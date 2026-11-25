@@ -306,6 +306,8 @@ model Transaction {
   // Provider-backed methods are trusted only when this flag was set by a
   // verified checkout/webhook/reconciliation path, never by a manual form.
   providerVerified              Boolean           @default(false)
+  // A subscription lifecycle webhook is not proof that money was collected.
+  bmcPaymentConfirmed           Boolean           @default(false)
   providerState                 String            @default("NONE")
   // Scheduler-created service renewals remain pending until an admin approves.
   isAutomatedRenewal            Boolean           @default(false)
@@ -563,6 +565,15 @@ model BmcSubscriptionFeedback {
   wantedToDonate         Boolean?
   deliberateCancellation Boolean?
   reason                 String?
+  additionalInfo         String?
+  additionalInfoAt       DateTime?
+  responseSource         String?
+  telegramChatId         String?
+  telegramMessageId      Int?
+  responseRevision       Int                   @default(0)
+  telegramSyncedRevision Int                   @default(0)
+  telegramSyncError      String?
+  telegramSyncClaimedAt  DateTime?
   requestedAt            DateTime              @default(now())
   respondedAt            DateTime?
   updatedAt              DateTime              @updatedAt
@@ -985,6 +996,8 @@ model Notification {
   message           String
   read              Boolean   @default(false)
   entityId          String?
+  actionUrl         String?
+  telegramMessageId Int?
   priority          String    @default("NORMAL")
   telegramStatus    String    @default("NOT_REQUESTED")
   telegramAttempts  Int       @default(0)

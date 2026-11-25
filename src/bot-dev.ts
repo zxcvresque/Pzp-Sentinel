@@ -31,6 +31,7 @@ import { startMessage } from "./lib/start-message";
 import { removeUndonatedAccounts } from "./lib/undonated-account-cleanup";
 import { grantPzpMemberAccess, registerTelegramUser } from "./lib/member-access";
 import { drainSentryWebhooks } from "./lib/sentry-webhook";
+import { drainBmcFeedbackDelivery } from "./lib/bmc-feedback-service";
 import {
   deliverTelegramWithRetry,
   isPermanentTelegramRecipientError,
@@ -1356,6 +1357,9 @@ async function checkSubscriptionRenewals() {
       // Durable outbound delivery for every ledger source, independent of Sheets.
       void drainSentryWebhooks();
       setInterval(() => void drainSentryWebhooks(), 5_000);
+      const deliverFeedback = () => void drainBmcFeedbackDelivery(prisma, bot).catch(() => console.error("[bmc-feedback] Delivery pending; retrying next cycle."));
+      deliverFeedback();
+      setInterval(deliverFeedback, 30_000);
 
       // Run first expiry check after 10s (let DB connections warm up), then every 24h
       setTimeout(() => {

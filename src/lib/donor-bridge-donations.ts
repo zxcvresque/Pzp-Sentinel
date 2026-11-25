@@ -57,6 +57,7 @@ const donationSelect = {
   id: true, method: true, providerPaymentId: true, bmcEventId: true,
   amount: true, currency: true, date: true, donationFrequency: true,
   voidedAt: true, voidReason: true, providerState: true,
+  bmcPaymentConfirmed: true,
   fromUser: { select: { telegramId: true, name: true } },
   razorpayOrder: { select: {
     paymentId: true, invite: { select: { telegramId: true, guestName: true } },
@@ -68,7 +69,8 @@ type DonationRow = Prisma.TransactionGetPayload<{ select: typeof donationSelect 
 const reversed: Prisma.TransactionWhereInput = {
   OR: [
     { voidedAt: { not: null } },
-    ...["REFUND", "REVERSE", "DISPUTE"].map(value => ({
+    { method: "BMC", donationFrequency: "MONTHLY", bmcPaymentConfirmed: false },
+    ...["REFUND", "REVERSE", "DISPUTE", "FAILED", "UNCONFIRMED"].map(value => ({
       providerState: { contains: value, mode: "insensitive" as const },
     })),
   ],
@@ -84,7 +86,8 @@ function eligible(from?: Date, to?: Date): Prisma.TransactionWhereInput {
 
 function serializeDonation(row: DonationRow) {
   const identity = donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id);
-  const isReversed = !!row.voidedAt || /REFUND|REVERSE|DISPUTE/i.test(row.providerState);
+  const unconfirmed = row.method === "BMC" && row.donationFrequency === "MONTHLY" && !row.bmcPaymentConfirmed;
+  const isReversed = !!row.voidedAt || unconfirmed || /REFUND|REVERSE|DISPUTE|FAILED|UNCONFIRMED/i.test(row.providerState);
   return {
     ...identity,
     transactionId: row.id,
@@ -100,7 +103,8 @@ function serializeDonation(row: DonationRow) {
     frequency: row.donationFrequency,
     state: isReversed ? "REVERSED" as const : "PAID" as const,
     lifecycle: row.voidedAt ? "VOIDED" : "ACTIVE",
-    reversalReason: isReversed ? row.voidReason || (row.voidedAt ? "Voided in Sentinel" : row.providerState) : null,
+    paymentConfirmed: !unconfirmed && !isReversed,
+    reversalReason: isReversed ? row.voidReason || (unconfirmed ? "BMC subscription lifecycle does not confirm a successful payment; reconcile against paid charge history" : row.voidedAt ? "Voided in Sentinel" : row.providerState) : null,
   };
 }
 

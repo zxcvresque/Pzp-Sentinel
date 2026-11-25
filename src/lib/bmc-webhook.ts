@@ -132,6 +132,17 @@ function donationFrequency(type: string, data: Record<string, unknown>): "ONE_TI
     : "ONE_TIME";
 }
 
+// BMC's SubscriptionFields contain a subscription amount and billing period,
+// but no charge result. Even status=active does not prove a renewal was paid.
+// Only payment events with an explicit successful result enter the ledger.
+export function isConfirmedBmcPayment(event: Pick<NormalizedBmcEvent, "type" | "data" | "amount" | "resourceId">): boolean {
+  return ["donation.created", "extra_purchase.created", "commission_order.created", "wishlist_payment.created"].includes(event.type)
+    && event.amount > 0
+    && event.resourceId !== "unknown"
+    && text(event.data.status)?.toLowerCase() === "succeeded"
+    && event.data.refunded !== true && event.data.refunded !== "true";
+}
+
 export function verifyBmcSignature(rawBody: string | Buffer, signature: string, secret: string): boolean {
   const supplied = signature.trim().replace(/^sha256=/i, "");
   let suppliedBuffer: Buffer;
@@ -211,7 +222,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
   const frequency = donationFrequency(type, data);
   // started_at is the subscription's original start, even on later renewals.
   // Use the current billing period so a paid renewal does not look overdue.
-  const periodStart = frequency === "MONTHLY"
+  const periodStart = type.startsWith("recurring_donation.") || type.startsWith("membership.")
     ? data.current_period_start ?? data.subscription_current_period_start
     : undefined;
   const occurredAt = dateValue(

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function PublicPage() {
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
@@ -60,7 +62,7 @@ export default function PublicPage() {
             transform: translateY(0) scale(0.97) !important;
           }
         `}</style>
-        <a
+        <Link
           href="/login"
           className="signin-btn group inline-flex items-center gap-2.5 px-8 py-3.5 rounded-full text-sm font-semibold transition-all duration-300 active:scale-[0.97]"
           style={{
@@ -73,7 +75,7 @@ export default function PublicPage() {
           }}
         >
           Sign in
-        </a>
+        </Link>
       </div>
     </div>
   );

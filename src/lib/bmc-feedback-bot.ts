@@ -1,8 +1,8 @@
 import type { Bot } from "grammy";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { feedbackChoiceTransition } from "@/lib/razorpay-subscription-events";
-import { escapeTelegramHtml } from "@/lib/telegram-format";
-import { logAuditEvent } from "@/lib/telegram-log";
+import { saveBmcFeedback, drainBmcFeedbackDelivery } from "@/lib/bmc-feedback-service";
+import { FeedbackError } from "@/lib/bmc-feedback-response";
 
 const CALLBACK_PATTERN = /^bmcfb:(wanted|cancelled):(yes|no):(.+)$/;
 
@@ -17,6 +17,10 @@ function yesNoKeyboard(step: "wanted" | "cancelled", feedbackId: string) {
 
 export function registerBmcFeedbackHandlers(bot: Bot, prisma: PrismaClient) {
   bot.callbackQuery(CALLBACK_PATTERN, async (ctx) => {
+    if (ctx.chat?.type !== "private") {
+      await ctx.answerCallbackQuery({ text: "Please answer this form in your private Sentinel chat.", show_alert: true });
+      return;
+    }
     const match = CALLBACK_PATTERN.exec(ctx.callbackQuery.data);
     if (!match) return;
     const [, rawStep, rawAnswer, feedbackId] = match;
@@ -36,10 +40,17 @@ export function registerBmcFeedbackHandlers(bot: Bot, prisma: PrismaClient) {
     }
 
     const transition = feedbackChoiceTransition(step, rawAnswer === "yes");
-    await prisma.bmcSubscriptionFeedback.update({
-      where: { id: feedback.id },
-      data: { stage: transition.stage, ...transition.data },
+    const changed = await prisma.bmcSubscriptionFeedback.updateMany({
+      where: { id: feedback.id, stage: expectedStage },
+      data: {
+        stage: transition.stage, ...transition.data,
+        ...(step === "wanted" ? { telegramChatId: ctx.chat!.id.toString(), telegramMessageId: ctx.callbackQuery.message?.message_id } : {}),
+      },
     });
+    if (!changed.count) {
+      await ctx.answerCallbackQuery({ text: "This question has already been answered." });
+      return;
+    }
     await ctx.answerCallbackQuery();
     await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch(() => {});
     if (transition.stage === "ASK_CANCELLED") {
@@ -62,71 +73,16 @@ export function registerBmcFeedbackHandlers(bot: Bot, prisma: PrismaClient) {
     });
     if (!feedback) return next();
 
-    const cleanReason = reason.slice(0, 1000);
-    const completed = await prisma.bmcSubscriptionFeedback.update({
-      where: { id: feedback.id },
-      data: { stage: "COMPLETED", reason: cleanReason, respondedAt: new Date() },
-    });
-    await ctx.reply("Thank you for letting us know. Your response has been saved and the admins have been notified privately.");
-
-    const amount = feedback.amount == null
-      ? "Amount unavailable"
-      : `${feedback.currency === "INR" ? "₹" : "$"}${Number(feedback.amount).toFixed(2)}`;
-    const wanted = feedback.wantedToDonate === true ? "Yes" : "No";
-    const deliberate = feedback.deliberateCancellation === null
-      ? "Not asked"
-      : feedback.deliberateCancellation ? "Yes" : "No";
-    const message = [
-      `${feedback.user.name} responded to a BMC ${feedback.triggerType} follow-up.`,
-      `Wanted to continue donating: ${wanted}.`,
-      `Deliberately cancelled: ${deliberate}.`,
-      `Reason: ${cleanReason}`,
-    ].join(" ");
-    const telegramMessage =
-      `<blockquote><b>BMC recurring-support response</b></blockquote>\n` +
-      `<b>${escapeTelegramHtml(feedback.user.name)} · ${escapeTelegramHtml(amount)}</b>\n` +
-      `Wanted to continue: <b>${wanted}</b>\n` +
-      `Deliberately cancelled: <b>${deliberate}</b>\n` +
-      `Reason: ${escapeTelegramHtml(cleanReason)}\n` +
-      (feedback.supporterId ? `<code>${escapeTelegramHtml(feedback.supporterId)}</code>` : "");
-
-    const admins = await prisma.user.findMany({
-      where: { roles: { has: "ADMIN" }, status: "ACTIVE" },
-      select: { id: true, chatId: true },
-    });
-    await Promise.allSettled(admins.map(async (admin) => {
-      await prisma.notification.create({
-        data: {
-          userId: admin.id,
-          type: "SYSTEM",
-          title: "Donor replied about BMC recurring support",
-          message,
-          entityId: feedback.id,
-          priority: "HIGH",
-        },
+    try {
+      await saveBmcFeedback(prisma, {
+        id: feedback.id, userId: feedback.userId, source: "TELEGRAM",
+        body: { wantedToDonate: feedback.wantedToDonate, deliberateCancellation: feedback.deliberateCancellation, reason },
       });
-      if (admin.chatId) await bot.api.sendMessage(admin.chatId, telegramMessage, { parse_mode: "HTML" });
-    }));
-    await prisma.auditLog.create({
-      data: {
-        userId: feedback.userId,
-        action: "BMC_SUBSCRIPTION_FEEDBACK",
-        entityType: "BmcSubscriptionFeedback",
-        entityId: completed.id,
-        after: {
-          triggerType: feedback.triggerType,
-          wantedToDonate: feedback.wantedToDonate,
-          deliberateCancellation: feedback.deliberateCancellation,
-          reason: cleanReason,
-        },
-      },
-    });
-    logAuditEvent({
-      action: "BMC_SUBSCRIPTION_FEEDBACK",
-      entityType: "BmcSubscriptionFeedback",
-      entityId: completed.id,
-      userName: feedback.user.name,
-      details: `${feedback.triggerType} · wanted: ${wanted} · deliberate: ${deliberate}`,
-    });
+      await ctx.reply("Thank you. Your response has been saved and the admins have been notified. You can add additional information once in Sentinel.");
+      await drainBmcFeedbackDelivery(prisma, bot);
+    } catch (error) {
+      if (error instanceof FeedbackError) await ctx.reply(error.message);
+      else throw error;
+    }
   });
 }

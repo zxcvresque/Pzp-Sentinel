@@ -18,7 +18,7 @@ describe("BMC subscription feedback", () => {
       inline_keyboard: [[
         { text: "Yes", callback_data: "bmcfb:wanted:yes:feedback_123" },
         { text: "No", callback_data: "bmcfb:wanted:no:feedback_123" },
-      ]],
+      ], [{ text: "Respond in Sentinel", web_app: { url: expect.stringContaining("/notifications/feedback/feedback_123") } }]],
     });
   });
 

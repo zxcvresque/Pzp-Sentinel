@@ -64,6 +64,27 @@ Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/inc
 
 ## Sentry workflow
 
+### BMC charge confirmation
+
+`recurring_donation.started`, `recurring_donation.updated`, and membership lifecycle events describe a subscription. An `active` status, amount, or advanced `current_period_start` does not prove that a charge succeeded. Sentinel records these events and maintains donor attribution without creating income, thank-yous, reminder resets, or XP-eligible payments.
+
+Payment webhooks must contain a successful payment result (`status=succeeded`) before creating a captured ledger entry. For monthly BMC history, `bmcPaymentConfirmed` must additionally be set by a verified payment or a review against paid provider history. Existing monthly entries default to unconfirmed. Reconcile genuine charges before approving them in Sentry; do not bulk-confirm billing periods. If BMC supplies only subscription updates, use paid charge history or a reviewed export to reconcile the actual payments.
+
+List and detail responses include the additive boolean `paymentConfirmed`. Unconfirmed BMC monthly entries and failed-payment corrections return `state=REVERSED`, `paymentConfirmed=false`, and an explanatory `reversalReason`; a voided false credit also returns `lifecycle=VOIDED`. This preserves the original transaction identity for an existing XP award's reversal review. The legacy event feed uses the same confirmation rule. Sentry must recheck the original transaction ID and handle reversals; these changes do not themselves deduct XP in Sentry.
+
+An operator can preview and apply exact ledger corrections with:
+
+```bash
+node --env-file=.env scripts/reconcile-bmc-payments.mjs reviewed-manifest.json
+node --env-file=.env scripts/reconcile-bmc-payments.mjs reviewed-manifest.json --apply
+```
+
+The manifest contains `userId`, `supporterId`, `reason` (the reviewed evidence), and `payments`. Every payment includes its immutable `id`, exact `bmcEventId`, `date` (`YYYY-MM-DD` in India time), decimal-string `amount`, `currency`, and `state` (`PAID` or `UNPAID`). All current ledger facts and supporter attribution must match. The atomic, idempotent correction confirms reviewed payments, voids unpaid credits, retains audits, corrects the donor's old notification, and queues bridge and finance sync updates. It cannot restore refunded/voided charges or create missing charges from a subscription schedule.
+
+Apply the additive fields through `bash upgrade.sh`, or manually run `scripts/bmc-payment-confirmation.sql` before deploying the new app and bot, then install the updated `scripts/sentry-webhook-triggers.sql`. The Prisma schema includes these fields. Older monthly entries must be reviewed; a signed subscription event alone is not payment evidence.
+
+### Payment review
+
 1. Open Review queue or press Refresh to fetch one live page. Date filters include historical ledger records. There is no CSV import, feed cursor, mirror, background poll or full-history drain.
 2. Preview selected grants. Only those IDs are rechecked with Sentinel, including PAID/ACTIVE status, amount, currency and verified Telegram identity.
 3. Approval repeats the selected-payment check. A fingerprint rejects changed payment facts or ratio. A SQLite transaction rechecks reviewer/donor eligibility and commits XP, XP history, grant rows and audit together. Donation-ID and transaction-ID uniqueness block retries, concurrent approvals and changed-reference duplicate awards.

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { Bot } from "grammy";
 import type { InlineKeyboardMarkup } from "@grammyjs/types";
+import type { Message } from "@grammyjs/types";
 import type { NotifType } from "@/generated/prisma/enums";
 import {
   deliverTelegramWithRetry,
@@ -61,13 +62,14 @@ export async function notify(data: {
   actionUrl?: string;
   /** Override the button label (default: "Open Sentinel") */
   actionLabel?: string;
+  onTelegramSent?: (message: Message.TextMessage) => Promise<void>;
   /** Explicit per-resource channel decisions. These take precedence over global preferences and priority. */
   inAppOverride?: boolean;
   telegramOverride?: boolean;
 }) {
   const {
     userId, type, title, message, entityId, priority = "NORMAL", telegramMessage,
-    telegramReplyMarkup, actionUrl, actionLabel, inAppOverride, telegramOverride,
+    telegramReplyMarkup, actionUrl, actionLabel, inAppOverride, telegramOverride, onTelegramSent,
   } = data;
 
   const user = await prisma.user.findUnique({
@@ -77,7 +79,7 @@ export async function notify(data: {
   const isHighPriority = priority === "HIGH";
   const shouldCreateInApp = inAppOverride ?? (user?.inAppPreferences.includes(type) || isHighPriority);
   const notification = shouldCreateInApp
-    ? await prisma.notification.create({ data: { userId, type, title, message, entityId, priority } })
+    ? await prisma.notification.create({ data: { userId, type, title, message, entityId, priority, actionUrl } })
     : null;
 
   // Attempt Telegram DM and persist channel delivery state.
@@ -97,10 +99,15 @@ export async function notify(data: {
         ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${actionUrl}` } }]] }
         : undefined);
       const result = await deliverTelegramWithRetry({
-        send: () => dmBot.api.sendMessage(user.chatId!, tgText, {
+        send: async () => {
+          const sent = await dmBot.api.sendMessage(user.chatId!, tgText, {
           parse_mode: "HTML",
           reply_markup: replyMarkup,
-        }),
+          });
+          if (notification) await prisma.notification.update({ where: { id: notification.id }, data: { telegramMessageId: sent.message_id } }).catch(() => undefined);
+          await onTelegramSent?.(sent).catch(() => console.error("[notify] Could not store feedback message reference"));
+          return sent;
+        },
         onAttempt: notification
           ? () => prisma.notification.update({
               where: { id: notification.id },

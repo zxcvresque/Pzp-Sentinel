@@ -201,6 +201,10 @@ sudo systemctl restart sentinel-agent
 
 ## Production deployment
 
+Notification rows now open a full message at `/notifications/:id`; the paginated `/notifications` inbox includes older messages. Notification action destinations are persisted, and old BMC cancellation notifications also resolve their associated response form. Donors can complete BMC cancellation forms in Sentinel or Telegram and add information once per form. The original tracked Telegram prompt is edited into a formatted receipt with the complete response and an **Add additional info?** Mini App button. The addition removes that button; initial responses and additions each create private admin notifications in the same transaction as the saved form.
+
+The bot retries pending receipt edits and admin DMs every 30 seconds. Old prompts sent before message-ID tracking cannot be looked up through Telegram: their next response/addition creates a tracked receipt, which subsequent updates edit. Each response and addition permits 1,500 characters, allowing the entire form to fit in the edited Telegram message. See [BMC charge-confirmation and reconciliation](DONOR_XP_BRIDGE.md#bmc-charge-confirmation) for payment-evidence requirements and correcting false monthly credits.
+
 Sentinel runs as `sentinel-web` and `sentinel-bot` under PM2. Deploy from the VPS repository:
 
 ```bash

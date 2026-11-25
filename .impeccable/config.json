@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/app/globals.css"
+        ],
+        "createdAt": "2026-11-25T17:22:58.589Z",
+        "reason": "Codex review: the existing SECTION_CARDS pseudo-element at line 250 is a top accent (inset: 0 0 auto; height: 3px), not a side-tab. globals.css is unchanged by this task."
+      }
+    ]
+  }
+}

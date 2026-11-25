@@ -62,6 +62,13 @@ describe("live donation queries", () => {
     expect(await getDonation("bmc:123")).toMatchObject({ id: "bmc:123", paymentId: "123" });
     expect(JSON.stringify(mocks.findMany.mock.calls[0][0])).toContain("bmc_support_pzp_123");
   });
+  it("holds unconfirmed BMC monthly lifecycle entries for reversal and preserves verified charges", async () => {
+    const bmc = { ...row, method: "BMC", providerPaymentId: null, bmcEventId: "bmc_monthly_sub_period_123", bmcPaymentConfirmed: false };
+    mocks.findMany.mockResolvedValue([bmc]);
+    expect(await getDonation("tx1")).toMatchObject({ state: "REVERSED", paymentConfirmed: false, reversalReason: expect.stringContaining("does not confirm") });
+    mocks.findMany.mockResolvedValue([{ ...bmc, bmcPaymentConfirmed: true }]);
+    expect(await getDonation("tx1")).toMatchObject({ state: "PAID", paymentConfirmed: true });
+  });
   it("does not return a row under its obsolete payment reference", async () => {
     mocks.findMany.mockResolvedValue([{ ...row, providerPaymentId: "pay_new" }]);
     expect(await getDonation("razorpay:pay_one")).toBeNull();

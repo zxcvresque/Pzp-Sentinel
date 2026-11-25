@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import BroadcastContent, { BroadcastInlineContent } from "@/components/BroadcastContent";
-import { notificationDestination } from "@/lib/notification-destination";
 
 interface TopBarProps {
   name: string;
@@ -232,7 +231,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
         {notifOpen && (
           <div
-            className="absolute right-0 top-full mt-2.5 w-80 rounded-[14px] border border-[var(--border)] shadow-2xl z-50 overflow-hidden animate-scale-in"
+            className="fixed right-3 top-20 w-[min(24rem,calc(100vw-1.5rem))] sm:absolute sm:right-0 sm:top-full sm:mt-2.5 rounded-[14px] border border-[var(--border)] shadow-2xl z-50 overflow-hidden animate-scale-in"
             style={{
               background: "var(--bg-card)",
             }}
@@ -284,16 +283,13 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
               </div>
             ) : (
               <div className="overflow-y-auto" style={{ maxHeight: "380px" }}>
-                {notifications.slice(0, 20).map((notif) => (
+                {notifications.map((notif) => (
                   <button
                     key={notif.id}
                     onClick={() => {
                       if (!notif.read) markRead([notif.id]);
-                      const href = notificationDestination({ type: notif.type, roles, entityId: notif.entityId, title: notif.title });
-                      if (href) {
-                        setNotifOpen(false);
-                        router.push(href);
-                      }
+                      setNotifOpen(false);
+                      router.push(`/notifications/${encodeURIComponent(notif.id)}`);
                     }}
                     className="w-full text-left px-4 py-3 flex gap-3 border-b border-[var(--border)] last:border-b-0 transition-colors duration-150 cursor-pointer"
                     style={{
@@ -345,6 +341,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                 ))}
               </div>
             )}
+            <Link href="/notifications" onClick={() => setNotifOpen(false)} className="block px-4 py-3 text-sm text-[var(--lime)] hover:bg-[var(--bg-hover)] focus-visible:outline-2 focus-visible:outline-[var(--lime)]">View all notifications</Link>
           </div>
         )}
       </div>

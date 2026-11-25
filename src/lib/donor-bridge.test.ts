@@ -58,6 +58,15 @@ describe("donor bridge", () => {
     await refreshBridgeEvents(); await refreshBridgeEvents();
     expect(mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"))).toHaveLength(1);
   });
+  it("emits an explicit reversal for an unconfirmed recurring BMC lifecycle entry", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", method: "BMC", bmcEventId: "bmc_monthly_sub_period_123", amount: "25", currency: "USD", date: donation.occurredAt, donationFrequency: "MONTHLY", providerState: "CAPTURED", bmcPaymentConfirmed: false }] };
+      return { rows: [] };
+    });
+    await refreshBridgeEvents();
+    const write = mocks.query.mock.calls.find(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
+    expect(JSON.parse(write![1][2])).toMatchObject({ transactionId: "tx1", state: "REVERSED", paymentConfirmed: false, reversalReason: expect.stringContaining("does not confirm") });
+  });
   it("rolls back and releases the connection on a database error", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if(sql.startsWith("SELECT payload")) throw Error("database unavailable");

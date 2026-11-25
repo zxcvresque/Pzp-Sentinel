@@ -6,6 +6,7 @@ import { notify, notifyAdmins, formatTgMessage } from "@/lib/notifications";
 import { scheduleFinanceAutomation } from "@/lib/finance-sheets";
 import {
   bmcTransactionKeys,
+  isConfirmedBmcPayment,
   parseBmcWebhook,
   verifyBmcRecoverySignature,
   verifyBmcSignature,
@@ -29,9 +30,6 @@ const CREATED_EVENTS = new Set([
   "extra_purchase.created",
   "commission_order.created",
   "wishlist_payment.created",
-  "membership.started",
-  "recurring_donation.started",
-  "recurring_donation.updated",
 ]);
 
 const REFUND_EVENTS = new Set([
@@ -42,6 +40,8 @@ const REFUND_EVENTS = new Set([
 ]);
 
 const LIFECYCLE_EVENTS = new Set([
+  "membership.started",
+  "recurring_donation.started",
   "extra_purchase.updated",
   "membership.updated",
   "membership.cancelled",
@@ -96,11 +96,13 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
   const keys = bmcTransactionKeys(event.type, event.resourceId);
   const [eventId] = keys;
   const accountSlug = bmcAccountSlug();
+  const paymentId = typeof event.data.transaction_id === "string" && /^(pi_|ch_)/.test(event.data.transaction_id)
+    ? event.data.transaction_id : null;
   const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
 
   const result = await prisma.$transaction(async (db) => {
     const existing = await db.transaction.findFirst({
-      where: { bmcEventId: { in: keys } },
+      where: { OR: [{ bmcEventId: { in: keys } }, ...(paymentId ? [{ providerPaymentId: paymentId }] : [])] },
       include: { fromUser: true },
     });
     if (existing) {
@@ -156,6 +158,8 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         description: transactionDescription(event),
         status: "APPROVED",
         providerVerified: true,
+        bmcPaymentConfirmed: true,
+        providerPaymentId: paymentId,
         providerState: "CAPTURED",
         isTest: !event.liveMode,
         bmcEventId: eventId,
@@ -338,6 +342,24 @@ async function refundTransaction(event: NormalizedBmcEvent) {
 async function notifyLifecycle(event: NormalizedBmcEvent, transaction: Awaited<ReturnType<typeof findTransaction>>) {
   const state = event.type.split(".").at(-1) || "updated";
   const cancellation = isBmcCancellationEvent(event.type);
+  // Keep signed, donor-bound subscription attribution without inventing a payment.
+  const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
+  if (code && event.supporterId) {
+    await prisma.$transaction(async (db) => {
+      const intent = await db.bmcCheckoutIntent.findFirst({ where: {
+        codeHash: hashBmcAttributionCode(code), consumedAt: null,
+        createdAt: { lte: event.createdAt }, expiresAt: { gte: event.createdAt },
+      } });
+      if (!intent) return;
+      const claimed = await db.bmcCheckoutIntent.updateMany({ where: { id: intent.id, consumedAt: null }, data: { consumedAt: new Date() } });
+      if (claimed.count !== 1) return;
+      await db.bmcSupporterLink.upsert({
+        where: { accountSlug_supporterId: { accountSlug: bmcAccountSlug(), supporterId: event.supporterId! } },
+        create: { accountSlug: bmcAccountSlug(), supporterId: event.supporterId!, userId: intent.userId, donationFrequency: event.donationFrequency, supporterDetailsEncrypted: encryptedBmcDetails(event) },
+        update: { userId: intent.userId, donationFrequency: event.donationFrequency, lastSeenAt: new Date(), supporterDetailsEncrypted: encryptedBmcDetails(event) },
+      });
+    });
+  }
   const supporterLink = !transaction?.fromUser && event.supporterId
     ? await prisma.bmcSupporterLink.findUnique({
         where: {
@@ -353,13 +375,13 @@ async function notifyLifecycle(event: NormalizedBmcEvent, transaction: Awaited<R
   await notifyAdmins({
     type: "SYSTEM",
     title: `${event.liveMode ? "BMC" : "Test BMC"} ${eventLabel(event.type)} ${state}`,
-    message: `${event.supporterName} · ${event.itemLabel || eventLabel(event.type)}${donor ? ` · linked to ${donor.name}` : " · donor unidentified"}`,
+    message: `${event.supporterName} · ${event.itemLabel || eventLabel(event.type)}${donor ? ` · linked to ${donor.name}` : " · donor unidentified"}. This lifecycle event does not confirm a successful payment.`,
     priority: cancellation ? "HIGH" : "NORMAL",
     actionUrl: "/admin/transactions",
     telegramMessage: formatTgMessage(
       `BMC ${eventLabel(event.type)}`,
       `${event.supporterName} · ${state}`,
-      donor ? `Linked to ${escapeTelegramHtml(donor.name)}` : "Donor unidentified; private follow-up unavailable.",
+      `${donor ? `Linked to ${escapeTelegramHtml(donor.name)}` : "Donor unidentified; private follow-up unavailable."}\n<i>No payment is credited from this lifecycle event. Confirm charges against paid provider history.</i>`,
     ),
   });
 
@@ -397,6 +419,12 @@ async function notifyLifecycle(event: NormalizedBmcEvent, transaction: Awaited<R
       `<b>${question}</b>`,
     ),
     telegramReplyMarkup: bmcFeedbackKeyboard(feedback.id),
+    actionUrl: `/notifications/feedback/${feedback.id}`,
+    onTelegramSent: async (message) => {
+      await prisma.bmcSubscriptionFeedback.update({ where: { id: feedback.id }, data: {
+        telegramChatId: message.chat.id.toString(), telegramMessageId: message.message_id,
+      } });
+    },
   });
 }
 
@@ -492,11 +520,18 @@ export async function POST(request: NextRequest) {
     let status = "NOTED";
     let attributionStatus = "NOT_APPLICABLE";
 
-    if (CREATED_EVENTS.has(event.type) && event.amount > 0) {
+    if (CREATED_EVENTS.has(event.type) && isConfirmedBmcPayment(event)) {
       const result = await createTransaction(event, admin.id);
       transactionId = result.transaction.id;
       status = result.duplicate ? "DUPLICATE_RESOURCE" : "CREATED";
       attributionStatus = result.attribution;
+    } else if (CREATED_EVENTS.has(event.type)) {
+      status = "PAYMENT_UNCONFIRMED";
+      await notifyAdmins({
+        type: "SYSTEM", title: "BMC payment needs confirmation",
+        message: `BMC did not confirm a successful ${symbol(event)}${event.amount.toFixed(2)} payment from ${event.supporterName}. No donation was credited. Review the paid provider history.`,
+        entityId: receipt.id, actionUrl: "/admin/reconciliation",
+      });
     } else if (REFUND_EVENTS.has(event.type)) {
       const transaction = await refundTransaction(event);
       transactionId = transaction?.id || null;

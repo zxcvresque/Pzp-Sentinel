@@ -17,7 +17,8 @@ beforeAll(async () => {
       currency text DEFAULT 'USD', method text DEFAULT 'OTHER', "fromUserId" text,
       "voidedAt" timestamp, "voidReason" text, "providerState" text DEFAULT 'MANUAL',
       "donationAnnouncedAt" timestamp, "providerPaymentId" text, "bmcEventId" text,
-      date timestamp DEFAULT now(), "donationFrequency" text DEFAULT 'ONE_TIME'
+      date timestamp DEFAULT now(), "donationFrequency" text DEFAULT 'ONE_TIME',
+      "bmcPaymentConfirmed" boolean DEFAULT false
     );
     CREATE TABLE "User" (id text PRIMARY KEY, "telegramId" text, name text);
     CREATE TABLE "OneTimeDonationInvite" (id text PRIMARY KEY, "telegramId" text, "guestName" text);
@@ -79,6 +80,12 @@ it("queues donor and guest identity corrections and order linkage", async () => 
   await db.exec(`UPDATE "OneTimeDonationInvite" SET "guestName" = 'Corrected guest' WHERE id = 'invite'`);
   await db.exec(`UPDATE "RazorpayOrder" SET "paymentId" = 'pay2' WHERE id = 'order'`);
   expect(await events()).toHaveLength(6);
+});
+
+it("queues a fresh live verification when BMC payment evidence is confirmed", async () => {
+  await db.exec(`INSERT INTO "Transaction" (id, method) VALUES ('bmc', 'BMC')`);
+  await db.exec(`UPDATE "Transaction" SET "bmcPaymentConfirmed" = true WHERE id = 'bmc'`);
+  expect(await events()).toEqual([{ transactionId: "bmc" }, { transactionId: "bmc" }]);
 });
 
 function useRealQueue() {
