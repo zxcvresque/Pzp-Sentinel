@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => {
   const browser = { newContext: vi.fn(async () => context), close: vi.fn() };
   return { page, context, browser, launch: vi.fn(async () => browser), write: vi.fn() };
 });
-vi.mock("playwright", () => ({ chromium: { launch: mocks.launch } }));
+vi.mock("playwright", () => ({ chromium: { launch: mocks.launch, executablePath: () => "/browser/chromium-1255/chrome-linux-arm64/chrome" } }));
 vi.mock("./bmc-private-store", () => ({ mutateBmcSession: mocks.write }));
 import { allowedBmcNavigation, bmcBrowserFrame, controlBmcBrowser, validateBmcBrowserAction } from "./bmc-browser-connection";
 let loginId: string | undefined;

@@ -11,7 +11,16 @@ cd ~/Sentinel
 bash upgrade.sh
 ```
 
-The upgrade installs the pinned Playwright dependency, Chromium and its Linux dependencies, then builds/restarts Sentinel. Linux dependency installation may invoke sudo. Run PM2 as the same non-root user who runs the upgrade. Chromium must have sandbox support; the app does not fall back to `--no-sandbox`. An existing compatible Chromium can be selected with `BMC_CHROMIUM_EXECUTABLE`.
+The upgrade installs the pinned Playwright dependency, Chromium and its Linux dependencies, checks browser startup, then builds/restarts Sentinel. Linux dependency installation may invoke sudo. Run PM2 as the same non-root user who runs the upgrade. Chromium must have sandbox support; the app does not fall back to `--no-sandbox`. An existing compatible Chromium can be selected with `BMC_CHROMIUM_EXECUTABLE`.
+
+Ubuntu's AppArmor user-namespace restriction can block a downloaded Chromium even after a successful installation. The connection API reports `BROWSER_SANDBOX_BLOCKED` separately from missing browsers or Linux libraries. Run `node scripts/check-bmc-browser.mjs` as the PM2 user for a startup check. The one-time scoped setup is:
+
+```bash
+node scripts/setup-bmc-browser.mjs          # preview the exact system changes
+node scripts/setup-bmc-browser.mjs --apply  # administrator-reviewed setup; uses sudo
+```
+
+This copies the pinned Chromium into a versioned, root-owned tree under `/opt/sentinel-bmc-browser/`, strips setuid/setgid and group/other write bits, and installs `/etc/apparmor.d/sentinel-bmc-browser`. Only Chromium executables inside that protected tree receive `userns` permission; the profile follows [Chromium's documented AppArmor approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). It does not grant blanket namespace access to user-writable browser caches, disable AppArmor globally, or disable Chromium's sandbox. The app automatically selects the matching managed browser revision. Retry connecting after setup; rerun it after a Playwright revision update if the sandbox check requests it. Rollback: stop private login sessions, unload the profile with `sudo apparmor_parser -R /etc/apparmor.d/sentinel-bmc-browser`, and remove the profile/managed installation after reviewing their contents.
 
 Configure the existing `BMC_ACCOUNT_SLUG`, `WEBAPP_URL` (the exact public Sentinel origin), and `CREDENTIAL_ENC_KEY`. The account must match the creator-profile link on the authenticated BMC dashboard. Sessions and history are stored with AES-256-GCM in the Git-ignored `data/bmc-dashboard/` directory, mode `0600`; directory creation uses `0700`. `BMC_DASHBOARD_SESSION_FILE` can relocate the session and its sibling history/health files. Web and bot processes must share this path and encryption key. Use a single PM2 web process; the interactive login browser is held in process memory and does not support multi-instance load balancing.
 

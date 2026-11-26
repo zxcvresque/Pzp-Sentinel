@@ -13,7 +13,7 @@ async function admin() {
   return user?.roles.includes("ADMIN") ? user : null;
 }
 function fail(error: unknown) {
-  return error instanceof BmcHistoryError ? json({ error: error.message, code: error.code }, error.status) : json({ error: "BMC connection could not complete. Retry or restart the private login.", code: "CONNECTION_FAILED" }, 503);
+  return error instanceof BmcHistoryError ? json({ error: error.message, code: error.code, ...(error.recoveryCommand ? { recoveryCommand: error.recoveryCommand } : {}) }, error.status) : json({ error: "BMC connection could not complete. Retry or restart the private login.", code: "CONNECTION_FAILED" }, 503);
 }
 export async function GET(request: Request) {
   const user = await admin();

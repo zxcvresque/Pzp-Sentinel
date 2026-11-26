@@ -3,7 +3,7 @@ import { decryptSecret } from "./secret-crypto";
 import { mutateBmcSession } from "./bmc-private-store";
 
 export class BmcHistoryError extends Error {
-  constructor(public code: string, message: string, public status = 502) { super(message); }
+  constructor(public code: string, message: string, public status = 502, public recoveryCommand?: string) { super(message); }
 }
 
 export type BmcDashboardSession = { cookie: string; xsrfToken?: string; studioCookie?: string; connectedAt?: string; connectedBy?: string; accountSlug?: string; generation?: string };

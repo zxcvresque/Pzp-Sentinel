@@ -34,12 +34,28 @@ export default function BmcConnection() {
   const [status, setStatus] = useState<Status | null>(null);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [error, setError] = useState("");
+  const [recoveryCommand, setRecoveryCommand] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState("");
   const [typed, setTyped] = useState("");
   const [showText, setShowText] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
   const mounted = useRef(true);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const loginRef = useRef<HTMLElement>(null);
+  const openedLogin = useRef<string | null>(null);
+  useEffect(() => {
+    if (error) feedbackRef.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [error]);
+  useEffect(() => {
+    if (frame && frame.loginId !== openedLogin.current) {
+      openedLogin.current = frame.loginId;
+      loginRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+      loginRef.current?.focus({ preventScroll: true });
+    }
+    if (!frame) openedLogin.current = null;
+  }, [frame]);
   const load = useCallback(async () => {
     const response = await fetch("/api/bmc/connection", { cache: "no-store" });
     const body = await response.json();
@@ -70,19 +86,22 @@ export default function BmcConnection() {
   }, [frame?.loginId, refreshFrame]);
   async function action(action: string, extra: Record<string, unknown> = {}) {
     if (pending.current) return;
-    pending.current = true; setBusy(true); setError(""); setNotice("");
+    pending.current = true; setBusy(true); setActiveAction(action); setError(""); setRecoveryCommand(""); setNotice("");
     try {
-      const response = await fetch("/api/bmc/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, loginId: frame?.loginId, ...extra }) });
-      const body = await response.json();
-      if (!response.ok) throw Error(body.error || "The action could not complete. Try again.");
+      const response = await fetch("/api/bmc/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, loginId: frame?.loginId, ...extra }), signal: AbortSignal.timeout(75000) });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body) {
+        setRecoveryCommand(typeof body?.recoveryCommand === "string" ? body.recoveryCommand : "");
+        throw Error(body?.error || "The server did not return the private browser. Retry connecting; if it repeats, check the Sentinel web server logs.");
+      }
       if (body.image) setFrame(body);
       if (body.connected || body.cancelled || body.disconnected) { setFrame(null); setTyped(""); }
       if (body.connected) setNotice("BMC connected. Your first full history check is starting.");
       if (body.queued) setNotice("History check started. You can leave this page; Sentinel will finish it on the server.");
       if (body.disconnected) setNotice("BMC disconnected. Automatic history checks are paused.");
       await load();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "The connection failed. Try again."); }
-    finally { pending.current = false; setBusy(false); }
+    } catch (reason) { setError(reason instanceof Error && ["TimeoutError", "AbortError"].includes(reason.name) ? "The private browser took too long to open. Retry connecting or resume the private login if it appears." : reason instanceof Error ? reason.message : "The connection failed. Try again."); }
+    finally { pending.current = false; setBusy(false); setActiveAction(""); }
   }
   if (!status) return error ? <div role="alert" className="p-5"><p>{error}</p><button className={`${button} mt-4`} onClick={() => { setError(""); void load().catch(reason => setError(reason.message)); }}>Retry connection</button></div> : <BmcConnectionSkeleton />;
   const needsReconnect = ["SESSION_EXPIRED", "PROVIDER_ACCESS_DENIED", "SESSION_NOT_CONFIGURED"].includes(status.health.errorCode || "");
@@ -90,7 +109,6 @@ export default function BmcConnection() {
     <TransactionsNav />
     <h1 className="text-2xl font-semibold text-text-primary sm:text-3xl">Buy Me a Coffee connection</h1>
     <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Connect <strong className="text-text-primary">{status.accountSlug}</strong> to verify payments and subscription status automatically.</p>
-    {error && <div role="alert" className="mt-5 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
     {notice && <p role="status" className="mt-5 rounded-xl border border-lime/25 bg-lime/5 p-4 text-sm text-text-primary">{notice}</p>}
     <section className="mt-7 rounded-2xl border border-[var(--border)] bg-bg-card p-5 sm:p-6" aria-labelledby="bmc-connection-title">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -104,6 +122,11 @@ export default function BmcConnection() {
         {status.login && <button className={button} disabled={busy} onClick={() => void refreshFrame(status.login!.id).catch(reason => setError(reason.message))}>Resume private login</button>}
         {status.connected && <><button className={button} disabled={busy || status.health.syncing} onClick={() => void action("sync")}>{status.health.syncing ? "Checking history…" : "Check history now"}</button><button className={button} disabled={busy || status.health.syncing} onClick={() => void action("disconnect")}>Disconnect</button></>}
       </div>}
+      {busy && activeAction === "start" && <p role="status" className="mt-4 text-sm text-text-secondary">Starting the private browser on the server. The login will open here when it is ready.</p>}
+      {error && <div ref={feedbackRef} role="alert" className="mt-4 scroll-mt-24 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm leading-relaxed text-red-200">
+        <p className="font-semibold">{activeAction === "start" || !frame ? "Private login did not open" : "The browser action could not complete"}</p><p className="mt-2">{error}</p>
+        {recoveryCommand && <div className="mt-3"><p className="text-xs font-semibold">Run once on the Sentinel VPS</p><code className="mt-2 block break-words rounded-lg bg-black/20 p-3 text-xs">{recoveryCommand}</code></div>}
+      </div>}
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-3">
         <div className="col-span-2 sm:col-span-1"><dt className="text-text-tertiary">Last complete check</dt><dd className="mt-1 font-medium">{status.health.lastSuccessAt ? displayDateTime(status.health.lastSuccessAt) : "Waiting for first check"}</dd></div>
         <div><dt className="text-text-tertiary">Recorded payments</dt><dd className="mt-1 font-medium tabular-nums">{status.health.paymentCount}</dd></div>
@@ -111,7 +134,7 @@ export default function BmcConnection() {
       </dl>
       <p className="mt-4 max-w-[70ch] text-xs leading-relaxed text-text-tertiary">Checks run every 15 minutes while the Sentinel bot is online. If BMC expires the session, admins receive a reconnect notification. Previous history stays available.</p>
     </section>
-    {frame && <section className="mt-7" aria-labelledby="private-login-title">
+    {frame && <section ref={loginRef} tabIndex={-1} className="mt-7 scroll-mt-24 focus:outline-none" aria-labelledby="private-login-title">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold" id="private-login-title">Private BMC login</h2><button className={button} disabled={busy} onClick={() => void action("cancel")}>Close private window</button></div>
       <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Use BMC’s email login. Tap a field in the browser, then enter its text below. Complete any OTP or verification yourself. When your dashboard opens, select <strong>Connect account</strong>. This private window closes after 15 minutes.</p>
       <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,390px)_minmax(0,1fr)]">

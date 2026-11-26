@@ -4,6 +4,7 @@ import { bmcAccountSlug } from "./bmc-attribution";
 import { BmcHistoryError, bmcDashboardSession } from "./bmc-history";
 import { fetchBmcSubscriptions } from "./bmc-account-history";
 import { mutateBmcSession } from "./bmc-private-store";
+import { bmcBrowserLaunchOptions, bmcBrowserStartupProblem } from "./bmc-browser-runtime.mjs";
 
 const WIDTH = 390;
 const HEIGHT = 700;
@@ -70,8 +71,12 @@ async function perform(owner: string, input: BmcBrowserAction) {
     if (globals.bmcLogin && globals.bmcLogin.owner !== owner && globals.bmcLogin.expiresAt > Date.now()) throw new BmcHistoryError("LOGIN_BUSY", "Another admin is connecting BMC. Try again when they finish.", 409);
     await closeLogin();
     let browser: Browser;
-    try { browser = await chromium.launch({ headless: true, chromiumSandbox: true, ...(process.env.BMC_CHROMIUM_EXECUTABLE ? { executablePath: process.env.BMC_CHROMIUM_EXECUTABLE } : {}) }); }
-    catch { throw new BmcHistoryError("BROWSER_UNAVAILABLE", "The private browser could not start. On the VPS, install Chromium with: npx playwright install --with-deps chromium. Run Sentinel as a non-root user with Chromium sandbox support.", 503); }
+    try { browser = await chromium.launch(bmcBrowserLaunchOptions(chromium.executablePath())); }
+    catch (error) {
+      const problem = bmcBrowserStartupProblem(error);
+      console.warn("[bmc-browser] Startup failed:", problem.code);
+      throw new BmcHistoryError(problem.code, problem.message, 503, problem.recoveryCommand);
+    }
     try {
       // No storageState or persistent profile: every interactive login starts Incognito.
       const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, acceptDownloads: false, serviceWorkers: "block" });

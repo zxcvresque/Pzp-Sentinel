@@ -5,6 +5,7 @@ vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("./bmc-browser-connection", () => ({ bmcConnectionStatus: mocks.status, controlBmcBrowser: mocks.control, validateBmcBrowserAction: mocks.validate, bmcBrowserFrame: mocks.frame }));
 vi.mock("./bmc-history-sync", () => ({ bmcHistoryHealth: mocks.health, readBmcHistorySnapshot: mocks.snapshot, syncBmcAccountHistory: mocks.sync }));
 import { GET, POST } from "../app/api/bmc/connection/route";
+import { BmcHistoryError } from "./bmc-history";
 const req = (body: object, origin = "https://sentinel.test") => new Request("https://sentinel.test/api/bmc/connection", { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("WEBAPP_URL", "https://sentinel.test");
@@ -48,4 +49,11 @@ it("rejects malformed actions and oversized input", async () => {
   expect((await POST(req({ action: "run", script: "arbitrary JS" }))).status).toBe(400);
   expect((await POST(req({ action: "type", text: "x".repeat(9000) }))).status).toBe(413);
   expect(mocks.control).not.toHaveBeenCalled();
+});
+it("returns a specific, safe recovery command when Ubuntu blocks Chromium's sandbox", async () => {
+  mocks.control.mockRejectedValue(new BmcHistoryError("BROWSER_SANDBOX_BLOCKED", "Ubuntu is blocking the private browser’s sandbox.", 503, "node scripts/setup-bmc-browser.mjs --apply"));
+  const response = await POST(req({ action: "start" }));
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ code: "BROWSER_SANDBOX_BLOCKED", recoveryCommand: "node scripts/setup-bmc-browser.mjs --apply" });
+  expect(mocks.after).not.toHaveBeenCalled();
 });
