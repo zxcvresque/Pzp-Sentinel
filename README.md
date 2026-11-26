@@ -201,6 +201,8 @@ sudo systemctl restart sentinel-agent
 
 ## Production deployment
 
+The [private BMC renewal-history API](BMC_HISTORY_API.md) reads actual dashboard history using an encrypted server-side session. It requires the bridge bearer secret and a numeric BMC subscription ID; it performs no financial writes. Install/refresh the dashboard session separately on the VPS before using it.
+
 Payment notifications open the transaction ledger with the exact entry highlighted; BMC response notifications open the saved response form directly, including historical SYSTEM notifications. Only standalone messages use `/notifications/:id`. The paginated `/notifications` inbox includes older messages. Notification action destinations are persisted, and old BMC cancellation notifications also resolve their associated response form. Donors can complete BMC cancellation forms in Sentinel or Telegram and add information once per form. The original tracked Telegram prompt is edited into a formatted receipt with the complete response and an **Add additional info?** Mini App button. The addition removes that button; initial responses and additions each create private admin notifications in the same transaction as the saved form.
 
 Response forms include bold/italic controls and a formatting preview. Saved answers use structured labels, quoted response text and separate additions; the same inline formatting is rendered in Telegram receipts. Shared route-specific skeletons keep session loading, navigation loading and data loading consistent for notifications, feedback, transactions, donor history and the main dashboards.

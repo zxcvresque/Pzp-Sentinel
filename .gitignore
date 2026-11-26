@@ -33,6 +33,7 @@ CLAUDE.md
 
 # uploads (user-generated content)
 /data/transaction-attachments/
+/data/bmc-dashboard/
 
 # debug
 npm-debug.log*
