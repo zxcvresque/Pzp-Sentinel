@@ -1,6 +1,6 @@
 export default function ServicesLoading() {
   return (
-    <div className="flex flex-col gap-6 p-6 md:p-8">
+    <div className="flex flex-col gap-6">
       {/* Category 1 */}
       <div>
         <div className="skeleton h-5 w-32 rounded mb-3" />

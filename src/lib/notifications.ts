@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { Bot } from "grammy";
 import type { InlineKeyboardMarkup } from "@grammyjs/types";
 import type { Message } from "@grammyjs/types";
+import { notificationTargets } from "@/lib/notification-routing";
 import type { NotifType } from "@/generated/prisma/enums";
 import {
   deliverTelegramWithRetry,
@@ -74,7 +75,7 @@ export async function notify(data: {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { chatId: true, dmPreferences: true, inAppPreferences: true },
+    select: { chatId: true, dmPreferences: true, inAppPreferences: true, roles: true },
   });
   const isHighPriority = priority === "HIGH";
   const shouldCreateInApp = inAppOverride ?? (user?.inAppPreferences.includes(type) || isHighPriority);
@@ -92,11 +93,14 @@ export async function notify(data: {
     if (user?.chatId && dmBot && shouldSendTelegram) {
       const tgText = telegramMessage ?? formatTgMessage(title, message);
       const baseUrl = process.env.WEBAPP_URL || "https://pzp.finance";
+      const target = actionUrl && entityId
+        ? (await notificationTargets([{ id: notification?.id || "delivery", type, title, entityId, actionUrl }], { id: userId, roles: user.roles })).get(notification?.id || "delivery") || actionUrl
+        : actionUrl;
       // Derive a readable label from the destination path if none given
       const btnLabel = actionLabel ?? deriveBtnLabel(actionUrl);
       // Use web_app so it opens inside the Mini App overlay, not the in-app browser
-      const replyMarkup = telegramReplyMarkup ?? (actionUrl
-        ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${actionUrl}` } }]] }
+      const replyMarkup = telegramReplyMarkup ?? (target
+        ? { inline_keyboard: [[{ text: btnLabel, web_app: { url: `${baseUrl}${target}` } }]] }
         : undefined);
       const result = await deliverTelegramWithRetry({
         send: async () => {

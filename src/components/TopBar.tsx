@@ -15,6 +15,7 @@ interface TopBarProps {
 }
 
 interface Notification {
+  destination?: string;
   id: string;
   type: string;
   title: string;
@@ -86,11 +87,12 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
   async function markRead(ids: string[]) {
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
+      if (!response.ok) return;
       setNotifications((prev) =>
         prev.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n))
       );
@@ -102,11 +104,12 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
 
   async function markAllRead() {
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markAllRead: true }),
       });
+      if (!response.ok) return;
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setServerUnreadCount(0);
     } catch {
@@ -289,7 +292,7 @@ export default function TopBar({ name, photoUrl, telegramUser, roles }: TopBarPr
                     onClick={() => {
                       if (!notif.read) markRead([notif.id]);
                       setNotifOpen(false);
-                      router.push(`/notifications/${encodeURIComponent(notif.id)}`);
+                      router.push(notif.destination || `/notifications/${encodeURIComponent(notif.id)}`);
                     }}
                     className="w-full text-left px-4 py-3 flex gap-3 border-b border-[var(--border)] last:border-b-0 transition-colors duration-150 cursor-pointer"
                     style={{

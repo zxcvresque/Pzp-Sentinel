@@ -1,4 +1,4 @@
-import { escapeTelegramHtml } from "./telegram-format";
+import { broadcastInlineToTelegramHtml } from "./broadcast-format";
 
 export const BMC_FEEDBACK_TEXT_LIMIT = 1500;
 
@@ -50,8 +50,8 @@ export function formatBmcFeedbackReceipt(feedback: {
     `<b>Deliberately cancelled:</b> ${deliberate}`,
     "",
     "<b>Reason</b>",
-    `<blockquote>${escapeTelegramHtml(feedback.reason || "")}</blockquote>`,
-    ...(feedback.additionalInfo ? ["", "<b>Additional information</b>", `<blockquote>${escapeTelegramHtml(feedback.additionalInfo)}</blockquote>`] : []),
+    `<blockquote>${broadcastInlineToTelegramHtml(feedback.reason || "")}</blockquote>`,
+    ...(feedback.additionalInfo ? ["", "<b>Additional information</b>", `<blockquote>${broadcastInlineToTelegramHtml(feedback.additionalInfo)}</blockquote>`] : []),
     "",
     feedback.additionalInfo
       ? "<i>Your additional information has been recorded. This form is complete.</i>"

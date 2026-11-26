@@ -1,4 +1,5 @@
 "use client";
+import { DevBoardSkeleton } from "@/components/PageSkeleton";
 import { displayDate } from "@/lib/date-format";
 
 
@@ -509,18 +510,7 @@ export default function DevDashboard() {
     setSubmitting(false);
   }
 
-  if (loading) {
-    return (
-      <div>
-        <div className="skeleton h-8 w-48 mb-8" />
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-64 w-full rounded-xl" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <DevBoardSkeleton />;
 
   // Activity panel — collapsible right sidebar on desktop, full-width on mobile
   const activityPanel = (

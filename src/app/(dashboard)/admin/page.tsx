@@ -1,4 +1,5 @@
 "use client";
+import { OverviewSkeleton } from "@/components/PageSkeleton";
 import { displayDateTime, displayDate } from "@/lib/date-format";
 
 
@@ -205,30 +206,7 @@ export default function AdminDashboard() {
     }
   }
 
-  if (loading) {
-    return (
-      <div>
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold">
-            Treasury <span className="font-display text-lime">Overview</span>
-          </h1>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="card p-5">
-              <div className="skeleton h-3 w-20 mb-3" />
-              <div className="skeleton h-8 w-28" />
-            </div>
-          ))}
-        </div>
-        <div className="card p-5">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-10 w-full mb-2" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <OverviewSkeleton />;
 
   const pending = transactions.filter((t) => t.status === "PENDING");
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import PageSkeleton from "@/components/PageSkeleton";
 import SpotlightTour from "@/components/SpotlightTour";
 import RoleOnboarding from "@/components/RoleOnboarding";
 import SharedItemSpotlight from "@/components/SharedItemSpotlight";
@@ -246,16 +247,17 @@ export default function DashboardLayout({
     return (
       <div className="flex min-h-screen">
         {/* Sidebar skeleton */}
-        <div className="skeleton w-[200px] min-h-screen shrink-0" />
+        <div className="hidden min-h-screen w-[200px] shrink-0 border-r border-[var(--border)] p-4 md:block" aria-hidden="true">
+          <div className="skeleton mb-8 h-8 w-32 rounded-lg" />
+          {[0, 1, 2, 3, 4].map(item => <div key={item} className="skeleton mb-3 h-9 w-full rounded-lg" />)}
+        </div>
         {/* Content area skeleton */}
-        <div className="flex-1 flex flex-col gap-0">
+        <div className="min-w-0 flex-1 flex flex-col gap-0">
           {/* Header bar skeleton */}
-          <div className="skeleton h-14 w-full rounded-none" />
+          <div className="flex h-[68px] items-center justify-between border-b border-[var(--border)] px-6 md:px-8" aria-hidden="true"><div className="skeleton h-4 w-36 rounded" /><div className="skeleton h-10 w-24 rounded-full" /></div>
           {/* Card skeletons */}
-          <div className="flex-1 p-6 md:p-8 flex flex-col gap-4">
-            <div className="skeleton h-32 w-full" />
-            <div className="skeleton h-32 w-full" />
-            <div className="skeleton h-32 w-full" />
+          <div className="flex-1 p-6 pb-24 md:p-8">
+            <PageSkeleton pathname={pathname} />
           </div>
         </div>
       </div>

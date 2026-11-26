@@ -1,6 +1,6 @@
 export default function ReposLoading() {
   return (
-    <div className="flex flex-col gap-4 p-6 md:p-8">
+    <div className="flex flex-col gap-4">
       {/* Header */}
       <div className="skeleton h-8 w-36 rounded-lg" />
       {/* Repo list rows */}

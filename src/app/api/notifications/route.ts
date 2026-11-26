@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { notificationTargets } from "@/lib/notification-routing";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -19,7 +20,8 @@ export async function GET(req: NextRequest) {
     take: limit,
   }), prisma.notification.count({ where }), prisma.notification.count({ where: { userId: user.id, read: false } })]);
 
-  return NextResponse.json({ notifications, total, unreadCount, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
+  const targets = await notificationTargets(notifications, user);
+  return NextResponse.json({ notifications: notifications.map(item => ({ ...item, destination: targets.get(item.id) })), total, unreadCount, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
 }
 
 export async function PATCH(req: NextRequest) {

@@ -72,6 +72,11 @@ describe("BMC in-app responses", () => {
     expect(receipt).toContain("<b>Additional information</b>");
     expect(receipt).toContain("<i>Your additional information has been recorded.");
   });
+  it("renders app bold and italic formatting in the Telegram receipt", () => {
+    const receipt = formatBmcFeedbackReceipt({ wantedToDonate: true, deliberateCancellation: null, reason: "**Card declined** and *October was unpaid*", additionalInfo: null, responseSource: "APP" });
+    expect(receipt).toContain("<b>Card declined</b>");
+    expect(receipt).toContain("<i>October was unpaid</i>");
+  });
   it("edits the original DM with the complete app response and the addition button, then removes it", async () => {
     const f = fixture();
     await saveBmcFeedback(f.db, { id: "form", userId: "donor", source: "APP", body });

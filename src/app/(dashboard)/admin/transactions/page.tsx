@@ -2,7 +2,9 @@
 import { displayDate } from "@/lib/date-format";
 
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { TransactionsSkeleton, TransactionRowsSkeleton } from "@/components/PageSkeleton";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import RazorpayMark from "@/components/RazorpayMark";
@@ -144,6 +146,11 @@ function ProviderDetailsDialog({ open, loading, method, details, error, onClose 
 }
 
 export default function TransactionsPage() {
+  return <Suspense fallback={<TransactionsSkeleton />}><TransactionsView /></Suspense>;
+}
+
+function TransactionsView() {
+  const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,7 +158,7 @@ export default function TransactionsPage() {
   const [feedback, setFeedback] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [targetTransactionId, setTargetTransactionId] = useState("");
+  const [targetTransactionId, setTargetTransactionId] = useState(() => searchParams.get("transactionId")?.trim() || "");
   const openedTargetRef = useRef("");
   const [filters, setFilters] = useState(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -179,15 +186,18 @@ export default function TransactionsPage() {
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); setSelected(new Set()); }, 350); return () => clearTimeout(timer); }, [searchInput]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      setTargetTransactionId(params.get("transactionId")?.trim() || "");
+      setTargetTransactionId(searchParams.get("transactionId")?.trim() || "");
+      setPage(1);
+      openedTargetRef.current = "";
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [searchParams]);
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams({ page: String(page), limit: String(limit), sort: filters.sort, lifecycle: filters.lifecycle });
-    if (targetTransactionId) params.set("transactionId", targetTransactionId);
+    if (targetTransactionId) {
+      return new URLSearchParams({ transactionId: targetTransactionId, lifecycle: "ALL", page: "1", limit: String(limit) }).toString();
+    }
     if (search) params.set("search", search);
     for (const key of ["status", "direction", "currency", "type", "method"] as const) if (filters[key] !== "ALL") params.set(key, filters[key]);
     for (const key of ["dateFrom", "dateTo", "amountMin", "amountMax"] as const) if (filters[key]) params.set(key, filters[key]);
@@ -251,10 +261,11 @@ export default function TransactionsPage() {
       const target = transactions.find((transaction) => transaction.id === targetTransactionId);
       if (!target) return;
       openedTargetRef.current = targetTransactionId;
-      startEdit(target);
+      if (["true", "1"].includes(searchParams.get("reconcile") || "")) startEdit(target);
+      else document.getElementById(`transaction-${target.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [startEdit, targetTransactionId, transactions]);
+  }, [startEdit, targetTransactionId, transactions, searchParams]);
 
   async function revealProviderDetails(tx: Transaction) {
     setProviderDetails({ open: true, loading: true, method: tx.method, details: null, error: "" });
@@ -404,6 +415,7 @@ export default function TransactionsPage() {
 
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-3xl font-extrabold">All <span className="font-display text-lime">Transactions</span></h1><p className="mt-1 text-xs text-text-tertiary">{total.toLocaleString()} matching ledger entries</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><button onClick={() => window.open(`/api/transactions/export?${filterQuery}`, "_blank")} className="rounded-full border border-[var(--border)] px-4 py-2.5 font-mono text-[10px] uppercase text-text-secondary">Export filtered CSV</button><Link data-tour="log-transaction" href="/admin/transactions/new" className="rounded-full bg-lime px-5 py-2.5 text-center text-sm font-semibold text-bg-void">Record transaction</Link></div></div>
     <TransactionsNav />
+    {targetTransactionId && <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-lime/25 bg-lime/[0.06] px-4 py-3 text-sm"><span>Showing the transaction from your notification.</span><button type="button" onClick={resetForm} className="font-semibold text-lime underline underline-offset-4">Show all transactions</button></div>}
     {feedback && <div role="status" className={`mb-4 rounded-xl border p-4 text-sm ${feedback.tone === "success" ? "border-mint/20 bg-mint/8 text-mint" : "border-coral/20 bg-coral/8 text-coral"}`}>{feedback.text}</div>}
     {error && <div className="mb-4 rounded-xl border border-coral/20 bg-coral/8 p-4 text-sm text-coral">{error} <button className="underline" onClick={() => void load()}>Retry</button></div>}
     <div className="mb-3 flex flex-wrap items-center gap-2" aria-label="Quick provider view">
@@ -489,10 +501,10 @@ export default function TransactionsPage() {
     </div>
 
     <div className="card overflow-hidden">
-      {loading ? <div className="p-8 text-center text-sm text-text-tertiary">Loading transactions...</div> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div role="table" className="w-full">
+      {loading ? <TransactionRowsSkeleton /> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div role="table" className="w-full">
         <div role="row" className={`hidden border-b border-[var(--border)] lg:grid ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"}`}>{selectionMode && <div role="columnheader" />}<GridHeader>Description</GridHeader><GridHeader right>Amount</GridHeader><GridHeader right>Status</GridHeader><GridHeader right>Date</GridHeader><GridHeader right>Actions</GridHeader></div>
         <div role="rowgroup">
-        {transactions.map((tx) => { const formattedDate = formatDate(tx.date); return <Fragment key={tx.id}><div role="row" data-share-target={`transaction:${tx.id}`} className={`grid ${selectionMode ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"} gap-x-3 gap-y-3 border-b border-[var(--border)] p-4 lg:min-h-[136px] lg:items-center lg:gap-0 lg:p-0 ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"} ${tx.voidedAt ? "opacity-60" : ""}`}>
+        {transactions.map((tx) => { const formattedDate = formatDate(tx.date); return <Fragment key={tx.id}><div id={`transaction-${tx.id}`} role="row" aria-label={tx.id === targetTransactionId ? "Selected transaction" : undefined} data-share-target={`transaction:${tx.id}`} className={`grid ${selectionMode ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"} gap-x-3 gap-y-3 border-b border-[var(--border)] p-4 lg:min-h-[136px] lg:items-center lg:gap-0 lg:p-0 ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"} ${tx.voidedAt ? "opacity-60" : ""} ${tx.id === targetTransactionId ? "scroll-mt-24 bg-lime/10 ring-1 ring-inset ring-lime/40" : ""}`}>
           {selectionMode && <div role="cell" className="row-span-5 flex items-start pt-1 lg:row-span-1 lg:items-center lg:justify-center lg:p-2"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></div>}
           <div role="cell" className="min-w-0 lg:px-4 lg:py-5">
             <div className="flex min-w-0 items-start gap-2">

@@ -2,8 +2,11 @@
 import { displayDate } from "@/lib/date-format";
 
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { DonorSkeleton } from "@/components/PageSkeleton";
 import Image from "next/image";
+import Link from "next/link";
 import Dropdown from "@/components/Dropdown";
 import FormExample from "@/components/FormExample";
 import RazorpayDonationCard from "@/components/RazorpayDonationCard";
@@ -45,6 +48,12 @@ interface SummaryRow {
 }
 
 export default function DonorDashboard() {
+  return <Suspense fallback={<DonorSkeleton />}><DonorView /></Suspense>;
+}
+
+function DonorView() {
+  const searchParams = useSearchParams();
+  const targetId = searchParams.get("transactionId") || "";
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -91,7 +100,8 @@ export default function DonorDashboard() {
   // refreshing this one endpoint refreshes the whole overview.
   const load = useCallback(async () => {
     const query = new URLSearchParams({ scope: "mine", limit: "25", page: String(page) });
-    if (statusFilter !== "ALL") query.set("status", statusFilter);
+    if (!targetId && statusFilter !== "ALL") query.set("status", statusFilter);
+    if (targetId) { query.set("transactionId", targetId); query.set("page", "1"); }
     const res = await fetch(`/api/transactions?${query}`);
     if (!res.ok) throw new Error("Failed to load transactions");
     const data = await res.json();
@@ -99,7 +109,7 @@ export default function DonorDashboard() {
     setSummary(data.summary || []);
     setTotalPages(data.totalPages || 1);
     setLoadError("");
-  }, [page, statusFilter]);
+  }, [page, statusFilter, targetId]);
 
   const loadPaymentAccess = useCallback(async () => {
     const response = await fetch("/api/payments/access", { cache: "no-store" });
@@ -172,7 +182,7 @@ export default function DonorDashboard() {
   const donationCount = summary.reduce((sum, row) => sum + row._count._all, 0);
 
   const filteredTransactions =
-    statusFilter === "ALL"
+    targetId || statusFilter === "ALL"
       ? transactions
       : transactions.filter((t) => t.status === statusFilter);
 
@@ -365,15 +375,12 @@ export default function DonorDashboard() {
     }
   }
 
-  if (loading) {
-    return (
-      <div>
-        <div className="skeleton h-8 w-48 mb-8" />
-        <div className="skeleton h-20 w-full mb-4" />
-        <div className="skeleton h-40 w-full" />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (loading || !targetId) return;
+    document.getElementById(`transaction-${targetId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [loading, targetId, transactions]);
+
+  if (loading) return <DonorSkeleton />;
 
   return (
     <div className="pb-20 md:pb-0">
@@ -639,6 +646,7 @@ export default function DonorDashboard() {
         </div>
       )}
 
+      {targetId && <div role="status" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-lime/25 bg-lime/[0.06] px-4 py-3 text-sm"><span>Showing the transaction from your notification.</span><Link href="/donor" className="font-semibold text-lime underline underline-offset-4">Show all donations</Link></div>}
       {/* Transaction list */}
       {filteredTransactions.length === 0 ? (
         <div data-tour="donation-history" className="card p-8 text-center">
@@ -658,7 +666,9 @@ export default function DonorDashboard() {
           {filteredTransactions.map((tx) => (
             <div
               key={tx.id}
-              className="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0"
+              id={`transaction-${tx.id}`}
+              aria-label={tx.id === targetId ? "Selected transaction" : undefined}
+              className={`card scroll-mt-24 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 ${tx.id === targetId ? "!border-lime/40 !bg-lime/10" : ""}`}
             >
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">

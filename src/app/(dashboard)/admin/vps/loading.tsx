@@ -1,6 +1,6 @@
 export default function VpsLoading() {
   return (
-    <div className="flex flex-col gap-6 p-6 md:p-8">
+    <div className="flex flex-col gap-6">
       {/* Header */}
       <div className="skeleton h-8 w-40 rounded-lg" />
       {/* Server card grid */}

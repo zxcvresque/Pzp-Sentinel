@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BMC_FEEDBACK_TEXT_LIMIT } from "@/lib/bmc-feedback-response";
+import ResponseEditor from "@/components/ResponseEditor";
+import BmcResponseView from "@/components/BmcResponseView";
 
 export type BmcFeedbackView = {
   id: string; stage: string; wantedToDonate: boolean | null; deliberateCancellation: boolean | null;
@@ -41,29 +42,17 @@ export default function BmcFeedbackForm({ feedback, readOnly = false }: { feedba
   }
 
   const inputClass = "w-full rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-3 text-base text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--lime)] disabled:opacity-60";
-  const labelClass = "grid gap-2 text-sm text-[var(--text-primary)]";
-  return <section className="mt-6 border-t border-[var(--border)] pt-6">
-    <h2 className="text-lg font-semibold">{completed ? "Recorded response" : "Tell us what happened"}</h2>
-    {completed && <dl className="mt-4 grid gap-4 text-sm">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-4">
-        <dt className="text-[var(--text-secondary)]">Wanted to continue donating</dt>
-        <dd className="font-medium text-[var(--text-primary)]">{feedback.wantedToDonate ? "Yes" : "No"}</dd>
-      </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-4">
-        <dt className="text-[var(--text-secondary)]">Deliberately cancelled</dt>
-        <dd className="font-medium text-[var(--text-primary)]">{feedback.deliberateCancellation === null ? "Not asked" : feedback.deliberateCancellation ? "Yes" : "No"}</dd>
-      </div>
-      <div className="mt-1 grid gap-2">
-        <dt className="font-medium text-[var(--text-primary)]">Reason</dt>
-        <dd className="whitespace-pre-wrap break-words leading-6 text-[var(--text-secondary)]">{feedback.reason}</dd>
-      </div>
-      {feedback.additionalInfo && <div className="grid gap-2">
-        <dt className="font-medium text-[var(--text-primary)]">Additional information</dt>
-        <dd className="whitespace-pre-wrap break-words leading-6 text-[var(--text-secondary)]">{feedback.additionalInfo}</dd>
-      </div>}
-    </dl>}
+  const labelClass = "grid gap-2 text-sm font-medium text-[var(--text-primary)]";
+  return <section className="mt-6">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-card)] p-5 sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 className="text-lg font-semibold">{completed ? "Recorded response" : "Tell us what happened"}</h2>
+      <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${completed ? "bg-lime/10 text-lime" : "bg-amber/10 text-amber"}`}>{completed ? "Response saved" : "Awaiting response"}</span>
+    </div>
+    {completed && <BmcResponseView feedback={feedback} />}
     {readOnly && !completed && <p className="mt-3 text-[var(--text-secondary)]">The donor has not submitted this form yet.</p>}
-    {!readOnly && (!completed || !feedback.additionalInfoAt) && <form onSubmit={submit} className={`grid gap-4 ${completed ? "mt-6 border-t border-[var(--border)] pt-6" : "mt-5"}`}>
+    </div>
+    {!readOnly && (!completed || !feedback.additionalInfoAt) && <form onSubmit={submit} className={`grid gap-4 ${completed ? "mt-7" : "mt-5"}`}>
       {!completed ? <>
         <label className={labelClass}>Did this stop even though you still wanted to continue donating?
           <select required value={wanted} onChange={event => setWanted(event.target.value)} className={inputClass} disabled={saving}>
@@ -75,20 +64,15 @@ export default function BmcFeedbackForm({ feedback, readOnly = false }: { feedba
             <option value="" disabled>Choose an answer</option><option value="true">Yes</option><option value="false">No</option>
           </select>
         </label>}
-        <label className={labelClass}>What happened?
-          <textarea required maxLength={BMC_FEEDBACK_TEXT_LIMIT} rows={7} value={reason} onChange={event => setReason(event.target.value)} className={inputClass} disabled={saving} aria-describedby="feedback-reason-limit" />
-          <span id="feedback-reason-limit" className="text-xs text-[var(--text-secondary)]">{reason.length} / {BMC_FEEDBACK_TEXT_LIMIT} characters</span>
-        </label>
-      </> : <label className={labelClass}>
-        <span className="text-lg font-semibold">Add additional information</span>
-        <span id="feedback-addition-help" className="leading-6 text-[var(--text-secondary)]">One addition per form. Your original response stays saved, and admins will be notified.</span>
-        <textarea required maxLength={BMC_FEEDBACK_TEXT_LIMIT} rows={4} value={additional} onChange={event => setAdditional(event.target.value)} className={`${inputClass} min-h-32 resize-y`} disabled={saving} aria-describedby="feedback-addition-help feedback-addition-limit" />
-        <span id="feedback-addition-limit" className="text-right text-xs tabular-nums text-[var(--text-secondary)]">{additional.length} / {BMC_FEEDBACK_TEXT_LIMIT} characters</span>
-      </label>}
+        <ResponseEditor id="feedback-reason" label="What happened?" hint="Describe what happened. Your response is shared privately with admins." value={reason} onChange={setReason} disabled={saving} />
+      </> : <>
+        <h2 className="text-lg font-semibold">Add additional information</h2>
+        <ResponseEditor id="feedback-addition" label="Your addition" hint="One addition per form. Your original response stays saved, and admins will be notified." value={additional} onChange={setAdditional} disabled={saving} />
+      </>}
       {error && <p role="alert" className="text-sm text-[var(--coral)]">{error}</p>}
       <button disabled={saving || !!notice || (completed ? !additional.trim() : !wanted || !reason.trim() || (wanted === "false" && !deliberate))} className="min-h-11 w-full rounded-xl bg-[var(--lime)] px-5 py-3 text-sm font-semibold text-[var(--bg-deep)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--lime)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:justify-self-start">{saving ? "Saving…" : completed ? "Submit additional information" : "Submit response"}</button>
     </form>}
-    {!readOnly && completed && feedback.additionalInfoAt && <p className="mt-5 text-sm text-[var(--text-secondary)]">Your additional information has been recorded. This form is complete.</p>}
+    {completed && feedback.additionalInfoAt && <p className="mt-5 flex items-start gap-2 text-sm italic leading-6 text-text-secondary"><svg aria-hidden="true" className="mt-1 h-4 w-4 shrink-0 text-lime" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m5 12 4 4L19 6" /></svg>Additional information recorded. This form is complete.</p>}
     <p role="status" className={`${notice ? "mt-4" : ""} text-sm text-[var(--lime)]`}>{notice}</p>
   </section>;
 }
