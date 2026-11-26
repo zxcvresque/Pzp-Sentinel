@@ -55,6 +55,10 @@ git pull --ff-only origin main
 step "Installing dependencies…"
 npm ci
 
+step "Installing the isolated BMC login browser…"
+# Uses the current user's browser cache; Linux dependencies may use sudo.
+npx playwright install --with-deps chromium
+
 step "Normalizing legacy data before schema constraints…"
 # Older builds allowed duplicate tag names within one project. Merge their
 # implicit Task↔Tag links into the oldest tag before adding the composite

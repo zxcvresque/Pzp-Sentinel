@@ -238,7 +238,7 @@ export default function Sidebar({
     if (item.label === "Services") {
       return pathname.endsWith("/credentials") || pathname.endsWith("/vps") || pathname.endsWith("/alerts") || pathname.endsWith("/openrouter");
     }
-    if (item.label === "Transactions") return pathname.startsWith("/admin/transactions") || pathname === "/admin/reconciliation";
+    if (item.label === "Transactions") return pathname.startsWith("/admin/transactions") || pathname === "/admin/reconciliation" || pathname === "/admin/bmc";
     return false;
   }
 

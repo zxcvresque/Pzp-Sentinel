@@ -24,6 +24,7 @@ import { broadcastInlineToTelegramHtml, broadcastToTelegramHtml } from "./lib/br
 import { serviceReminderRepeat } from "./lib/service-templates";
 import { reconcileRecentRazorpaySubscriptionPayments } from "./lib/razorpay";
 import { reconcileDonationAnnouncements } from "./lib/donation-announcement";
+import { syncBmcAccountHistory } from "./lib/bmc-history-sync";
 import { notifyVpsAlertSubscribers } from "./lib/vps-alerts";
 import { handleSharedLinkStart } from "./lib/shared-link-bot";
 import { handleDonorEntry } from "./lib/donor-entry-bot";
@@ -253,6 +254,10 @@ async function reconcileProviderPayments() {
   if (providerReconciliationRunning) return;
   providerReconciliationRunning = true;
   try {
+    try {
+      const result = await syncBmcAccountHistory();
+      console.log("[bmc-history]", result);
+    } catch { console.error("[bmc-history] Verification unavailable; last complete history retained"); }
     try {
       const result = await reconcileRecentRazorpaySubscriptionPayments();
       console.log(`[razorpay-reconcile] checked=${result.checked}, recovered=${result.recovered}, skipped=${result.skipped}, errors=${result.errors.length}`);

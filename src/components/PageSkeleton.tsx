@@ -1,6 +1,7 @@
 import ServicesLoading from "@/app/(dashboard)/admin/services/loading";
 import VpsLoading from "@/app/(dashboard)/admin/vps/loading";
 import ReposLoading from "@/app/(dashboard)/admin/repos/loading";
+import { BmcConnectionSkeleton } from "./BmcConnection";
 
 function Line({ className = "" }: { className?: string }) {
   return <div className={`skeleton rounded-md ${className}`} />;
@@ -51,6 +52,7 @@ export function DonorSkeleton() {
 }
 
 export default function PageSkeleton({ pathname }: { pathname: string }) {
+  if (pathname === "/admin/bmc") return <BmcConnectionSkeleton />;
   if (pathname.startsWith("/notifications/feedback/")) return <FeedbackSkeleton />;
   if (pathname.startsWith("/notifications")) return <NotificationsSkeleton detail={pathname !== "/notifications"} />;
   if (pathname === "/admin/transactions") return <TransactionsSkeleton />;

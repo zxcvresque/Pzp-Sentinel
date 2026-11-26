@@ -7,13 +7,14 @@ const links = [
   { label: "Ledger", href: "/admin/transactions", key: "ledger" },
   { label: "Pending approvals", href: "/admin/transactions?status=PENDING", key: "pending" },
   { label: "Reconciliation", href: "/admin/reconciliation", key: "reconciliation" },
+  { label: "BMC connection", href: "/admin/bmc", key: "bmc" },
   { label: "Record transaction", href: "/admin/transactions/new", key: "record" },
 ] as const;
 
 export default function TransactionsNav() {
   const pathname = usePathname();
   const params = useSearchParams();
-  const current = pathname === "/admin/reconciliation"
+  const current = pathname === "/admin/bmc" ? "bmc" : pathname === "/admin/reconciliation"
     ? "reconciliation"
     : pathname === "/admin/transactions/new"
       ? "record"

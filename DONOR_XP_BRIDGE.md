@@ -74,6 +74,8 @@ List, detail and legacy-feed responses separate ledger state from evidence. Only
 
 Sentry must require both `state=PAID` and `xpEligible=true` before a new award. `REQUIRES_REVIEW` must never deduct existing XP or convert a previous grant into a reversal. Keep the original transaction identity when reviewing corrections. This consumer check must also be implemented in Sentry; adding fields to Sentinel alone does not enforce its award policy. Existing incorrect XP reversals require an audited restoration in Sentry, without duplicating an award.
 
+The [private BMC account-history integration](BMC_HISTORY_API.md) adds authenticated discovery at `/api/sentry-bridge/bmc/subscriptions` and the latest complete all-time monthly/one-time support snapshot at `/api/sentry-bridge/bmc/history`. Subscription lifecycle is separate from payment evidence: explicit cancellation/pause flags report `ACTIVE`, `PAUSED`, `CANCELLING` or `CANCELLED`; cancellation never reverses earlier paid charges. The admin connects or renews its encrypted account session inside Sentinel’s mobile/desktop website through an isolated server-side Incognito browser. Checks run every 15 minutes while the bot is online and audit evidence-backed confirmations/recoveries. Ambiguous matches and explicit refunds go to review; outages/missing records retain prior evidence and never trigger automatic XP deductions. This history API is evidence, not a replacement for donation-bridge award eligibility.
+
 An operator can preview and apply exact ledger corrections with:
 
 ```bash
