@@ -69,8 +69,7 @@ type DonationRow = Prisma.TransactionGetPayload<{ select: typeof donationSelect 
 const reversed: Prisma.TransactionWhereInput = {
   OR: [
     { voidedAt: { not: null } },
-    { method: "BMC", donationFrequency: "MONTHLY", bmcPaymentConfirmed: false },
-    ...["REFUND", "REVERSE", "DISPUTE", "FAILED", "UNCONFIRMED"].map(value => ({
+    ...["REFUND", "REVERSE", "DISPUTE", "FAILED"].map(value => ({
       providerState: { contains: value, mode: "insensitive" as const },
     })),
   ],
@@ -87,7 +86,7 @@ function eligible(from?: Date, to?: Date): Prisma.TransactionWhereInput {
 function serializeDonation(row: DonationRow) {
   const identity = donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id);
   const unconfirmed = row.method === "BMC" && row.donationFrequency === "MONTHLY" && !row.bmcPaymentConfirmed;
-  const isReversed = !!row.voidedAt || unconfirmed || /REFUND|REVERSE|DISPUTE|FAILED|UNCONFIRMED/i.test(row.providerState);
+  const isReversed = !!row.voidedAt || /REFUND|REVERSE|DISPUTE|FAILED/i.test(row.providerState);
   return {
     ...identity,
     transactionId: row.id,
@@ -104,7 +103,10 @@ function serializeDonation(row: DonationRow) {
     state: isReversed ? "REVERSED" as const : "PAID" as const,
     lifecycle: row.voidedAt ? "VOIDED" : "ACTIVE",
     paymentConfirmed: !unconfirmed && !isReversed,
-    reversalReason: isReversed ? row.voidReason || (unconfirmed ? "BMC subscription lifecycle does not confirm a successful payment; reconcile against paid charge history" : row.voidedAt ? "Voided in Sentinel" : row.providerState) : null,
+    verificationStatus: isReversed ? "REVERSED" : unconfirmed ? "REQUIRES_REVIEW" : "CONFIRMED",
+    xpEligible: !unconfirmed && !isReversed,
+    reviewReason: unconfirmed && !isReversed ? "Check BMC paid charge history before awarding new XP. Missing confirmation does not establish a failed payment or justify deducting existing XP." : null,
+    reversalReason: isReversed ? row.voidReason || (row.voidedAt ? "Voided in Sentinel" : row.providerState) : null,
   };
 }
 

@@ -62,12 +62,14 @@ describe("live donation queries", () => {
     expect(await getDonation("bmc:123")).toMatchObject({ id: "bmc:123", paymentId: "123" });
     expect(JSON.stringify(mocks.findMany.mock.calls[0][0])).toContain("bmc_support_pzp_123");
   });
-  it("holds unconfirmed BMC monthly lifecycle entries for reversal and preserves verified charges", async () => {
+  it("holds unconfirmed BMC monthly entries for review without claiming they failed", async () => {
     const bmc = { ...row, method: "BMC", providerPaymentId: null, bmcEventId: "bmc_monthly_sub_period_123", bmcPaymentConfirmed: false };
     mocks.findMany.mockResolvedValue([bmc]);
-    expect(await getDonation("tx1")).toMatchObject({ state: "REVERSED", paymentConfirmed: false, reversalReason: expect.stringContaining("does not confirm") });
+    expect(await getDonation("tx1")).toMatchObject({ state: "PAID", paymentConfirmed: false, xpEligible: false, verificationStatus: "REQUIRES_REVIEW", reversalReason: null });
     mocks.findMany.mockResolvedValue([{ ...bmc, bmcPaymentConfirmed: true }]);
-    expect(await getDonation("tx1")).toMatchObject({ state: "PAID", paymentConfirmed: true });
+    expect(await getDonation("tx1")).toMatchObject({ state: "PAID", paymentConfirmed: true, xpEligible: true, verificationStatus: "CONFIRMED" });
+    mocks.findMany.mockResolvedValue([{ ...bmc, providerState: "PAYMENT_FAILED", voidedAt: new Date(), voidReason: "Reviewed October paid history: no payment" }]);
+    expect(await getDonation("tx1")).toMatchObject({ state: "REVERSED", verificationStatus: "REVERSED", xpEligible: false, reversalReason: "Reviewed October paid history: no payment" });
   });
   it("does not return a row under its obsolete payment reference", async () => {
     mocks.findMany.mockResolvedValue([{ ...row, providerPaymentId: "pay_new" }]);

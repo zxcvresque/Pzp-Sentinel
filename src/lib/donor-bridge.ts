@@ -10,6 +10,9 @@ export type Donation = {
   frequency: "ONE_TIME" | "MONTHLY"; state: "PAID" | "REVERSED";
   historical?: boolean; transactionId?: string; reversalReason?: string;
   paymentConfirmed?: boolean;
+  verificationStatus?: "REVERSED" | "REQUIRES_REVIEW" | "CONFIRMED";
+  xpEligible?: boolean;
+  reviewReason?: string | null;
 };
 
 export function bridgeAuthorized(request: Request): boolean {
@@ -54,15 +57,18 @@ export async function refreshBridgeEvents() {
       const { id, provider, paymentId } = donorPaymentIdentity(row.method, row.providerPaymentId || row.order_payment || row.bmcEventId, row.id);
       const source = donations.get(id);
       const unconfirmed = row.method === "BMC" && row.donationFrequency === "MONTHLY" && !row.bmcPaymentConfirmed;
-      const state = row.voidedAt || row.isTest || (row.status && row.status !== "APPROVED") || (row.direction && row.direction !== "IN") || (row.type && row.type !== "DONATION") || unconfirmed || /REFUND|REVERSE|DISPUTE|FAILED|UNCONFIRMED/i.test(row.providerState) || source?.state === "REVERSED" ? "REVERSED" : "PAID";
+      const state = row.voidedAt || row.isTest || (row.status && row.status !== "APPROVED") || (row.direction && row.direction !== "IN") || (row.type && row.type !== "DONATION") || /REFUND|REVERSE|DISPUTE|FAILED/i.test(row.providerState) || source?.state === "REVERSED" ? "REVERSED" : "PAID";
       donations.set(id, {
         id, provider, paymentId, transactionId: row.id,
         telegramId: row.telegramId || row.guest_tg || source?.telegramId || null,
         name: row.name || row.guest_name || source?.name || "Unmatched donor",
         amount: String(row.amount), currency: row.currency, occurredAt: new Date(row.date).toISOString(),
         frequency: row.donationFrequency,
-        state, paymentConfirmed: state === "PAID",
-        reversalReason: row.voidReason || (unconfirmed ? "BMC subscription lifecycle does not confirm a successful payment; reconcile against paid charge history" : null) || source?.reversalReason || undefined,
+        state, paymentConfirmed: state === "PAID" && !unconfirmed,
+        verificationStatus: state === "REVERSED" ? "REVERSED" : unconfirmed ? "REQUIRES_REVIEW" : "CONFIRMED",
+        xpEligible: state === "PAID" && !unconfirmed,
+        reviewReason: unconfirmed && state === "PAID" ? "Check BMC paid charge history before awarding new XP. Missing confirmation does not establish a failed payment or justify deducting existing XP." : null,
+        reversalReason: state === "REVERSED" ? row.voidReason || source?.reversalReason || row.providerState : undefined,
       });
     }
     const latest = await client.query("SELECT DISTINCT ON (donation_id) donation_id,digest,payload FROM donor_bridge_events ORDER BY donation_id,seq DESC");
