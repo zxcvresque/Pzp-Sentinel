@@ -137,6 +137,9 @@ step "Building (clean .next, heap ${EFFECTIVE_HEAP_MB} MiB)…"
 rm -rf .next
 npm run build
 
+step "Checking donation identity migration runtime…"
+node --import tsx scripts/pin-donation-identities.ts --check
+
 # Pause both writers/readers only after the new build passes. An old worker
 # must not publish an unpinned ID for a row inserted during the cutover.
 step "Pausing PM2 for the bridge identity cutover…"

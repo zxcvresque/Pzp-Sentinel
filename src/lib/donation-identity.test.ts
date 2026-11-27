@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -22,4 +24,12 @@ it("rejects a webhook charge already claimed by history and a history charge alr
   await expect(db.exec(`INSERT INTO "Transaction" (id, method, "providerPaymentId") VALUES ('duplicate-webhook', 'BMC', 'pi_old')`)).rejects.toThrow("already belongs");
   await expect(db.exec(`INSERT INTO "Transaction" (id, method, "bmcHistoryPaymentId") VALUES ('duplicate-history', 'BMC', 'pi_new')`)).rejects.toThrow("already belongs");
   expect((await db.query('SELECT id FROM "Transaction" ORDER BY id')).rows).toEqual([{ id: "new" }, { id: "old" }]);
+});
+
+it("loads the deployment entry point in its actual Node/tsx format without touching the database", () => {
+  const output = execFileSync(process.execPath, ["--import", "tsx", "scripts/pin-donation-identities.ts", "--check"], {
+    cwd: resolve(import.meta.dirname, "../.."), encoding: "utf8", timeout: 10_000,
+    env: { ...process.env, DATABASE_URL: "postgresql://unused:unused@127.0.0.1:9/unused" },
+  });
+  expect(output).toContain("Donation identity migration entry point loaded successfully.");
 });

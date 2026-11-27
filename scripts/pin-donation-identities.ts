@@ -4,19 +4,30 @@ import { donorPaymentIdentity } from "../src/lib/donor-payment-id";
 
 // Run after db push, before restarting. Preserve currently published IDs; never
 // rename old donations to the new transaction-based format during an upgrade.
-try {
-  let pinned = 0;
-  for (;;) {
-    const rows = await prisma.transaction.findMany({
-      where: { bridgeDonationId: null }, take: 200, orderBy: { id: "asc" },
-      select: { id: true, method: true, providerPaymentId: true, bmcEventId: true, razorpayOrder: { select: { paymentId: true } } },
-    });
-    if (!rows.length) break;
-    await prisma.$transaction(rows.map(row => prisma.transaction.updateMany({
-      where: { id: row.id, bridgeDonationId: null },
-      data: { bridgeDonationId: donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id).id },
-    })));
-    pinned += rows.length;
-  }
-  console.log(`Preserved ${pinned} existing donation identities.`);
-} finally { await prisma.$disconnect(); }
+async function main() {
+  try {
+    if (process.argv.includes("--check")) {
+      console.log("Donation identity migration entry point loaded successfully.");
+      return;
+    }
+    let pinned = 0;
+    for (;;) {
+      const rows = await prisma.transaction.findMany({
+        where: { bridgeDonationId: null }, take: 200, orderBy: { id: "asc" },
+        select: { id: true, method: true, providerPaymentId: true, bmcEventId: true, razorpayOrder: { select: { paymentId: true } } },
+      });
+      if (!rows.length) break;
+      await prisma.$transaction(rows.map(row => prisma.transaction.updateMany({
+        where: { id: row.id, bridgeDonationId: null },
+        data: { bridgeDonationId: donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id).id },
+      })));
+      pinned += rows.length;
+    }
+    console.log(`Preserved ${pinned} existing donation identities.`);
+  } finally { await prisma.$disconnect(); }
+}
+
+main().catch(() => {
+  console.error("Donation identity preservation failed. Keep Sentinel stopped and resolve the migration before restarting.");
+  process.exitCode = 1;
+});
