@@ -9,13 +9,14 @@ import { encryptSecret } from "./secret-crypto";
 import { notifyAdmins } from "./notifications";
 import { monthlyReminderUpdate } from "./donation-frequency";
 import { bmcTransactionKeys } from "./bmc-webhook";
+import { bmcSyncFailure, type BmcSyncStage } from "./bmc-sync-error";
 
 export type BmcHistoryReview = { id: string; reason: string; transactionId?: string };
 export type BmcHistorySnapshot = {
   accountSlug: string; fetchedAt: string; coverage: readonly string[];
   subscriptions: BmcSubscription[]; payments: BmcAccountPayment[]; reviews: BmcHistoryReview[];
 };
-export type BmcSyncHealth = { lastAttemptAt: string; lastSuccessAt?: string; errorCode?: string; error?: string; reviewed?: number; confirmed?: number; recovered?: number };
+export type BmcSyncHealth = { lastAttemptAt: string; lastSuccessAt?: string; errorCode?: string; error?: string; failedStage?: BmcSyncStage; diagnosticCode?: string; reviewed?: number; confirmed?: number; recovered?: number };
 const snapshotPath = () => bmcPrivatePath("history.enc");
 const healthPath = () => bmcPrivatePath("health.enc");
 export async function readBmcHistorySnapshot() {
@@ -56,7 +57,9 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
     if (!["INR", "USD"].includes(payment.currency) || Number(payment.amount) <= 0) { reviews.push({ id: payment.id, reason: "UNSUPPORTED_AMOUNT_OR_CURRENCY" }); continue; }
     await prisma.$transaction(async db => {
       // Serialize against other history reconciliation runs at the database level.
-      await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))`;
+      // The lock function returns PostgreSQL void, which Prisma cannot decode.
+      // Acquire the same transaction-scoped lock while returning an integer.
+      await db.$queryRaw<Array<{ acquired: number }>>`SELECT 1::int AS acquired FROM pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))`;
       const link = await db.bmcSupporterLink.findUnique({ where: { accountSlug_supporterId: { accountSlug: bmcAccountSlug(), supporterId: payment.supporterId } } });
       const when = Date.parse(payment.occurredAt);
       const candidates = await db.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", isTest: false,
@@ -102,7 +105,7 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_RECOVERED", entityType: "Transaction", entityId: tx.id, transactionId: tx.id, after: { supportId: payment.supportId, source: payment.evidenceSource } } });
       recovered++;
       matchedIds.add(tx.id);
-    });
+    }, { maxWait: 10000, timeout: 20000 });
   }
   return { reviews, confirmed, recovered, matchedIds };
 }
@@ -121,13 +124,16 @@ export async function syncBmcAccountHistory() {
   const heartbeat = setInterval(() => { const now = new Date(); void utimes(lock, now, now).catch(() => undefined); }, 30_000);
   heartbeat.unref();
   const attempt = new Date().toISOString();
+  let stage: BmcSyncStage = "LOAD_SESSION";
   try {
     previous = await readBmcPrivate<BmcSyncHealth>(healthPath());
     const session = await bmcDashboardSession();
     if (!session.generation || !session.connectedBy || session.accountSlug !== bmcAccountSlug() || !session.studioCookie) throw new BmcHistoryError("SESSION_NOT_CONFIGURED", "Import your Helium BMC session in Sentinel to enable automatic verification.", 503);
     const old = await readBmcHistorySnapshot();
+    stage = "FETCH_HISTORY";
     const result = await fetchEntireBmcAccountHistory(session);
     if ((await bmcDashboardSession()).generation !== session.generation) throw new BmcHistoryError("CONNECTION_CHANGED", "The BMC connection changed during sync. Try again.", 409);
+    stage = "RECONCILE_LEDGER";
     const reconciliation = await reconcileHistory(result.payments, session.connectedBy, session.generation);
     // Compare both ways: subscription updates may have produced legacy ledger
     // rows that never existed in paid history. Flag these without voiding them.
@@ -142,8 +148,10 @@ export async function syncBmcAccountHistory() {
     const subscriptions = [...result.subscriptions.map(subscription => ({ ...subscription, lastSeenAt: result.fetchedAt, missingFromLatestCheck: false })),
       ...missingSubscriptions.map(subscription => ({ ...subscription, lastSeenAt: subscription.lastSeenAt || old?.fetchedAt, missingFromLatestCheck: true }))];
     const reviews = [...reconciliation.reviews, ...missingLedger, ...disappeared.map(p => ({ id: p.id, reason: "PREVIOUSLY_RECORDED_PAYMENT_NOT_RETURNED" }))];
+    stage = "SAVE_HISTORY";
     await writeBmcPrivate(snapshotPath(), { ...result, subscriptions, accountSlug: session.accountSlug, payments: [...result.payments, ...disappeared], reviews });
     await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: result.fetchedAt, reviewed: reviews.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered });
+    stage = "NOTIFY_ADMINS";
     const newReviews = reviews.filter(row => !old?.reviews.some(prior => prior.id === row.id && prior.reason === row.reason));
     const lifecycleChanges = old ? result.subscriptions.filter(row => {
       const prior = old.subscriptions.find(before => before.id === row.id);
@@ -157,9 +165,11 @@ export async function syncBmcAccountHistory() {
     if (newReviews.length || reconciliation.recovered) await notifyAdmins({ type: "SYSTEM", title: "BMC history verification completed", message: `${result.payments.length} recorded payments checked. ${reconciliation.confirmed} confirmed, ${reconciliation.recovered} recovered, ${newReviews.length} new items need review.`, actionUrl: "/admin/bmc", priority: "HIGH" });
     return { checked: result.payments.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, reviews: reviews.length };
   } catch (error) {
-    const known = error instanceof BmcHistoryError ? error : new BmcHistoryError("SYNC_FAILED", "BMC verification could not finish. The previous complete history is retained.", 503);
-    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: previous?.lastSuccessAt, errorCode: known.code, error: known.message });
+    const failure = bmcSyncFailure(error, stage);
+    const known = failure.error;
+    console.warn("[bmc-history] Verification failed", { stage, code: known.code, diagnosticCode: failure.diagnosticCode });
+    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: previous?.lastSuccessAt, errorCode: known.code, error: known.message, failedStage: stage, diagnosticCode: failure.diagnosticCode });
     if (known.code !== previous?.errorCode && known.code !== "SESSION_NOT_CONFIGURED") await notifyAdmins({ type: "SYSTEM", title: "BMC verification needs attention", message: known.message, actionUrl: "/admin/bmc", priority: "HIGH" });
-    return { error: known.message, code: known.code };
+    return { error: known.message, code: known.code, failedStage: stage, ...(failure.diagnosticCode ? { diagnosticCode: failure.diagnosticCode } : {}) };
   } finally { clearInterval(heartbeat); await rm(lock, { recursive: true, force: true }); }
 }

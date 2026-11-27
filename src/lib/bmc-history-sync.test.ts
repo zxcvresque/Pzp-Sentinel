@@ -2,10 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const mocks = vi.hoisted(() => ({ history: vi.fn(), session: vi.fn(), notify: vi.fn(), link: vi.fn(), candidates: vi.fn(), update: vi.fn(), create: vi.fn(), audit: vi.fn(), ledger: vi.fn() }));
-vi.mock("./db", () => ({ prisma: { transaction: { findMany: mocks.ledger }, $transaction: async (callback: (tx: object) => unknown) => callback({
-  $queryRaw: vi.fn(), bmcSupporterLink: { findUnique: mocks.link }, transaction: { findMany: mocks.candidates, updateMany: mocks.update, create: mocks.create }, auditLog: { create: mocks.audit }, user: { updateMany: vi.fn() },
-}) } }));
+const mocks = vi.hoisted(() => ({ history: vi.fn(), session: vi.fn(), notify: vi.fn(), link: vi.fn(), candidates: vi.fn(), update: vi.fn(), create: vi.fn(), audit: vi.fn(), ledger: vi.fn(), raw: vi.fn(), transaction: vi.fn() }));
+vi.mock("./db", () => ({ prisma: { transaction: { findMany: mocks.ledger }, $transaction: mocks.transaction } }));
 vi.mock("./notifications", () => ({ notifyAdmins: mocks.notify }));
 vi.mock("./bmc-account-history", async original => ({ ...await original<object>(), fetchEntireBmcAccountHistory: mocks.history }));
 vi.mock("./bmc-history", async original => ({ ...await original<object>(), bmcDashboardSession: mocks.session }));
@@ -23,6 +21,9 @@ beforeEach(async () => {
   mocks.history.mockResolvedValue({ subscriptions: [], payments: [payment], fetchedAt: new Date().toISOString(), coverage: ["MONTHLY_SUPPORT", "ONE_TIME_SUPPORT"] });
   mocks.link.mockResolvedValue({ userId: "donor" }); mocks.candidates.mockResolvedValue([]); mocks.update.mockResolvedValue({ count: 1 }); mocks.create.mockResolvedValue({ id: "new1" });
   mocks.ledger.mockResolvedValue([]);
+  mocks.transaction.mockImplementation(async (callback: (tx: object) => unknown) => callback({
+    $queryRaw: mocks.raw, bmcSupporterLink: { findUnique: mocks.link }, transaction: { findMany: mocks.candidates, updateMany: mocks.update, create: mocks.create }, auditLog: { create: mocks.audit }, user: { updateMany: vi.fn() },
+  }));
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 it("matches an actual charge to one unique, correctly attributed ledger entry", () => {
@@ -41,6 +42,26 @@ it("confirms evidence with an audit and is idempotent when replayed", async () =
   mocks.candidates.mockResolvedValue([{ ...transaction, bmcPaymentConfirmed: true }]);
   expect(await syncBmcAccountHistory()).toMatchObject({ confirmed: 0 });
   expect(mocks.audit).toHaveBeenCalledOnce();
+});
+it("returns a Prisma-supported integer from the transaction-scoped PostgreSQL lock", async () => {
+  mocks.candidates.mockResolvedValue([transaction]);
+  mocks.raw.mockImplementation(async (query: TemplateStringsArray) => {
+    if (!query.join("").startsWith("SELECT 1::int AS acquired FROM pg_advisory_xact_lock(")) throw Object.assign(Error("UnsupportedNativeDataType: void"), { code: "P2010" });
+    return [{ acquired: 1 }];
+  });
+  expect(await syncBmcAccountHistory()).toMatchObject({ confirmed: 1 });
+  expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { maxWait: 10000, timeout: 20000 });
+});
+it("identifies a ledger/database failure, keeps the old snapshot and never exposes raw provider/SQL secrets", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  await writeBmcPrivate(bmcPrivatePath("history.enc"), { accountSlug: "creator", fetchedAt: "2026-11-20T00:00:00Z", coverage: [], subscriptions: [], payments: [payment], reviews: [] });
+  mocks.raw.mockRejectedValue(Object.assign(Error("private-cookie: secret; SQL contains donor data"), { code: "P2010" }));
+  const result = await syncBmcAccountHistory();
+  expect(result).toMatchObject({ code: "SYNC_DATABASE_FAILED", failedStage: "RECONCILE_LEDGER", diagnosticCode: "P2010" });
+  expect((await readBmcHistorySnapshot())?.fetchedAt).toBe("2026-11-20T00:00:00Z");
+  expect(mocks.update).not.toHaveBeenCalled(); expect(mocks.create).not.toHaveBeenCalled();
+  expect(JSON.stringify([result, warn.mock.calls, mocks.notify.mock.calls])).not.toMatch(/private-cookie|donor data|SQL contains/);
+  warn.mockRestore();
 });
 it("holds unmapped records for review without creating income or awards", async () => {
   mocks.link.mockResolvedValue(null);
