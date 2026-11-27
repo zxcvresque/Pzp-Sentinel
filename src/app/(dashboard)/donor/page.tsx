@@ -1,5 +1,5 @@
 "use client";
-import { displayDate } from "@/lib/date-format";
+import { displayTransactionDate } from "@/lib/date-format";
 
 
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -33,6 +33,7 @@ interface Transaction {
   description: string;
   status: string;
   date: string;
+  bmcPaidDate?: string | null;
   attachments?: string[];
   isTest?: boolean;
   providerVerified?: boolean;
@@ -676,7 +677,7 @@ function DonorView() {
                   {tx.isTest && <span className="ml-2 rounded bg-violet/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-violet">Test</span>}
                 </div>
                 <div className="text-text-tertiary text-xs mt-1">
-                  <span className="mr-2">{displayDate(new Date(tx.date))}</span>
+                  <span className="mr-2">{displayTransactionDate(tx)}{tx.method === "BMC" && <span className="ml-1 text-text-tertiary" title="BMC payment date in UTC">UTC</span>}</span>
                   <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
                   <span className="ml-1">&middot; paid in {tx.currency}</span>
                 </div>

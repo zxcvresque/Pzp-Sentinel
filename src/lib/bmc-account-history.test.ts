@@ -47,7 +47,7 @@ it("discovers all subscriptions including cancelled ones, exhausts history and o
   expect(fetcher.mock.calls.every(([url]) => !String(url).includes("untrusted"))).toBe(true);
 });
 it("rejects repeated one-time pages instead of looping or duplicating income", async () => {
-  const fetcher = vi.fn().mockResolvedValueOnce(subscriptions([])).mockResolvedValue(Response.json({ view: html() }));
+  const fetcher = vi.fn().mockResolvedValueOnce(subscriptions([])).mockImplementation(async () => Response.json({ view: html() }));
   await expect(fetchEntireBmcAccountHistory(session, fetcher)).rejects.toMatchObject({ code: "INVALID_PROVIDER_DATA" });
 });
 it("a session error aborts the complete fetch rather than returning partial history", async () => {

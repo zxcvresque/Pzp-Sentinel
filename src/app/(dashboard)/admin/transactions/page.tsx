@@ -1,5 +1,5 @@
 "use client";
-import { displayDate } from "@/lib/date-format";
+import { displayTransactionDate } from "@/lib/date-format";
 
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,6 +40,7 @@ interface Transaction {
   providerVerified?: boolean;
   providerState?: string | null;
   date: string;
+  bmcPaidDate?: string | null;
   attachments: string[];
   reviewNote?: string | null;
   fromUser?: Person | null;
@@ -76,11 +77,11 @@ function emptyTransactionForm() {
   };
 }
 
-function formatDate(value: string) {
-  const date = new Date(value);
+function formatDate(tx: Transaction) {
+  const date = new Date(tx.date);
   return {
-    day: displayDate(date),
-    time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).toLowerCase(),
+    day: displayTransactionDate(tx),
+    time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: tx.method === "BMC" ? "UTC" : "Asia/Kolkata" }).toLowerCase() + (tx.method === "BMC" ? " UTC" : " IST"),
   };
 }
 
@@ -504,7 +505,7 @@ function TransactionsView() {
       {loading ? <TransactionRowsSkeleton /> : transactions.length === 0 ? <div className="p-8 text-center text-sm text-text-secondary">No transactions match these filters.</div> : <div role="table" className="w-full">
         <div role="row" className={`hidden border-b border-[var(--border)] lg:grid ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"}`}>{selectionMode && <div role="columnheader" />}<GridHeader>Description</GridHeader><GridHeader right>Amount</GridHeader><GridHeader right>Status</GridHeader><GridHeader right>Date</GridHeader><GridHeader right>Actions</GridHeader></div>
         <div role="rowgroup">
-        {transactions.map((tx) => { const formattedDate = formatDate(tx.date); return <Fragment key={tx.id}><div id={`transaction-${tx.id}`} role="row" aria-label={tx.id === targetTransactionId ? "Selected transaction" : undefined} data-share-target={`transaction:${tx.id}`} className={`grid ${selectionMode ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"} gap-x-3 gap-y-3 border-b border-[var(--border)] p-4 lg:min-h-[136px] lg:items-center lg:gap-0 lg:p-0 ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"} ${tx.voidedAt ? "opacity-60" : ""} ${tx.id === targetTransactionId ? "scroll-mt-24 bg-lime/10 ring-1 ring-inset ring-lime/40" : ""}`}>
+        {transactions.map((tx) => { const formattedDate = formatDate(tx); return <Fragment key={tx.id}><div id={`transaction-${tx.id}`} role="row" aria-label={tx.id === targetTransactionId ? "Selected transaction" : undefined} data-share-target={`transaction:${tx.id}`} className={`grid ${selectionMode ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"} gap-x-3 gap-y-3 border-b border-[var(--border)] p-4 lg:min-h-[136px] lg:items-center lg:gap-0 lg:p-0 ${selectionMode ? "lg:grid-cols-[2rem_minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]" : "lg:grid-cols-[minmax(0,1fr)_6.5rem_7rem_7.5rem_12rem]"} ${tx.voidedAt ? "opacity-60" : ""} ${tx.id === targetTransactionId ? "scroll-mt-24 bg-lime/10 ring-1 ring-inset ring-lime/40" : ""}`}>
           {selectionMode && <div role="cell" className="row-span-5 flex items-start pt-1 lg:row-span-1 lg:items-center lg:justify-center lg:p-2"><input aria-label={`Select ${tx.description}`} type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSelected(tx.id)} className="h-4 w-4 accent-[var(--lime)]" /></div>}
           <div role="cell" className="min-w-0 lg:px-4 lg:py-5">
             <div className="flex min-w-0 items-start gap-2">

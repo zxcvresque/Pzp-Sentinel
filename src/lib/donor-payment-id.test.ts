@@ -12,3 +12,10 @@ it("keeps distinct providers and periods distinct", () => {
   expect(donorPaymentIdentity("UPI", null, "tx").id).toBe("manual:tx");
   expect(donorPaymentIdentity("BMC", "bmc_membership_123", "tx").id).not.toBe("bmc:123");
 });
+
+it("pins identity when references, provider metadata and account slug change", () => {
+  const pinned = "bmc:16287848";
+  expect(donorPaymentIdentity("BMC", "bmc_support_pzp_16287848", "tx", pinned).id).toBe(pinned);
+  vi.stubEnv("BMC_ACCOUNT_SLUG", "different");
+  expect(donorPaymentIdentity("BMC", "pi_added_later", "tx", pinned)).toMatchObject({ id: pinned, paymentId: "pi_added_later" });
+});

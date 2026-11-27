@@ -81,15 +81,27 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
   const cookie = target.hostname === "studio.buymeacoffee.com" ? session.studioCookie : session.cookie;
   if (!cookie || /[\r\n]/.test(cookie)) throw new BmcHistoryError("SESSION_EXPIRED", "Import a fresh Helium BMC session in Sentinel to read the complete account history.", 503);
   const fetcher = options?.fetcher || fetch;
-  let response: Response;
-  try {
-    response = await fetcher(url, {
-      method: "GET", headers: { Accept: "application/json", Cookie: cookie, "X-Requested-With": "XMLHttpRequest",
-        Origin: "https://studio.buymeacoffee.com", Referer: "https://studio.buymeacoffee.com/",
-        ...(session.xsrfToken ? { "X-XSRF-TOKEN": session.xsrfToken } : {}),
-      }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(15000),
-    });
-  } catch { throw new BmcHistoryError("PROVIDER_UNAVAILABLE", "BMC history could not be reached. Try again later.", 503); }
+  const endpoint = target.hostname === "studio.buymeacoffee.com" ? "one-time history"
+    : target.pathname.endsWith("/renewal_history") ? "monthly history" : "subscription list";
+  let response: Response | undefined;
+  // GETs are safe to replay. Never retry permission/session failures or treat
+  // an unavailable page as an empty page; complete history is all-or-nothing.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      response = await fetcher(url, {
+        method: "GET", headers: { Accept: "application/json", Cookie: cookie, "X-Requested-With": "XMLHttpRequest",
+          Origin: "https://studio.buymeacoffee.com", Referer: "https://studio.buymeacoffee.com/",
+          ...(session.xsrfToken ? { "X-XSRF-TOKEN": session.xsrfToken } : {}),
+        }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(15000),
+      });
+      if (![500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      await response.body?.cancel();
+    } catch {
+      if (attempt === 2) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} could not be reached after three attempts. The last complete history is retained.`, 503);
+    }
+    await new Promise(resolve => setTimeout(resolve, 300 * 2 ** attempt));
+  }
+  if (!response) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} is unavailable. The last complete history is retained.`, 503);
   // Persist provider-issued rotations, never credentials supplied by a caller.
   // Imported/legacy sessions remain read-only until connected through Sentinel.
   if (session.generation && response.ok && !options?.fetcher) {
@@ -120,8 +132,18 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
   if (response.status === 403) throw new BmcHistoryError("PROVIDER_ACCESS_DENIED", "BMC denied access. Check the dashboard session and account permissions.", 503);
   if (response.status === 429) throw new BmcHistoryError("PROVIDER_RATE_LIMIT", "BMC rate limited history reads. Try again later.", 503);
   if (response.status === 404) throw new BmcHistoryError("HISTORY_NOT_FOUND", "Subscription history is unavailable for this account.", 404);
-  if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", "BMC returned no readable payment history.", 503);
+  if (!response.ok) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} failed (HTTP ${response.status}). The last complete history is retained; retry the check later.`, 503);
+  // Some dashboard responses contain JSON under a text/html content type.
+  // Validate the body instead of rejecting readable history solely by a header.
+  let raw: string;
+  try { raw = await response.text(); }
+  catch { throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} response could not be fully read (HTTP ${response.status}). The last complete history is retained.`, 503); }
   let data: unknown;
-  try { data = await response.json(); } catch { throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned invalid history JSON."); }
+  try { data = JSON.parse(raw); }
+  catch {
+    if (/<form[^>]+action=["'][^"']*\/login|type=["']password["']/i.test(raw)) throw new BmcHistoryError("SESSION_EXPIRED", `BMC ${endpoint} returned its sign-in page. Update the session from Helium in Sentinel.`, 503);
+    const json = response.headers.get("content-type")?.includes("json");
+    throw new BmcHistoryError(json ? "INVALID_PROVIDER_DATA" : "PROVIDER_UNAVAILABLE", `BMC ${endpoint} returned ${json ? "invalid JSON" : "an unreadable response"} (HTTP ${response.status}). The last complete history is retained.`, 503);
+  }
   return data;
 }

@@ -77,3 +77,16 @@ describe("donor bridge", () => {
     expect(mocks.query).toHaveBeenCalledWith("ROLLBACK"); expect(mocks.release).toHaveBeenCalledOnce();
   });
 });
+
+it("merges a legacy provider alias into a pinned ledger identity without appending a second donation", async () => {
+  vi.stubEnv("BMC_ACCOUNT_SLUG", "account");
+  mocks.query.mockImplementation(async (sql: string) => {
+    if (sql.startsWith("SELECT payload")) return { rows: [{ payload: { ...donation, id: "bmc:123" } }] };
+    if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", bridgeDonationId: "bmc:pinned", method: "BMC", bmcEventId: "bmc_support_account_123", providerPaymentId: "pi_added", telegramId: "574705248", amount: "5", currency: "USD", date: donation.occurredAt, donationFrequency: "ONE_TIME", bmcPaymentConfirmed: true, providerState: "CAPTURED" }] };
+    return { rows: [] };
+  });
+  await refreshBridgeEvents();
+  const writes = mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
+  expect(writes).toHaveLength(1);
+  expect(JSON.parse(writes[0][1][2])).toMatchObject({ id: "bmc:pinned", donorKey: "telegram:574705248", idempotencyKey: "sentinel:transaction:tx1", aliases: expect.arrayContaining(["bmc:123", "bmc:pi_added"]) });
+});

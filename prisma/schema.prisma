@@ -299,6 +299,13 @@ model Transaction {
   // Provider payment ID for one-time and recurring payments. Unique so
   // webhook retries and recovery checks cannot duplicate income.
   providerPaymentId             String?           @unique
+  // Public identity is pinned once; enriching provider metadata cannot create a new award.
+  bridgeDonationId              String?           @unique
+  // Separate history claims preserve the original webhook/payment reference.
+  bmcHistoryPaymentId           String?           @unique
+  bmcHistorySupportId           String?           @unique
+  bmcReviewReason               String?
+  bmcPaidDate                   String?
   razorpaySubscriptionId        String?
   // Encrypted provider metadata (payer email/name/note/payment context). Never
   // expose this ciphertext through general transaction APIs.

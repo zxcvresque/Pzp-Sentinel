@@ -130,15 +130,24 @@ SQL
 step "Applying Prisma schema…"
 npx prisma db push --accept-data-loss
 
-step "Installing durable donation webhook triggers…"
-npx prisma db execute --file scripts/sentry-webhook-triggers.sql
-
 step "Regenerating Prisma client…"
 npx prisma generate
 
 step "Building (clean .next, heap ${EFFECTIVE_HEAP_MB} MiB)…"
 rm -rf .next
 npm run build
+
+# Pause both writers/readers only after the new build passes. An old worker
+# must not publish an unpinned ID for a row inserted during the cutover.
+step "Pausing PM2 for the bridge identity cutover…"
+pm2 stop sentinel-web sentinel-bot
+
+step "Preserving existing bridge donation identities…"
+npx prisma db execute --file scripts/donation-identity.sql
+node --import tsx scripts/pin-donation-identities.ts
+
+step "Installing durable donation webhook triggers…"
+npx prisma db execute --file scripts/sentry-webhook-triggers.sql
 
 step "Restarting PM2 (sentinel-web + sentinel-bot)…"
 pm2 restart sentinel-web sentinel-bot

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   const rows = transactions.map((tx) => [
     tx.fromUser?.telegramId || tx.razorpayOrder?.invite?.telegramId || "",
-    displayDate(tx.date),
+    displayTransactionDate(tx),
     escapeCsv(tx.description),
     Number(tx.amount).toFixed(2),
     tx.currency,
@@ -63,8 +63,8 @@ export async function GET(request: NextRequest) {
     tx.status,
     tx.voidedAt ? "VOIDED" : "ACTIVE",
     escapeCsv(tx.voidReason || ""),
-    escapeCsv(donorPaymentIdentity(tx.method, tx.providerPaymentId || tx.razorpayOrder?.paymentId || tx.bmcEventId, tx.id).id),
-    escapeCsv(donorPaymentIdentity(tx.method, tx.providerPaymentId || tx.razorpayOrder?.paymentId || tx.bmcEventId, tx.id).paymentId),
+    escapeCsv(donorPaymentIdentity(tx.method, tx.providerPaymentId || tx.razorpayOrder?.paymentId || tx.bmcEventId, tx.id, tx.bridgeDonationId).id),
+    escapeCsv(donorPaymentIdentity(tx.method, tx.providerPaymentId || tx.razorpayOrder?.paymentId || tx.bmcEventId, tx.id, tx.bridgeDonationId).paymentId),
     tx.id, new Date(tx.date).toISOString(), tx.donationFrequency, tx.providerState || "",
     String(tx.providerVerified), String(Boolean(tx.reviewedById)), String(tx.isTest),
   ]);
@@ -82,4 +82,4 @@ export async function GET(request: NextRequest) {
     },
   });
 }
-import { displayDate } from "@/lib/date-format";
+import { displayTransactionDate } from "@/lib/date-format";

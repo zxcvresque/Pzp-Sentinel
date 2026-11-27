@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ findMany: vi.fn() }));
-vi.mock("./db", () => ({ prisma: { transaction: { findMany: mocks.findMany } } }));
+const mocks = vi.hoisted(() => ({ findMany: vi.fn(), groupBy: vi.fn(), count: vi.fn(), transaction: vi.fn() }));
+vi.mock("./db", () => ({ prisma: { transaction: { findMany: mocks.findMany, groupBy: mocks.groupBy, count: mocks.count }, $transaction: mocks.transaction } }));
 import { getDonation, listDonations, parseDonationQuery } from "./donor-bridge-donations";
 
 const row = {
@@ -10,7 +10,10 @@ const row = {
   donationFrequency: "MONTHLY", voidedAt: null, voidReason: null, providerState: "CAPTURED",
   fromUser: { telegramId: "6848424735", name: "Donor" }, razorpayOrder: null,
 };
-beforeEach(() => { vi.clearAllMocks(); mocks.findMany.mockResolvedValue([]); });
+beforeEach(() => {
+  vi.clearAllMocks(); mocks.findMany.mockResolvedValue([]);
+  mocks.transaction.mockImplementation(async run => run({ transaction: { findMany: mocks.findMany, groupBy: mocks.groupBy, count: mocks.count } }));
+});
 afterEach(() => vi.unstubAllEnvs());
 
 describe("live donation queries", () => {
@@ -85,4 +88,41 @@ describe("live donation queries", () => {
     expect(await getDonation("unknown:secret")).toBeNull();
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
+});
+
+it("groups a Telegram donor independently of display names and provider references", async () => {
+  mocks.findMany.mockResolvedValue([
+    { ...row, id: "one", bridgeDonationId: "bmc:old", method: "BMC", donationFrequency: "ONE_TIME", bmcPaymentConfirmed: true, providerPaymentId: "pi_new", fromUser: { telegramId: "574705248", name: "Omar" } },
+    { ...row, id: "two", method: "UPI", fromUser: { telegramId: "574705248", name: "Changed name" } },
+  ]);
+  mocks.groupBy.mockResolvedValue([{ currency: "INR", _sum: { amount: "100.00" }, _count: { _all: 2 } }]);
+  mocks.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+  const page = await listDonations(parseDonationQuery(new URLSearchParams("telegramId=574705248&limit=2")));
+  expect(page.donor).toMatchObject({ telegramId: "574705248", donorKey: "telegram:574705248", donationCount: 2, reviewCount: 1, reversedCount: 0, totals: [{ currency: "INR", amount: "100.00", donationCount: 2 }] });
+  expect(page.donations.map(d => d.donorKey)).toEqual(["telegram:574705248", "telegram:574705248"]);
+  expect(page.donations.map(d => d.idempotencyKey)).toEqual(["sentinel:transaction:one", "sentinel:transaction:two"]);
+  expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "RepeatableRead" });
+  const where = JSON.stringify(mocks.findMany.mock.calls[0][0].where);
+  expect(where).toContain('"telegramId":"574705248"');
+  expect(where).not.toMatch(/Omar|Changed name|providerPaymentId/);
+  expect(mocks.groupBy.mock.calls[0][0].where).not.toHaveProperty("date");
+});
+it.each(["abc", "0", "-123", "123.4", "", "123456789012345678901"])("rejects malformed Telegram ID %s", telegramId => {
+  expect(() => parseDonationQuery(new URLSearchParams({ telegramId }))).toThrow("telegramId");
+});
+it("resolves old BMC references to the pinned donation instead of emitting another donation", async () => {
+  vi.stubEnv("BMC_ACCOUNT_SLUG", "pzp");
+  mocks.findMany.mockResolvedValue([{ ...row, method: "BMC", donationFrequency: "ONE_TIME", bridgeDonationId: "bmc:pinned", providerPaymentId: "pi_added", bmcEventId: "bmc_support_pzp_16287848", bmcHistorySupportId: "21013203", bmcHistoryPaymentId: "pi_added" }]);
+  for (const alias of ["bmc:pinned", "bmc:16287848", "bmc:21013203", "bmc:pi_added", "tx1"]) {
+    expect(await getDonation(alias)).toMatchObject({ id: "bmc:pinned", transactionId: "tx1", donorKey: "telegram:6848424735", idempotencyKey: "sentinel:transaction:tx1" });
+  }
+});
+it("does not permit XP for an unmatched donor", async () => {
+  mocks.findMany.mockResolvedValue([{ ...row, fromUser: null }]);
+  expect(await getDonation("tx1")).toMatchObject({ telegramId: null, donorKey: null, xpEligible: false });
+});
+
+it("withholds new XP for a history refund awaiting review without fabricating a reversal", async () => {
+  mocks.findMany.mockResolvedValue([{ ...row, method: "BMC", bmcPaymentConfirmed: true, bmcReviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW" }]);
+  expect(await getDonation("tx1")).toMatchObject({ state: "PAID", verificationStatus: "REQUIRES_REVIEW", xpEligible: false, reviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW", reversalReason: null });
 });

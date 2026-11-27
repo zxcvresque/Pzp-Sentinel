@@ -39,7 +39,7 @@ it("confirms evidence with an audit and is idempotent when replayed", async () =
   mocks.candidates.mockResolvedValue([transaction]);
   expect(await syncBmcAccountHistory()).toMatchObject({ confirmed: 1, recovered: 0 });
   expect(mocks.audit).toHaveBeenCalledOnce();
-  mocks.candidates.mockResolvedValue([{ ...transaction, bmcPaymentConfirmed: true }]);
+  mocks.candidates.mockResolvedValue([{ ...transaction, bmcPaymentConfirmed: true, bmcHistoryPaymentId: payment.paymentId, bmcHistorySupportId: payment.supportId, bmcPaidDate: payment.occurredAt.slice(0, 10) }]);
   expect(await syncBmcAccountHistory()).toMatchObject({ confirmed: 0 });
   expect(mocks.audit).toHaveBeenCalledOnce();
 });
@@ -124,4 +124,60 @@ it("flags a ledger-only monthly credit without reversing it or changing its XP e
   expect(await syncBmcAccountHistory()).toMatchObject({ reviews: 1 });
   expect((await readBmcHistorySnapshot())?.reviews).toMatchObject([{ id: "ledger:unproven-october", transactionId: "unproven-october", reason: "LEDGER_PAYMENT_NOT_RETURNED" }]);
   expect(mocks.update).not.toHaveBeenCalled(); expect(mocks.create).not.toHaveBeenCalled();
+});
+
+it("enriches a legacy payment without rewriting its original reference or ledger timestamp", async () => {
+  mocks.candidates.mockResolvedValue([transaction]);
+  await syncBmcAccountHistory();
+  const change = mocks.update.mock.calls[0][0].data;
+  expect(change).toMatchObject({ bmcHistoryPaymentId: "pi_paid", bmcHistorySupportId: "11", bmcPaidDate: "2026-11-16" });
+  expect(change).not.toHaveProperty("providerPaymentId");
+  expect(change).not.toHaveProperty("date");
+  expect(change).not.toHaveProperty("bridgeDonationId");
+});
+it("keeps an older history discovery pending and keeps that hold on subsequent checks", async () => {
+  await syncBmcAccountHistory();
+  expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "PENDING" }) });
+  const pending = { ...transaction, status: "PENDING", bmcPaymentConfirmed: true, bmcHistoryPaymentId: payment.paymentId, bmcHistorySupportId: payment.supportId };
+  mocks.candidates.mockResolvedValue([pending]);
+  expect(await syncBmcAccountHistory()).toMatchObject({ recovered: 0, reviews: 1 });
+  expect((await readBmcHistorySnapshot())?.reviews[0].reason).toBe("HISTORICAL_PAYMENT_REQUIRES_APPROVAL");
+  expect(mocks.create).toHaveBeenCalledOnce();
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+it("automatically recovers new payments after a previous complete check", async () => {
+  await writeBmcPrivate(bmcPrivatePath("history.enc"), { accountSlug: "creator", fetchedAt: "2026-11-15T00:00:00Z", coverage: [], subscriptions: [], payments: [], reviews: [] });
+  expect(await syncBmcAccountHistory()).toMatchObject({ recovered: 1 });
+  expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({ status: "APPROVED" }) });
+});
+it("does not bind two actual charges to one ledger row even for the same donor, amount and day", () => {
+  const claimed = { ...transaction, bmcPaymentConfirmed: true, bmcHistoryPaymentId: "pi_other", bmcHistorySupportId: "12" };
+  expect(matchBmcHistoryPayment(payment, [claimed], "donor")).toMatchObject({ kind: "REVIEW", reason: "AMOUNT_OR_REFERENCE_MISMATCH" });
+});
+it("uses the history claim on retries even when the original webhook resource ID differs", () => {
+  expect(matchBmcHistoryPayment({ ...payment, frequency: "ONE_TIME", stripeSubscriptionId: null }, [{ ...transaction, donationFrequency: "ONE_TIME", bmcEventId: "bmc_support_creator_999", bmcHistoryPaymentId: "pi_paid", bmcHistorySupportId: "11" }], "donor")).toMatchObject({ kind: "MATCH" });
+});
+it("can attach an unmatched payment through an existing trusted link without matching a display name", async () => {
+  mocks.candidates.mockResolvedValue([{ ...transaction, fromUserId: null }]);
+  await syncBmcAccountHistory();
+  expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ fromUserId: "donor" }) }));
+});
+
+it.each(["PARTIALLY_REFUNDED", "DISPUTED", "REVERSED", "PAYMENT_FAILED"])("does not let history resurrect a %s entry", providerState => {
+  expect(matchBmcHistoryPayment(payment, [{ ...transaction, providerState }], "donor")).toMatchObject({ kind: "REVIEW", reason: "LEDGER_CONFLICT" });
+});
+
+it("holds a known refunded charge from new awards without automatically reversing an earlier award", async () => {
+  mocks.candidates.mockResolvedValue([{ ...transaction, bmcPaymentConfirmed: true }]);
+  mocks.history.mockResolvedValue({ subscriptions: [], payments: [{ ...payment, refundStatus: "REFUNDED" }], fetchedAt: new Date().toISOString(), coverage: [] });
+  expect(await syncBmcAccountHistory()).toMatchObject({ reviews: 1, recovered: 0 });
+  expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ data: { bmcReviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW" } }));
+  expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "BMC_HISTORY_REFUND_REVIEW" }) }));
+});
+it("does not clear a known refund review when a later response omits its refund flag", async () => {
+  mocks.candidates.mockResolvedValue([{ ...transaction, bmcPaymentConfirmed: true, bmcReviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW" }]);
+  expect(await syncBmcAccountHistory()).toMatchObject({ confirmed: 0, reviews: 1 });
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
 });

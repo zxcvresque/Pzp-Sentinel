@@ -31,9 +31,9 @@ export async function bmcHistoryHealth() {
     subscriptions: snapshot?.subscriptions.length || 0, cancelledSubscriptions: snapshot?.subscriptions.filter(row => row.status === "CANCELLED").length || 0, coverage: snapshot?.coverage || [] };
 }
 
-type Candidate = { id: string; amount: { toString(): string }; currency: string; donationFrequency: string; date: Date; bmcEventId: string | null; providerPaymentId: string | null; fromUserId: string | null; voidedAt: Date | null; status: string; providerState: string; bmcPaymentConfirmed: boolean };
+type Candidate = { id: string; amount: { toString(): string }; currency: string; donationFrequency: string; date: Date; bmcEventId: string | null; providerPaymentId: string | null; bmcHistoryPaymentId?: string | null; bmcHistorySupportId?: string | null; bmcPaidDate?: string | null; bmcReviewReason?: string | null; fromUserId: string | null; voidedAt: Date | null; status: string; providerState: string; bmcPaymentConfirmed: boolean };
 export function matchBmcHistoryPayment(payment: BmcAccountPayment, candidates: Candidate[], linkedUserId: string | null) {
-  const exact = candidates.filter(tx => (payment.paymentId && tx.providerPaymentId === payment.paymentId) || (payment.frequency === "ONE_TIME" && bmcTransactionKeys("donation.created", payment.supportId).includes(tx.bmcEventId || "")));
+  const exact = candidates.filter(tx => (payment.paymentId && (tx.providerPaymentId === payment.paymentId || tx.bmcHistoryPaymentId === payment.paymentId)) || tx.bmcHistorySupportId === payment.supportId || (payment.frequency === "ONE_TIME" && bmcTransactionKeys("donation.created", payment.supportId).includes(tx.bmcEventId || "")));
   const plausible = candidates.filter(tx => tx.donationFrequency === payment.frequency && Math.abs(tx.date.getTime() - Date.parse(payment.occurredAt)) <= 36 * 3600_000 &&
     ((payment.stripeSubscriptionId && tx.bmcEventId?.includes(payment.stripeSubscriptionId)) || (linkedUserId && tx.fromUserId === linkedUserId)));
   const matches = exact.length ? exact : plausible;
@@ -41,13 +41,14 @@ export function matchBmcHistoryPayment(payment: BmcAccountPayment, candidates: C
   if (!matches.length) return { kind: "MISSING" } as const;
   const tx = matches[0];
   if (Math.abs(tx.date.getTime() - Date.parse(payment.occurredAt)) > 36 * 3600_000 || tx.donationFrequency !== payment.frequency) return { kind: "REVIEW", reason: "DATE_OR_FREQUENCY_MISMATCH", transactionId: tx.id } as const;
-  if (tx.voidedAt || tx.status !== "APPROVED" || ["REFUNDED", "FAILED", "PAYMENT_FAILED"].includes(tx.providerState)) return { kind: "REVIEW", reason: "LEDGER_CONFLICT", transactionId: tx.id } as const;
-  if (tx.currency !== payment.currency || !new Prisma.Decimal(tx.amount.toString()).equals(payment.amount) || (tx.providerPaymentId && tx.providerPaymentId !== payment.paymentId)) return { kind: "REVIEW", reason: "AMOUNT_OR_REFERENCE_MISMATCH", transactionId: tx.id } as const;
+  if (tx.status === "PENDING" && tx.bmcPaymentConfirmed && tx.bmcHistorySupportId === payment.supportId && tx.bmcHistoryPaymentId === payment.paymentId && !tx.voidedAt) return { kind: "REVIEW", reason: "HISTORICAL_PAYMENT_REQUIRES_APPROVAL", transactionId: tx.id } as const;
+  if (tx.voidedAt || tx.status !== "APPROVED" || /REFUND|REVERSE|DISPUTE|FAILED/i.test(tx.providerState)) return { kind: "REVIEW", reason: "LEDGER_CONFLICT", transactionId: tx.id } as const;
+  if (tx.currency !== payment.currency || !new Prisma.Decimal(tx.amount.toString()).equals(payment.amount) || (tx.providerPaymentId && tx.providerPaymentId !== payment.paymentId) || (tx.bmcHistoryPaymentId && tx.bmcHistoryPaymentId !== payment.paymentId) || (tx.bmcHistorySupportId && tx.bmcHistorySupportId !== payment.supportId)) return { kind: "REVIEW", reason: "AMOUNT_OR_REFERENCE_MISMATCH", transactionId: tx.id } as const;
   if (linkedUserId && tx.fromUserId && tx.fromUserId !== linkedUserId) return { kind: "REVIEW", reason: "DONOR_CONFLICT", transactionId: tx.id } as const;
   return { kind: "MATCH", transaction: tx } as const;
 }
 
-async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, generation: string) {
+async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, generation: string, automaticFrom: string) {
   const reviews: BmcHistoryReview[] = [];
   const matchedIds = new Set<string>();
   let confirmed = 0;
@@ -63,12 +64,18 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       const link = await db.bmcSupporterLink.findUnique({ where: { accountSlug_supporterId: { accountSlug: bmcAccountSlug(), supporterId: payment.supporterId } } });
       const when = Date.parse(payment.occurredAt);
       const candidates = await db.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", isTest: false,
-        OR: [...(payment.paymentId ? [{ providerPaymentId: payment.paymentId }] : []),
+        OR: [...(payment.paymentId ? [{ providerPaymentId: payment.paymentId }, { bmcHistoryPaymentId: payment.paymentId }] : []),
+          { bmcHistorySupportId: payment.supportId },
           { date: { gte: new Date(when - 36 * 3600_000), lte: new Date(when + 36 * 3600_000) } }] } });
       const result = matchBmcHistoryPayment(payment, candidates, link?.userId || null);
       if (payment.refundStatus === "REFUNDED") {
         const transactionId = result.kind === "MATCH" ? result.transaction.id : "transactionId" in result ? result.transactionId : undefined;
-        if (transactionId) matchedIds.add(transactionId);
+        if (transactionId) {
+          matchedIds.add(transactionId);
+          const held = await db.transaction.updateMany({ where: { id: transactionId, method: "BMC", OR: [{ bmcReviewReason: null }, { bmcReviewReason: { not: "PROVIDER_REFUND_REQUIRES_REVIEW" } }] }, data: { bmcReviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW" } });
+          if (held.count) await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_REFUND_REVIEW", entityType: "Transaction", entityId: transactionId, transactionId,
+            after: { source: payment.evidenceSource, supportId: payment.supportId, paymentId: payment.paymentId, reason: "PROVIDER_REFUND_REQUIRES_REVIEW" } } });
+        }
         reviews.push({ id: payment.id, reason: "PROVIDER_REFUND_REQUIRES_REVIEW", ...(transactionId ? { transactionId } : {}) });
         return;
       }
@@ -76,15 +83,21 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       if (result.kind === "MATCH") {
         const tx = result.transaction;
         matchedIds.add(tx.id);
-        if (!tx.bmcPaymentConfirmed) {
+        if (tx.bmcReviewReason === "PROVIDER_REFUND_REQUIRES_REVIEW" && payment.refundStatus !== "NOT_REFUNDED") {
+          reviews.push({ id: payment.id, reason: "PROVIDER_REFUND_REQUIRES_REVIEW", transactionId: tx.id });
+          return;
+        }
+        const paidDate = payment.occurredAt.slice(0, 10);
+        if (tx.bmcReviewReason || !tx.bmcPaymentConfirmed || tx.bmcHistoryPaymentId !== payment.paymentId || tx.bmcHistorySupportId !== payment.supportId || tx.bmcPaidDate !== paidDate || (!tx.fromUserId && link?.userId)) {
           // A concurrent void/refund must win. Never resurrect a reversed entry.
-          const changed = await db.transaction.updateMany({ where: { id: tx.id, voidedAt: null, status: "APPROVED", providerState: tx.providerState, bmcPaymentConfirmed: false,
+          const changed = await db.transaction.updateMany({ where: { id: tx.id, voidedAt: null, status: "APPROVED", providerState: tx.providerState, bmcPaymentConfirmed: tx.bmcPaymentConfirmed,
             fromUserId: tx.fromUserId, providerPaymentId: tx.providerPaymentId, amount: tx.amount.toString(), currency: tx.currency as "INR" | "USD", date: tx.date },
-            data: { bmcPaymentConfirmed: true, providerVerified: true, providerPaymentId: payment.paymentId || tx.providerPaymentId, providerState: "CAPTURED" } });
+            data: { bmcPaymentConfirmed: true, providerVerified: true, bmcReviewReason: null, bmcHistoryPaymentId: payment.paymentId,
+              bmcHistorySupportId: payment.supportId, bmcPaidDate: paidDate, fromUserId: tx.fromUserId || link?.userId || null, providerState: "CAPTURED" } });
           if (changed.count) {
             await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_CONFIRMED", entityType: "Transaction", entityId: tx.id, transactionId: tx.id,
               after: { source: payment.evidenceSource, supportId: payment.supportId, paymentId: payment.paymentId } } });
-            confirmed++;
+            if (!tx.bmcPaymentConfirmed) confirmed++;
           } else reviews.push({ id: payment.id, reason: "LEDGER_CHANGED_DURING_SYNC", transactionId: tx.id });
         }
         return;
@@ -92,17 +105,21 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       // With no exact donor/payment mapping, keep the source evidence for review.
       // A nearby ledger entry might have a currency conversion or older identity.
       if (!link || !payment.paymentId || candidates.length) { reviews.push({ id: payment.id, reason: candidates.length ? "POSSIBLE_EXISTING_PAYMENT" : "DONOR_OR_PAYMENT_REFERENCE_REQUIRED" }); return; }
+      // Historical discoveries may already have XP under an older ledger entry.
+      // Keep verified evidence, but require review before publishing new awards.
+      const historical = Date.parse(payment.occurredAt) < Date.parse(automaticFrom);
       const tx = await db.transaction.create({ data: {
-        amount: payment.amount, currency: payment.currency as "INR" | "USD", method: "BMC", type: "DONATION", direction: "IN", status: "APPROVED",
+        amount: payment.amount, currency: payment.currency as "INR" | "USD", method: "BMC", type: "DONATION", direction: "IN", status: historical ? "PENDING" : "APPROVED",
         donationFrequency: payment.frequency, date: new Date(payment.occurredAt), fromUserId: link.userId, createdById: actorId,
-        providerPaymentId: payment.paymentId, providerVerified: true, bmcPaymentConfirmed: true, providerState: "CAPTURED",
+        providerPaymentId: payment.paymentId, bmcHistoryPaymentId: payment.paymentId, bmcHistorySupportId: payment.supportId, bmcPaidDate: payment.occurredAt.slice(0, 10), providerVerified: true, bmcPaymentConfirmed: true, providerState: "CAPTURED",
         bmcEventId: payment.frequency === "ONE_TIME" ? bmcTransactionKeys("donation.created", payment.supportId)[0] : `bmc_history_${bmcAccountSlug()}_${payment.supportId}`,
         description: `BMC ${payment.frequency === "MONTHLY" ? "monthly" : "one-time"} payment recovered from account history`,
         providerDetailsEncrypted: encryptSecret(JSON.stringify({ ...payment, source: "BMC_DASHBOARD_HISTORY" })),
       } });
       const reminder = monthlyReminderUpdate(payment.frequency, new Date(payment.occurredAt));
-      if (reminder) await db.user.updateMany({ where: { id: link.userId, OR: [{ donateReminderAnchorAt: null }, { donateReminderAnchorAt: { lt: new Date(payment.occurredAt) } }] }, data: reminder });
+      if (reminder && !historical) await db.user.updateMany({ where: { id: link.userId, OR: [{ donateReminderAnchorAt: null }, { donateReminderAnchorAt: { lt: new Date(payment.occurredAt) } }] }, data: reminder });
       await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_RECOVERED", entityType: "Transaction", entityId: tx.id, transactionId: tx.id, after: { supportId: payment.supportId, source: payment.evidenceSource } } });
+      if (historical) reviews.push({ id: payment.id, reason: "HISTORICAL_PAYMENT_REQUIRES_APPROVAL", transactionId: tx.id });
       recovered++;
       matchedIds.add(tx.id);
     }, { maxWait: 10000, timeout: 20000 });
@@ -134,7 +151,7 @@ export async function syncBmcAccountHistory() {
     const result = await fetchEntireBmcAccountHistory(session);
     if ((await bmcDashboardSession()).generation !== session.generation) throw new BmcHistoryError("CONNECTION_CHANGED", "The BMC connection changed during sync. Try again.", 409);
     stage = "RECONCILE_LEDGER";
-    const reconciliation = await reconcileHistory(result.payments, session.connectedBy, session.generation);
+    const reconciliation = await reconcileHistory(result.payments, session.connectedBy, session.generation, old?.fetchedAt || attempt);
     // Compare both ways: subscription updates may have produced legacy ledger
     // rows that never existed in paid history. Flag these without voiding them.
     const ledger = await prisma.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", status: "APPROVED", isTest: false, voidedAt: null,

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { fetchBmcRenewalHistory } from "./bmc-history";
+import { fetchBmcDashboardJson, fetchBmcRenewalHistory } from "./bmc-history";
 const session = { cookie: "private-session=secret", xsrfToken: "private-xsrf" };
 const row = { support_id: 16368685, fk_subscription_id: 1146135, transaction_id: "pi_example", support_total_charged_amount: "25.00", support_currency: "USD", support_created_on: "2026-11-25T16:06:23.000000Z", is_refunded: null, supporter_email: "never-expose@example.test" };
 const envelope = (payments = [row], meta = { current_page: 1, last_page: 1, total: payments.length }) => Response.json({ data: payments, meta, links: { next: "https://untrusted.example" } });
@@ -46,4 +46,24 @@ it("rejects inconsistent pagination and duplicate charge records", async () => {
   for (const response of [envelope([row, row]), envelope([row], { current_page: 2, last_page: 2, total: 1 })]) {
     await expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher: vi.fn().mockResolvedValue(response) })).rejects.toMatchObject({ code: "INVALID_PROVIDER_DATA" });
   }
+});
+
+it("retries temporary provider failures and returns only the complete successful page", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response("upstream error", { status: 502 })).mockResolvedValueOnce(envelope());
+  expect(await fetchBmcRenewalHistory("1146135", 1, { session, fetcher })).toMatchObject({ total: 1 });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it("accepts valid dashboard JSON with a mislabeled content type", async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ view: "" }), { headers: { "Content-Type": "text/html" } }));
+  expect(await fetchBmcDashboardJson("https://studio.buymeacoffee.com/api/supporters/onetime?page=1", { session: { ...session, studioCookie: "private-studio" }, fetcher })).toEqual({ view: "" });
+});
+it("reports endpoint and HTTP status after bounded retries without leaking a provider body", async () => {
+  const fetcher = vi.fn().mockImplementation(async () => new Response("secret-cookie=private", { status: 503 }));
+  await expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher })).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", message: expect.stringContaining("monthly history failed (HTTP 503)") });
+  expect(fetcher).toHaveBeenCalledTimes(3);
+});
+it("recognizes a successful HTTP response containing a sign-in form without retrying it", async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response('<form action="/login"><input type="password"></form>', { headers: { "Content-Type": "text/html" } }));
+  await expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher })).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
+  expect(fetcher).toHaveBeenCalledOnce();
 });

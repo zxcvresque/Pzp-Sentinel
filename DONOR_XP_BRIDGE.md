@@ -12,6 +12,7 @@ Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. U
 
 `GET /api/sentry-bridge/donations?state=PAID%7CREVERSED&limit=100&offset=0`
 
+- `telegramId`: optional numeric Telegram user ID. This filters by verified donor ownership, never a name, email, BMC supporter ID, or payment reference. It also returns an all-time `donor` summary (counts and separate decimal totals per currency) from the same database snapshot.
 - `state`: `PAID`, `REVERSED`, or `PAID|REVERSED` (default: both).
 - `from` and `to`: optional ISO timestamps with explicit timezones, both inclusive. Encode `+` as `%2B` in URLs.
 - With no date filters, the API exposes the entire recorded donation history. There is no fixed start-date cutoff; `cutoff` is `null`.
@@ -27,6 +28,11 @@ Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. U
     "paymentId": "pay_example",
     "transactionId": "sentinel_transaction_id",
     "telegramId": "123456789",
+    "donorKey": "telegram:123456789",
+    "idempotencyKey": "sentinel:transaction:sentinel_transaction_id",
+    "aliases": ["razorpay:pay_example"],
+    "paymentDate": "2026-09-01",
+    "paymentDateTimeZone": "UTC",
     "name": "Example donor",
     "amount": "100",
     "currency": "INR",
@@ -50,7 +56,7 @@ Amounts and rates are decimal strings; Telegram IDs are strings or null. Names a
 
 USD rows have `inrEstimate=null` and `fxRate=null`: the ledger has no saved historical FX rate. **GET `/api/exchange-rate` remains available**, returning `rate` (INR per USD), `updatedAt`, and optionally `stale`. Sentry resolves an estimate on demand and saves it with the grant. Missing FX blocks approval. This estimate is not a historical settlement rate or actual provider net proceeds.
 
-Each list request performs one bounded ledger query. It does not refresh the event feed, call providers, write bridge tables or drain history. Records edited between pages can shift offsets; refresh to restart. Sentry filters already reviewed donation/transaction IDs locally, so pages can be sparse; `hasMore`/`nextOffset` still work.
+Each list request performs one bounded ledger-page query. When `telegramId` is supplied, currency aggregates and review/reversal counts are also read in a repeatable-read transaction, so the page and donor summary describe the same snapshot. It does not refresh the event feed, call providers, write bridge tables or drain history. Records edited between pages can shift offsets; refresh to restart. Sentry filters already reviewed donation/transaction IDs locally, so pages can be sparse; `hasMore`/`nextOffset` still work.
 
 Follow `nextOffset` until `hasMore=false` to read all historical records. Existing verified Razorpay/BMC webhooks and admin-approved manual entries update Sentinel's ledger, and subsequent API reads immediately reflect saved additions, corrections and reversals. Sentinel can also deliver signed HTTPS notifications to a Sentry-hosted receiver; see [outbound webhook setup and contract](SENTRY_WEBHOOK.md). There is no second payment intake endpoint. A date-filtered recent-payment query alone cannot discover reversals of older payments; recheck previously awarded IDs through the detail endpoint. These APIs expose each payment's current state, not an append-only revision log. Display dates in Sentinel use DD/MM/YYYY; API timestamps remain ISO 8601.
 
@@ -58,7 +64,7 @@ Follow `nextOffset` until `hasMore=false` to read all historical records. Existi
 
 `GET /api/sentry-bridge/donations/razorpay%3Apay_example`
 
-Returns `{ "donation": { ...same fields... } }`. The path accepts a canonical donation ID or immutable `transactionId`. Sentry uses the saved transaction ID to check a previous award even if its provider reference changed.
+Returns `{ "donation": { ...same fields... } }`. The path accepts a pinned donation ID, immutable `transactionId`, or a known BMC alias (original webhook or history payment/support reference). Aliases resolve to the same donation and are never extra donation records. Sentry uses the saved transaction ID to check a previous award even if its provider reference changed.
 
 Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/incorrect bearer key, `400` invalid list filters, `404` missing or currently ineligible payment, `503` failed read. A `404` blocks new approval; a previous award can be inspected for manual reversal.
 
@@ -68,9 +74,9 @@ Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/inc
 
 `recurring_donation.started`, `recurring_donation.updated`, and membership lifecycle events describe a subscription. An `active` status, amount, or advanced `current_period_start` does not prove that a charge succeeded. Sentinel records these events and maintains donor attribution without creating income, thank-yous, reminder resets, or XP-eligible payments.
 
-Payment webhooks must contain a successful payment result (`status=succeeded`) before creating a captured ledger entry. For monthly BMC history, `bmcPaymentConfirmed` must additionally be set by a verified payment or a review against paid provider history. Existing monthly entries default to unconfirmed. Reconcile genuine charges before approving them in Sentry; do not bulk-confirm billing periods. If BMC supplies only subscription updates, use paid charge history or a reviewed export to reconcile the actual payments.
+Payment webhooks must contain a successful payment result (`status=succeeded`) before creating a captured ledger entry. For all BMC donations, `bmcPaymentConfirmed` must additionally be set by a verified payment or a review against paid provider history. Existing unconfirmed BMC entries stay held for evidence review. Reconcile genuine charges before approving them in Sentry; do not bulk-confirm billing periods. If BMC supplies only subscription updates, use paid charge history or a reviewed export to reconcile the actual payments.
 
-List, detail and legacy-feed responses separate ledger state from evidence. Only explicit voids, failed-payment corrections, refunds, reversals and disputes produce `state=REVERSED`. A missing monthly BMC confirmation flag never proves a failure: the approved ledger row retains `state=PAID`, with `paymentConfirmed=false`, `verificationStatus=REQUIRES_REVIEW`, `xpEligible=false`, and a `reviewReason`. Confirmed active payments return `verificationStatus=CONFIRMED` and `xpEligible=true`; actual reversals return `verificationStatus=REVERSED` and `xpEligible=false`. `reversalReason` is only populated for actual reversals.
+List, detail and legacy-feed responses separate ledger state from evidence. Only explicit voids, failed-payment corrections, refunds, reversals and disputes produce `state=REVERSED`. A missing BMC confirmation flag never proves a failure: the approved ledger row retains `state=PAID`, with `paymentConfirmed=false`, `verificationStatus=REQUIRES_REVIEW`, `xpEligible=false`, and a `reviewReason`. A known charge with a history refund awaiting review also returns `REQUIRES_REVIEW`, a `reviewReason`, and `xpEligible=false` until the correction is reviewed. An unknown later refund flag does not clear that hold. Confirmed active payments with verified Telegram attribution return `verificationStatus=CONFIRMED` and `xpEligible=true`; actual reversals return `verificationStatus=REVERSED` and `xpEligible=false`. `reversalReason` is only populated for actual reversals.
 
 Sentry must require both `state=PAID` and `xpEligible=true` before a new award. `REQUIRES_REVIEW` must never deduct existing XP or convert a previous grant into a reversal. Keep the original transaction identity when reviewing corrections. This consumer check must also be implemented in Sentry; adding fields to Sentinel alone does not enforce its award policy. Existing incorrect XP reversals require an audited restoration in Sentry, without duplicating an award.
 
@@ -105,7 +111,7 @@ Deploy Sentinel before Sentry. Configure the secret on both servers, rebuild Sen
 
 Stop the old Sentry webapp before the upgrade and preserve its SQLite volume. New startup uses SQLite's backup API, migrates awards/rejections/reversal outcomes into the grant ledger, adds transaction-ID uniqueness, then removes obsolete donor tables in one transaction. Conflicting legacy transaction awards abort migration rather than deleting history. Keep the generated `*.before-manual-donor-xp-*` backup. Existing user balances and XP history are not recalculated.
 
-The new list/detail API requires no PostgreSQL migration. Guest checkout `/api/sentry-bridge/entry` still uses its existing bridge entry tables. Sentinel's legacy `/events` endpoint and optional provider-recovery CLI remain compatible for other consumers; Sentry no longer calls/requires them. Records missing from Sentinel's finance ledger must be recovered there before they can appear in this list.
+This identity update requires the additive Prisma schema fields and `scripts/donation-identity.sql`. `bash upgrade.sh` installs the database guard and runs `scripts/pin-donation-identities.ts` during a brief pause of both PM2 processes after a successful build, then restarts both. The backfill preserves currently published IDs; it does not rename old donations, change their amounts, or recalculate XP. Guest checkout `/api/sentry-bridge/entry` still uses its existing bridge entry tables. Sentinel's legacy `/events` endpoint and optional provider-recovery CLI remain compatible for other consumers; Sentry no longer calls/requires them. Records missing from Sentinel's finance ledger must be recovered there before they can appear in this list.
 
 ## Verification
 
@@ -116,3 +122,15 @@ Sentry: `python -B -m unittest discover -s donor_xp -t . -q` and `node --check w
 Tests use temporary SQLite databases, fake Sentinel responses and mocked Telegram delivery. They do not contact production.
 
 After upgrading the VPS, run `npx tsx scripts/verify-donation-ledger.ts 604642404` with `SENTINEL_URL` and `SENTRY_BRIDGE_SECRET` configured there. This read-only check traverses all pages, checks that no cutoff/caching remains and verifies matching payments through the live detail API. It reports when the user has no eligible payment; it never fabricates a payment or grants XP.
+
+## Telegram identity and repeat checks
+
+Use `GET /api/sentry-bridge/donations?telegramId=574705248` for one Telegram user's payments. `donor.donationCount` counts approved, confirmed, active payments; `reviewCount` counts unconfirmed approved entries, and `reversedCount` counts explicit financial reversals. `totals` contains one decimal-string total per original currency. Pending historical discoveries are excluded from award candidates and can be reviewed in Sentinel's transaction queue. List pagination/date/state filters do not change the all-time summary. Two real charges by the same Telegram user remain two donations even if their amount and date match.
+
+`telegramId` / `donorKey` identify the person. The immutable `transactionId` / `idempotencyKey` identify one payment. Names, emails, provider supporter IDs, FX estimates and timestamps must not be used as donor or award uniqueness keys. A donor's name or provider reference may change without creating a donation. An explicit donor-ownership correction changes which Telegram user owns that same transaction.
+
+`id` is pinned in PostgreSQL. Existing IDs are preserved during deployment; new rows receive `<provider>:<transactionId>`. BMC history claims are saved separately from the original webhook reference. A database trigger rejects attempts to rename a pinned ID or attach the same BMC charge to another row, including cross-column claims. History and webhook processing share a transaction-scoped database lock across web/bot workers.
+
+BMC dates shown in donor history, transaction views and exports use the BMC UTC calendar day and are labeled UTC. `occurredAt` retains the original ledger ISO timestamp; `paymentDate` is the source calendar date. One-time dashboard backfills have day precision, not an independently known capture time. No timezone edit changes a donation ID, amount or award eligibility.
+
+This update prevents Sentinel metadata enrichment from emitting a second donation identity. It does not edit Sentry's stored awards or undo XP already granted twice. Consumers must treat repeated snapshots/events as upserts of the same transaction, not new grant instructions, and respect `xpEligible`.

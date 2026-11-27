@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { displayDate, displayDateTime } from "./date-format";
+import { displayDate, displayDateTime, displayTransactionDate } from "./date-format";
 
 it("renders an unambiguous DD/MM/YYYY date across browsers and servers", () => {
   expect(displayDate("2026-09-11T12:00:00Z")).toBe("11/09/2026");
@@ -12,4 +12,11 @@ it("keeps time and date aligned across the IST midnight boundary", () => {
 it("handles absent and invalid dates without crashing a page", () => {
   expect(displayDate(null)).toBe("—");
   expect(displayDateTime("bad date")).toBe("—");
+});
+
+it("uses the BMC source day while preserving IST for other transactions", () => {
+  const date = "2026-09-17T20:31:40Z";
+  expect(displayTransactionDate({ method: "BMC", date })).toBe("17/09/2026");
+  expect(displayTransactionDate({ method: "BMC", date, bmcPaidDate: "2026-09-16" })).toBe("16/09/2026");
+  expect(displayTransactionDate({ method: "RAZORPAY", date })).toBe("18/09/2026");
 });

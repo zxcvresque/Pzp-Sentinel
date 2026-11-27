@@ -21,3 +21,10 @@ function parsedDate(value: Date | string | number | null | undefined) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime()) ? date : null;
 }
+
+/** Match BMC's source-calendar day; never shift ledger timestamps to midnight. */
+export function displayTransactionDate(transaction: { method: string; date: string | Date; bmcPaidDate?: string | null }) {
+  return transaction.method === "BMC"
+    ? displayDate(transaction.bmcPaidDate || transaction.date, "UTC")
+    : displayDate(transaction.date);
+}

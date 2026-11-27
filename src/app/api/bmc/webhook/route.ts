@@ -25,6 +25,8 @@ import {
 } from "@/lib/bmc-subscription-feedback";
 import { encryptSecret } from "@/lib/secret-crypto";
 
+class BmcPaymentReviewError extends Error {}
+
 const CREATED_EVENTS = new Set([
   "donation.created",
   "extra_purchase.created",
@@ -83,7 +85,9 @@ function encryptedBmcDetails(event: NormalizedBmcEvent) {
 async function findTransaction(event: NormalizedBmcEvent) {
   const keys = bmcTransactionKeys(event.type, event.resourceId);
   return prisma.transaction.findFirst({
-    where: { bmcEventId: { in: keys } },
+    where: { OR: [{ bmcEventId: { in: keys } },
+      ...(typeof event.data.transaction_id === "string" && /^(pi_|ch_)/.test(event.data.transaction_id)
+        ? [{ providerPaymentId: event.data.transaction_id }, { bmcHistoryPaymentId: event.data.transaction_id }] : [])] },
     include: { fromUser: true },
   });
 }
@@ -101,8 +105,11 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
   const code = event.liveMode ? extractBmcAttributionCode(event.note) : null;
 
   const result = await prisma.$transaction(async (db) => {
+    // Use the same database lock as history sync: separate web/bot processes
+    // must claim a charge once even when their requests arrive together.
+    await db.$queryRaw`SELECT 1::int AS acquired FROM pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))`;
     const existing = await db.transaction.findFirst({
-      where: { OR: [{ bmcEventId: { in: keys } }, ...(paymentId ? [{ providerPaymentId: paymentId }] : [])] },
+      where: { OR: [{ bmcEventId: { in: keys } }, ...(event.type === "donation.created" ? [{ bmcHistorySupportId: event.resourceId }] : []), ...(paymentId ? [{ providerPaymentId: paymentId }, { bmcHistoryPaymentId: paymentId }] : [])] },
       include: { fromUser: true },
     });
     if (existing) {
@@ -145,6 +152,16 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
 
     const fromUserId = intent?.userId || knownLink?.userId || null;
     const donationFrequency = event.donationFrequency;
+    if (!paymentId && fromUserId) {
+      // A webhook resource ID and a dashboard support ID can differ. Without
+      // a charge reference, same-donor nearby evidence needs review, not a
+      // second income record or a guessed duplicate of a legitimate donation.
+      const nearby = await db.transaction.findFirst({ where: {
+        method: "BMC", direction: "IN", type: "DONATION", fromUserId, isTest: !event.liveMode,
+        date: { gte: new Date(event.occurredAt.getTime() - 36 * 3600_000), lte: new Date(event.occurredAt.getTime() + 36 * 3600_000) },
+      } });
+      if (nearby) throw new BmcPaymentReviewError("This BMC webhook has no charge reference and another payment for the same Telegram donor is nearby. Review the paid history before adding income.");
+    }
     const transaction = await db.transaction.create({
       data: {
         amount: new Prisma.Decimal(event.amount),
@@ -164,6 +181,7 @@ async function createTransaction(event: NormalizedBmcEvent, adminId: string) {
         isTest: !event.liveMode,
         bmcEventId: eventId,
         date: event.occurredAt,
+        bmcPaidDate: event.occurredAt.toISOString().slice(0, 10),
         createdById: adminId,
       },
       include: { fromUser: true },
@@ -292,6 +310,8 @@ async function refundTransaction(event: NormalizedBmcEvent) {
   const existing = await findTransaction(event);
   if (!existing) return null;
   const transaction = await prisma.$transaction(async (db) => {
+    // Concurrent refund deliveries must not create two outgoing reversals.
+    await db.$queryRaw`SELECT 1::int AS acquired FROM pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))`;
     const updated = existing.providerState === "REFUNDED"
       ? existing
       : await db.transaction.update({
@@ -569,6 +589,12 @@ export async function POST(request: NextRequest) {
       verification: operatorRecovery ? "operator_recovery" : "provider_signature",
     });
   } catch (error) {
+    if (error instanceof BmcPaymentReviewError) {
+      await prisma.bmcWebhookEvent.update({ where: { id: receipt.id }, data: { status: "PAYMENT_REVIEW_REQUIRED", attributionStatus: "REQUIRES_REVIEW", processedAt: new Date() } });
+      await logAudit({ userId: admin.id, action: "BMC_PAYMENT_REVIEW_REQUIRED", entityType: "BmcWebhookEvent", entityId: receipt.id, details: error.message });
+      await notifyAdmins({ type: "SYSTEM", title: "BMC payment needs duplicate review", message: error.message, actionUrl: "/admin/bmc", priority: "HIGH" });
+      return NextResponse.json({ status: "payment_review_required", event: event.type, transactionId: null });
+    }
     const message = error instanceof Error ? error.message : "Internal error";
     await prisma.bmcWebhookEvent.update({
       where: { id: receipt.id },

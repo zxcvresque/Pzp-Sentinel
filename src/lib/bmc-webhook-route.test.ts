@@ -2,10 +2,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   findReceipt: vi.fn(), createReceipt: vi.fn(), updateReceipt: vi.fn(), findTransaction: vi.fn(),
-  createTransaction: vi.fn(), admin: vi.fn(), supporter: vi.fn(), notifyAdmins: vi.fn(), notify: vi.fn(),
+  createTransaction: vi.fn(), transaction: vi.fn(), raw: vi.fn(), admin: vi.fn(), supporter: vi.fn(), notifyAdmins: vi.fn(), notify: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({ prisma: {
   user: { findFirst: mocks.admin },
+  $transaction: mocks.transaction,
   transaction: { findFirst: mocks.findTransaction, create: mocks.createTransaction },
   bmcWebhookEvent: { findUnique: mocks.findReceipt, create: mocks.createReceipt, update: mocks.updateReceipt },
   bmcSupporterLink: { findUnique: mocks.supporter },
@@ -22,6 +23,8 @@ beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("BMC_WEBHOOK_SECRET", "test-secret");
   mocks.admin.mockResolvedValue({ id: "admin" });
   mocks.createReceipt.mockResolvedValue({ id: "receipt" });
+  mocks.transaction.mockImplementation(async run => run({ $queryRaw: mocks.raw,
+    transaction: { findFirst: mocks.findTransaction, create: mocks.createTransaction }, bmcSupporterLink: { findUnique: mocks.supporter } }));
 });
 function request(type: string, data: Record<string, unknown>) {
   return new NextRequest("https://sentinel.test/api/bmc/webhook", { method: "POST", body: JSON.stringify({ event_id: 123, type, live_mode: true, data }) });
@@ -38,4 +41,27 @@ it("retains failed payment evidence without adding a captured transaction", asyn
   const response = await POST(request("donation.created", { id: 1, status: "failed", amount: 25 }));
   expect(await response.json()).toMatchObject({ status: "payment_unconfirmed", transactionId: null });
   expect(mocks.createTransaction).not.toHaveBeenCalled();
+});
+
+it("returns the history-owned ledger entry for a later webhook without creating or announcing another payment", async () => {
+  mocks.findTransaction.mockResolvedValue({ id: "existing", fromUserId: "donor", fromUser: { telegramId: "574705248" }, bmcHistoryPaymentId: "pi_paid" });
+  const response = await POST(request("donation.created", { id: 16287848, status: "succeeded", amount: 5, transaction_id: "pi_paid" }));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ transactionId: "existing", status: "duplicate_resource" });
+  expect(mocks.createTransaction).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
+  expect(mocks.notifyAdmins).not.toHaveBeenCalled();
+  expect(JSON.stringify(mocks.findTransaction.mock.calls)).toContain('"bmcHistoryPaymentId":"pi_paid"');
+  expect(mocks.raw.mock.calls[0][0].join("")).toContain("pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))");
+});
+
+it("holds a reference-free webhook near the same Telegram donor's payment without guessing it is new or a duplicate", async () => {
+  mocks.findTransaction.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "nearby-charge" });
+  mocks.supporter.mockResolvedValue({ userId: "donor" });
+  const response = await POST(request("donation.created", { id: 16287848, supporter_id: 9, status: "succeeded", amount: 5 }));
+  expect(await response.json()).toMatchObject({ status: "payment_review_required", transactionId: null });
+  expect(mocks.createTransaction).not.toHaveBeenCalled();
+  expect(mocks.notify).not.toHaveBeenCalled();
+  expect(mocks.notifyAdmins).toHaveBeenCalledOnce();
+  expect(mocks.findTransaction.mock.calls[1][0].where).toMatchObject({ fromUserId: "donor", method: "BMC" });
 });

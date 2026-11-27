@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { databasePool as bridgePool } from "./database-pool";
-import { donorPaymentIdentity } from "./donor-payment-id";
+import { donorPaymentAliases, donorPaymentIdentity } from "./donor-payment-id";
 
 export const BRIDGE_START = "2026-08-12T18:30:00.000Z";
 export { bridgePool };
@@ -8,6 +8,8 @@ export type Donation = {
   id: string; provider: string; paymentId: string; telegramId: string | null;
   name: string; amount: string; currency: string; occurredAt: string;
   frequency: "ONE_TIME" | "MONTHLY"; state: "PAID" | "REVERSED";
+  donorKey?: string | null; idempotencyKey?: string; aliases?: string[];
+  paymentDate?: string; paymentDateTimeZone?: string;
   historical?: boolean; transactionId?: string; reversalReason?: string;
   paymentConfirmed?: boolean;
   verificationStatus?: "REVERSED" | "REQUIRES_REVIEW" | "CONFIRMED";
@@ -43,7 +45,7 @@ export async function refreshBridgeEvents() {
     await client.query("SELECT pg_advisory_xact_lock(729045821)");
     const sources = await client.query("SELECT payload FROM donor_bridge_sources ORDER BY id");
     const donations = new Map<string, Donation>(sources.rows.map(r => [r.payload.id, r.payload]));
-    const rows = await client.query(`SELECT t.*, u."telegramId", u.name,
+    const rows = await client.query(`SELECT t.*, t.date AT TIME ZONE 'UTC' AS date, u."telegramId", u.name,
       o."paymentId" AS order_payment, i."telegramId" AS guest_tg, i."guestName" AS guest_name
       FROM "Transaction" t LEFT JOIN "User" u ON u.id=t."fromUserId"
       LEFT JOIN "RazorpayOrder" o ON o."transactionId"=t.id
@@ -54,20 +56,32 @@ export async function refreshBridgeEvents() {
       OR t.id IN (SELECT DISTINCT payload->>'transactionId' FROM donor_bridge_events WHERE payload->>'transactionId' IS NOT NULL)
       ORDER BY t.date,t.id`, [BRIDGE_START]);
     for (const row of rows.rows) {
-      const { id, provider, paymentId } = donorPaymentIdentity(row.method, row.providerPaymentId || row.order_payment || row.bmcEventId, row.id);
-      const source = donations.get(id);
-      const unconfirmed = row.method === "BMC" && row.donationFrequency === "MONTHLY" && !row.bmcPaymentConfirmed;
-      const state = row.voidedAt || row.isTest || (row.status && row.status !== "APPROVED") || (row.direction && row.direction !== "IN") || (row.type && row.type !== "DONATION") || /REFUND|REVERSE|DISPUTE|FAILED/i.test(row.providerState) || source?.state === "REVERSED" ? "REVERSED" : "PAID";
+      const { id, provider, paymentId } = donorPaymentIdentity(row.method, row.providerPaymentId || row.order_payment || row.bmcEventId, row.id, row.bridgeDonationId);
+      const aliases = donorPaymentAliases(row.method, row.id, [row.providerPaymentId, row.order_payment, row.bmcEventId, row.bmcHistoryPaymentId, row.bmcHistorySupportId]);
+      // Old provider snapshots are aliases of this ledger row, not donations
+      // in addition to it. Ledger verification and ownership take precedence.
+      let source = donations.get(id);
+      for (const [key, candidate] of donations) {
+        if (candidate.transactionId === row.id || aliases.includes(key)) {
+          source ||= candidate;
+          if (key !== id) donations.delete(key);
+        }
+      }
+      const unconfirmed = row.method === "BMC" && (!row.bmcPaymentConfirmed || !!row.bmcReviewReason);
+      const state = row.voidedAt || row.isTest || (row.status && row.status !== "APPROVED") || (row.direction && row.direction !== "IN") || (row.type && row.type !== "DONATION") || /REFUND|REVERSE|DISPUTE|FAILED/i.test(row.providerState) ? "REVERSED" : "PAID";
       donations.set(id, {
-        id, provider, paymentId, transactionId: row.id,
-        telegramId: row.telegramId || row.guest_tg || source?.telegramId || null,
+        id, provider, paymentId, transactionId: row.id, aliases,
+        donorKey: row.telegramId || row.guest_tg ? `telegram:${row.telegramId || row.guest_tg}` : null,
+        idempotencyKey: `sentinel:transaction:${row.id}`,
+        paymentDate: row.bmcPaidDate || new Date(row.date).toISOString().slice(0, 10), paymentDateTimeZone: "UTC",
+        telegramId: row.telegramId || row.guest_tg || null,
         name: row.name || row.guest_name || source?.name || "Unmatched donor",
         amount: String(row.amount), currency: row.currency, occurredAt: new Date(row.date).toISOString(),
         frequency: row.donationFrequency,
         state, paymentConfirmed: state === "PAID" && !unconfirmed,
         verificationStatus: state === "REVERSED" ? "REVERSED" : unconfirmed ? "REQUIRES_REVIEW" : "CONFIRMED",
-        xpEligible: state === "PAID" && !unconfirmed,
-        reviewReason: unconfirmed && state === "PAID" ? "Check BMC paid charge history before awarding new XP. Missing confirmation does not establish a failed payment or justify deducting existing XP." : null,
+        xpEligible: !!(row.telegramId || row.guest_tg) && state === "PAID" && !unconfirmed,
+        reviewReason: unconfirmed && state === "PAID" ? row.bmcReviewReason || "Check BMC paid charge history before awarding new XP. Missing confirmation does not establish a failed payment or justify deducting existing XP." : null,
         reversalReason: state === "REVERSED" ? row.voidReason || source?.reversalReason || row.providerState : undefined,
       });
     }

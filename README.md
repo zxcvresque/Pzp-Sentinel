@@ -216,7 +216,7 @@ cd ~/Sentinel
 bash upgrade.sh
 ```
 
-The script fast-forwards `main`, installs locked dependencies, normalizes legacy uniqueness conflicts, applies the Prisma schema, regenerates the client, builds the app, restarts PM2, and verifies the agent installer endpoint. No separate migration SQL is required for the current schema update.
+The script fast-forwards `main`, installs locked dependencies, normalizes legacy uniqueness conflicts, applies the Prisma schema, regenerates the client, builds the app, restarts PM2, and verifies the agent installer endpoint. The script also installs the donation identity guard and pins existing bridge IDs during a brief web/bot pause after the build succeeds, then restarts both processes. This preserves published identities when BMC payment metadata is enriched.
 
 Prisma, bot jobs, and raw donor-bridge/webhook queries share one PostgreSQL pool
 per process, capped at four connections. With one web process and one bot

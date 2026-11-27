@@ -23,7 +23,7 @@ BEGIN
   -- Exclude receipt/announcement housekeeping, which changes no API facts.
   IF TG_OP = 'UPDATE' AND NOT EXISTS (
     SELECT 1 FROM unnest(ARRAY['amount','currency','method','providerPaymentId',
-      'bmcEventId','date','donationFrequency','voidedAt','voidReason','providerState',
+      'bmcEventId','bmcHistoryPaymentId','bmcHistorySupportId','bmcPaidDate','bmcReviewReason','date','donationFrequency','voidedAt','voidReason','providerState',
       'fromUserId','type','direction','status','isTest','bmcPaymentConfirmed']) AS fields(key)
     WHERE before_row->key IS DISTINCT FROM after_row->key
   ) THEN RETURN NULL; END IF;
