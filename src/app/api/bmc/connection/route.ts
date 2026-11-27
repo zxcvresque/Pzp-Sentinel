@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { bmcBrowserFrame, bmcConnectionStatus, controlBmcBrowser, validateBmcBrowserAction } from "@/lib/bmc-browser-connection";
+import { bmcConnectionStatus, importBmcSession, disconnectBmcSession } from "@/lib/bmc-session-import";
 import { bmcHistoryHealth, readBmcHistorySnapshot, syncBmcAccountHistory } from "@/lib/bmc-history-sync";
 import { BmcHistoryError } from "@/lib/bmc-history";
 
@@ -13,15 +13,14 @@ async function admin() {
   return user?.roles.includes("ADMIN") ? user : null;
 }
 function fail(error: unknown) {
-  return error instanceof BmcHistoryError ? json({ error: error.message, code: error.code, ...(error.recoveryCommand ? { recoveryCommand: error.recoveryCommand } : {}) }, error.status) : json({ error: "BMC connection could not complete. Retry or restart the private login.", code: "CONNECTION_FAILED" }, 503);
+  return error instanceof BmcHistoryError ? json({ error: error.message, code: error.code }, error.status) : json({ error: "The BMC session could not be updated. Try again. Your existing session has not been replaced.", code: "SESSION_IMPORT_FAILED" }, 503);
 }
 export async function GET(request: Request) {
   const user = await admin();
   if (!user) return json({ error: "Admin access required" }, 403);
+  if (new URL(request.url).searchParams.has("loginId")) return json({ error: "Browser login has been removed. Import your Helium session instead." }, 410);
   try {
-    const loginId = new URL(request.url).searchParams.get("loginId");
-    if (loginId) return json(await bmcBrowserFrame(user.id, loginId));
-    const [connection, health, snapshot] = await Promise.all([bmcConnectionStatus(user.id), bmcHistoryHealth(), readBmcHistorySnapshot()]);
+    const [connection, health, snapshot] = await Promise.all([bmcConnectionStatus(), bmcHistoryHealth(), readBmcHistorySnapshot()]);
     return json({ ...connection, health, subscriptions: snapshot?.subscriptions || [], reviews: snapshot?.reviews || [], payments: (snapshot?.payments || []).slice().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 30) });
   } catch (error) { return fail(error); }
 }
@@ -33,20 +32,22 @@ export async function POST(request: Request) {
   if (origin !== expected || request.headers.get("sec-fetch-site") === "cross-site") return json({ error: "Open this action from Sentinel." }, 403);
   if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ error: "JSON required" }, 400);
   try {
-    if (Number(request.headers.get("content-length") || 0) > 8000) return json({ error: "Request too large" }, 413);
+    if (Number(request.headers.get("content-length") || 0) > 100000) return json({ error: "Request too large" }, 413);
     const text = await request.text();
-    if (text.length > 8000) return json({ error: "Request too large" }, 413);
-    let body: unknown;
+    if (text.length > 100000) return json({ error: "Request too large" }, 413);
+    let body;
     try { body = JSON.parse(text); } catch { return json({ error: "Invalid request" }, 400); }
-    if (body && typeof body === "object" && "action" in body && body.action === "sync") {
-      const connection = await bmcConnectionStatus(user.id);
-      if (!connection.connected) return json({ error: "Connect your BMC account first." }, 409);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "Invalid request" }, 400);
+    if (body.action === "sync") {
+      const connection = await bmcConnectionStatus();
+      if (!connection.connected) return json({ error: "Import your BMC session first." }, 409);
       after(async () => { await syncBmcAccountHistory(); });
       return json({ queued: true }, 202);
     }
-    if (!validateBmcBrowserAction(body)) return json({ error: "Invalid browser action" }, 400);
-    const result = await controlBmcBrowser(user.id, body);
-    if (body.action === "finish") after(async () => { await syncBmcAccountHistory(); });
+    if (body.action === "disconnect") { await disconnectBmcSession(); return json({ disconnected: true }); }
+    if (body.action !== "import") return json({ error: "Invalid action. Import your Helium session instead of starting a browser." }, 400);
+    const result = await importBmcSession(user.id, body.appHeaders, body.studioHeaders, undefined, body.sessionToken);
+    after(async () => { await syncBmcAccountHistory(); });
     return json(result);
   } catch (error) { return fail(error); }
 }

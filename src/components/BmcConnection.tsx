@@ -5,9 +5,8 @@ import Link from "next/link";
 import TransactionsNav from "./TransactionsNav";
 import { displayDateTime } from "@/lib/date-format";
 
-type Frame = { loginId: string; image: string; width: number; height: number; expiresAt: string; host: string };
 type Payment = { id: string; amount: string; currency: string; occurredAt: string; frequency: string; refundStatus: string };
-type Status = { connected: boolean; connectedAt: string | null; accountSlug: string; login: { id: string } | null;
+type Status = { connected: boolean; connectedAt: string | null; accountSlug: string;
   subscriptions: { id: string; stripeId: string; status: "ACTIVE" | "PAUSED" | "CANCELLING" | "CANCELLED"; cancelledAt: string | null; renewalAt: string | null; lastSeenAt?: string; missingFromLatestCheck?: boolean }[];
   health: { syncing: boolean; lastSuccessAt: string | null; lastAttemptAt?: string; error?: string; errorCode?: string; paymentCount: number; subscriptions: number; reviewCount: number };
   payments: Payment[]; reviews: { id: string; reason: string; transactionId?: string }[] };
@@ -32,30 +31,22 @@ export function BmcConnectionSkeleton() {
 }
 export default function BmcConnection() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [frame, setFrame] = useState<Frame | null>(null);
+  const [appHeaders, setAppHeaders] = useState("");
+  const [studioHeaders, setStudioHeaders] = useState("");
+  const [sessionToken, setSessionToken] = useState("");
+  const [manualImport, setManualImport] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showSession, setShowSession] = useState(false);
   const [error, setError] = useState("");
-  const [recoveryCommand, setRecoveryCommand] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState("");
-  const [typed, setTyped] = useState("");
-  const [showText, setShowText] = useState(false);
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
   const mounted = useRef(true);
   const feedbackRef = useRef<HTMLDivElement>(null);
-  const loginRef = useRef<HTMLElement>(null);
-  const openedLogin = useRef<string | null>(null);
   useEffect(() => {
     if (error) feedbackRef.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
   }, [error]);
-  useEffect(() => {
-    if (frame && frame.loginId !== openedLogin.current) {
-      openedLogin.current = frame.loginId;
-      loginRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
-      loginRef.current?.focus({ preventScroll: true });
-    }
-    if (!frame) openedLogin.current = null;
-  }, [frame]);
   const load = useCallback(async () => {
     const response = await fetch("/api/bmc/connection", { cache: "no-store" });
     const body = await response.json();
@@ -69,38 +60,22 @@ export default function BmcConnection() {
     const timer = setInterval(() => { if (!pending.current) void load().catch(() => undefined); }, 10_000);
     return () => { mounted.current = false; clearInterval(timer); };
   }, [load]);
-  const refreshFrame = useCallback(async (id: string) => {
-    const response = await fetch(`/api/bmc/connection?loginId=${encodeURIComponent(id)}`, { cache: "no-store" });
-    const body = await response.json();
-    if (!response.ok) {
-      if (["LOGIN_EXPIRED", "LOGIN_NAVIGATION_BLOCKED"].includes(body.code)) setFrame(null);
-      throw Error(body.error || "Could not refresh the private browser.");
-    }
-    if (mounted.current) setFrame(body);
-  }, []);
-  useEffect(() => {
-    const id = frame?.loginId;
-    if (!id) return;
-    const timer = setInterval(() => { if (!pending.current && document.visibilityState === "visible") void refreshFrame(id).catch(reason => setError(reason.message)); }, 2500);
-    return () => clearInterval(timer);
-  }, [frame?.loginId, refreshFrame]);
   async function action(action: string, extra: Record<string, unknown> = {}) {
     if (pending.current) return;
-    pending.current = true; setBusy(true); setActiveAction(action); setError(""); setRecoveryCommand(""); setNotice("");
+    pending.current = true; setBusy(true); setActiveAction(action); setError(""); setNotice("");
     try {
-      const response = await fetch("/api/bmc/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, loginId: frame?.loginId, ...extra }), signal: AbortSignal.timeout(75000) });
+      const response = await fetch("/api/bmc/connection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra }), signal: AbortSignal.timeout(75000) });
       const body = await response.json().catch(() => null);
       if (!response.ok || !body) {
-        setRecoveryCommand(typeof body?.recoveryCommand === "string" ? body.recoveryCommand : "");
-        throw Error(body?.error || "The server did not return the private browser. Retry connecting; if it repeats, check the Sentinel web server logs.");
+
+        throw Error(body?.error || "The server could not update the BMC session. Try again.");
       }
-      if (body.image) setFrame(body);
-      if (body.connected || body.cancelled || body.disconnected) { setFrame(null); setTyped(""); }
-      if (body.connected) setNotice("BMC connected. Your first full history check is starting.");
+      if (body.connected) { setAppHeaders(""); setStudioHeaders(""); setSessionToken(""); setEditing(false); setShowSession(false); }
+      if (body.connected) setNotice("BMC session verified and saved. Your full history check is starting.");
       if (body.queued) setNotice("History check started. You can leave this page; Sentinel will finish it on the server.");
       if (body.disconnected) setNotice("BMC disconnected. Automatic history checks are paused.");
       await load();
-    } catch (reason) { setError(reason instanceof Error && ["TimeoutError", "AbortError"].includes(reason.name) ? "The private browser took too long to open. Retry connecting or resume the private login if it appears." : reason instanceof Error ? reason.message : "The connection failed. Try again."); }
+    } catch (reason) { setError(reason instanceof Error && ["TimeoutError", "AbortError"].includes(reason.name) ? "BMC session validation took too long. Try again; your existing session stays saved." : reason instanceof Error ? reason.message : "The connection failed. Try again."); }
     finally { pending.current = false; setBusy(false); setActiveAction(""); }
   }
   if (!status) return error ? <div role="alert" className="p-5"><p>{error}</p><button className={`${button} mt-4`} onClick={() => { setError(""); void load().catch(reason => setError(reason.message)); }}>Retry connection</button></div> : <BmcConnectionSkeleton />;
@@ -112,59 +87,55 @@ export default function BmcConnection() {
     {notice && <p role="status" className="mt-5 rounded-xl border border-lime/25 bg-lime/5 p-4 text-sm text-text-primary">{notice}</p>}
     <section className="mt-7 rounded-2xl border border-[var(--border)] bg-bg-card p-5 sm:p-6" aria-labelledby="bmc-connection-title">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h2 id="bmc-connection-title" className="text-lg font-semibold">{needsReconnect ? "Reconnect BMC" : status.connected ? "Account connected" : "Connect your account"}</h2>
+        <h2 id="bmc-connection-title" className="text-lg font-semibold">{needsReconnect ? "Update BMC session" : status.connected ? "Account connected" : "Import your session"}</h2>
         <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${needsReconnect ? "bg-amber-400/10 text-amber-200" : status.connected ? "bg-lime/10 text-lime" : "bg-white/5 text-text-secondary"}`}>{needsReconnect ? "Action needed" : status.connected ? "Automatic checks on" : "Not connected"}</span>
       </div>
-      <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Sign in below from your phone or computer. Login opens in Incognito; Sentinel encrypts the saved session and does not save your password.</p>
+      <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Import your signed-in BMC session from Helium. Sentinel encrypts it on the server and uses it for automatic history checks. Update it here whenever BMC expires the session.</p>
       {status.health.error && <p className="mt-4 text-sm leading-relaxed text-amber-200">{status.health.error}</p>}
-      {!frame && <div className="mt-6 flex flex-wrap gap-3">
-        <button className="inline-flex items-center justify-center rounded-xl bg-lime font-semibold text-bg-deep transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime min-h-11 px-5 py-2.5 text-sm disabled:opacity-50" disabled={busy} onClick={() => void action("start")}>{busy ? "Please wait…" : status.connected || needsReconnect ? "Reconnect in Incognito" : "Open private login"}</button>
-        {status.login && <button className={button} disabled={busy} onClick={() => void refreshFrame(status.login!.id).catch(reason => setError(reason.message))}>Resume private login</button>}
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button type="button" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-lime px-5 py-2.5 text-sm font-semibold text-bg-deep hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime disabled:opacity-50" disabled={busy} onClick={() => setEditing(value => !value)}>{editing ? "Close session form" : status.connected || needsReconnect ? "Update Helium session" : "Import Helium session"}</button>
         {status.connected && <><button className={button} disabled={busy || status.health.syncing} onClick={() => void action("sync")}>{status.health.syncing ? "Checking history…" : "Check history now"}</button><button className={button} disabled={busy || status.health.syncing} onClick={() => void action("disconnect")}>Disconnect</button></>}
-      </div>}
-      {busy && activeAction === "start" && <p role="status" className="mt-4 text-sm text-text-secondary">Starting the private browser on the server. The login will open here when it is ready.</p>}
-      {error && <div ref={feedbackRef} role="alert" className="mt-4 scroll-mt-24 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm leading-relaxed text-red-200">
-        <p className="font-semibold">{activeAction === "start" || !frame ? "Private login did not open" : "The browser action could not complete"}</p><p className="mt-2">{error}</p>
-        {recoveryCommand && <div className="mt-3"><p className="text-xs font-semibold">Run once on the Sentinel VPS</p><code className="mt-2 block break-words rounded-lg bg-black/20 p-3 text-xs">{recoveryCommand}</code></div>}
-      </div>}
+      </div>
+      {editing && <form className="mt-6 grid gap-4 border-t border-[var(--border)] pt-6" onSubmit={event => { event.preventDefault(); void action("import", manualImport ? { appHeaders, studioHeaders } : { sessionToken }); }}>
+        <h3 className="text-base font-semibold">Paste your Helium session</h3>
+        <p className="max-w-[70ch] text-sm leading-relaxed text-text-secondary">Sign in to BMC in Helium, copy your session with the extractor, and paste it here. Sentinel verifies the creator account and history access before replacing the saved session.</p>
+        <details className="text-sm leading-relaxed text-text-secondary">
+          <summary className="min-h-11 cursor-pointer font-medium text-lime">Set up the Helium session extractor</summary>
+          <ol className="mt-3 list-decimal space-y-3 pl-5">
+            <li><a href="/downloads/helium-bmc-session-extractor.zip" download className="text-lime underline underline-offset-4">Download the extractor</a> and unzip it.</li>
+            <li>In Helium, open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, select <strong>Load unpacked</strong>, and choose the extracted folder containing <code>manifest.json</code>. Review the BMC cookie-access permission.</li>
+            <li>Open your signed-in BMC creator dashboard. Open the extractor and press <strong>Copy session for Sentinel</strong>, then paste below. If using an Incognito BMC window, enable <strong>Allow in Incognito</strong> for the extractor first.</li>
+          </ol>
+          <p className="mt-3">The extractor reads BMC cookies only when you press Copy. It has no background worker, saved data or network requests. A console snippet cannot read protected HttpOnly session cookies.</p>
+        </details>
+        <label className="flex min-h-11 items-center gap-2 text-sm text-text-secondary"><input type="checkbox" checked={manualImport} onChange={event => setManualImport(event.target.checked)} disabled={busy} />Use copied request headers instead</label>
+        {!manualImport && <label htmlFor="bmc-session-token" className="grid gap-2 text-sm font-semibold">Helium session
+          <textarea id="bmc-session-token" required rows={5} maxLength={65536} value={sessionToken} onChange={event => setSessionToken(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} className={`w-full resize-y rounded-xl border border-[var(--border)] bg-bg-deep p-3 text-base font-normal focus-visible:outline-2 focus-visible:outline-lime ${showSession ? "" : "[-webkit-text-security:disc]"}`} />
+        </label>}
+        {manualImport && <><details className="text-sm leading-relaxed text-text-secondary">
+          <summary className="min-h-11 cursor-pointer font-medium text-lime">How to copy the session from Helium</summary>
+          <ol className="mt-3 list-decimal space-y-3 pl-5">
+            <li>Open BMC’s creator dashboard in Helium. Open DevTools with <kbd>⌘⌥I</kbd> on Mac or <kbd>Ctrl+Shift+I</kbd> on Windows, then select <strong>Network</strong>.</li>
+            <li>Open <strong>Supporters → Monthly</strong>. Select a successful request to <code className="break-all">app.buymeacoffee.com/api/v1/subscriptions?type=2…</code>. In <strong>Headers → Request Headers</strong>, copy the request headers, including <strong>Cookie</strong> and <strong>X-XSRF-TOKEN</strong> if present. Paste into the first field.</li>
+            <li>Open <strong>Supporters → One-time</strong> and reload. Select the page request to <code className="break-all">studio.buymeacoffee.com/transactions/supporters</code> or a successful <code className="break-all">/api/supporters/onetime</code> request. Copy its request headers into the second field.</li>
+          </ol>
+          <p className="mt-3">The Cookie header value by itself is also accepted. Use request headers, not response headers or “Copy as fetch”. A console snippet using document.cookie cannot read protected HttpOnly session cookies.</p>
+        </details>
+        {[{ id: "bmc-app-session", label: "BMC app request headers", value: appHeaders, change: setAppHeaders }, { id: "bmc-studio-session", label: "BMC studio request headers", value: studioHeaders, change: setStudioHeaders }].map(field => <label key={field.id} htmlFor={field.id} className="grid gap-2 text-sm font-semibold">{field.label}
+          <textarea id={field.id} required rows={4} maxLength={32768} value={field.value} onChange={event => field.change(event.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} disabled={busy} className={`w-full resize-y rounded-xl border border-[var(--border)] bg-bg-deep p-3 text-base font-normal focus-visible:outline-2 focus-visible:outline-lime ${showSession ? "" : "[-webkit-text-security:disc]"}`} />
+        </label>)}</>}
+        <label className="flex min-h-11 items-center gap-2 text-sm text-text-secondary"><input type="checkbox" checked={showSession} onChange={event => setShowSession(event.target.checked)} />Show pasted session</label>
+        <p className="text-xs leading-relaxed text-text-tertiary">These headers grant access to your BMC account. Paste them only here. They are encrypted on the server and never stored in this browser’s local storage.</p>
+        <button type="submit" className="min-h-11 justify-self-start rounded-xl bg-lime px-5 py-3 text-sm font-semibold text-bg-deep hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime disabled:opacity-50" disabled={busy || (manualImport ? !appHeaders.trim() || !studioHeaders.trim() : !sessionToken.trim())}>{busy && activeAction === "import" ? "Verifying session…" : "Verify and save session"}</button>
+      </form>}
+      {error && <div ref={feedbackRef} role="alert" className="mt-4 scroll-mt-24 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm leading-relaxed text-red-200"><p className="font-semibold">BMC session could not be updated</p><p className="mt-2">{error}</p></div>}
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 text-sm sm:grid-cols-3">
         <div className="col-span-2 sm:col-span-1"><dt className="text-text-tertiary">Last complete check</dt><dd className="mt-1 font-medium">{status.health.lastSuccessAt ? displayDateTime(status.health.lastSuccessAt) : "Waiting for first check"}</dd></div>
         <div><dt className="text-text-tertiary">Recorded payments</dt><dd className="mt-1 font-medium tabular-nums">{status.health.paymentCount}</dd></div>
         <div><dt className="text-text-tertiary">Needs review</dt><dd className="mt-1 font-medium tabular-nums">{status.health.reviewCount}</dd></div>
       </dl>
-      <p className="mt-4 max-w-[70ch] text-xs leading-relaxed text-text-tertiary">Checks run every 15 minutes while the Sentinel bot is online. If BMC expires the session, admins receive a reconnect notification. Previous history stays available.</p>
+      <p className="mt-4 max-w-[70ch] text-xs leading-relaxed text-text-tertiary">Checks run every 15 minutes while the Sentinel bot is online. If BMC expires the session, admins receive a session-update notification. Previous history stays available.</p>
     </section>
-    {frame && <section ref={loginRef} tabIndex={-1} className="mt-7 scroll-mt-24 focus:outline-none" aria-labelledby="private-login-title">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold" id="private-login-title">Private BMC login</h2><button className={button} disabled={busy} onClick={() => void action("cancel")}>Close private window</button></div>
-      <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Use BMC’s email login. Tap a field in the browser, then enter its text below. Complete any OTP or verification yourself. When your dashboard opens, select <strong>Connect account</strong>. This private window closes after 15 minutes.</p>
-      <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,390px)_minmax(0,1fr)]">
-        <div className="min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-white">
-          <p className="border-b border-neutral-200 bg-neutral-100 px-3 py-2 text-xs font-medium text-neutral-800">{frame.host} · Incognito</p>
-          {/* Provider screenshot is generated only on the server, never a remote image URL. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={frame.image} alt="Interactive private BMC login browser. Tap a field, then use the text and keyboard controls beside it." width={frame.width} height={frame.height} className="block h-auto w-full cursor-pointer" onClick={event => {
-            const bounds = event.currentTarget.getBoundingClientRect();
-            void action("click", { x: Math.min(frame.width - 1, (event.clientX - bounds.left) * frame.width / bounds.width), y: Math.min(frame.height - 1, (event.clientY - bounds.top) * frame.height / bounds.height) });
-          }} />
-        </div>
-        <div className="min-w-0">
-          <form onSubmit={event => { event.preventDefault(); const text = typed; setTyped(""); void action("type", { text }); }}>
-            <label className="text-sm font-semibold" htmlFor="bmc-login-text">Text for the selected BMC field</label>
-            <p id="bmc-input-help" className="mt-2 text-xs leading-relaxed text-text-secondary">First tap the email, password or code field above. Text is hidden here and cleared after sending.</p>
-            <input id="bmc-login-text" aria-describedby="bmc-input-help" type={showText ? "text" : "password"} autoComplete="off" maxLength={1000} value={typed} onChange={event => setTyped(event.target.value)} className="mt-3 min-h-11 w-full rounded-xl border border-[var(--border)] bg-bg-card px-3 text-base focus:outline-2 focus:outline-lime" />
-            <label className="mt-3 flex min-h-11 items-center gap-2 text-sm text-text-secondary"><input type="checkbox" checked={showText} onChange={event => setShowText(event.target.checked)} />Show entered text</label>
-            <button type="submit" className={`${button} mt-2`} disabled={busy || !typed}>Send text to BMC</button>
-          </form>
-          <div className="mt-5 flex flex-wrap gap-2" aria-label="Private browser keyboard">
-            {[["Tab", "Next field"], ["Shift+Tab", "Previous field"], ["Enter", "Enter"], ["Backspace", "Backspace"], ["ControlOrMeta+A", "Select field text"]].map(([key, label]) => <button key={key} className={button} disabled={busy} onClick={() => void action("key", { key })}>{label}</button>)}
-            <button className={button} disabled={busy} onClick={() => void action("scroll", { dy: -450 })}>Scroll up</button><button className={button} disabled={busy} onClick={() => void action("scroll", { dy: 450 })}>Scroll down</button>
-            <button className={button} disabled={busy} onClick={() => void refreshFrame(frame.loginId).catch(reason => setError(reason.message))}>Refresh view</button>
-          </div>
-          <button className="inline-flex items-center justify-center rounded-xl bg-lime font-semibold text-bg-deep transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-lime mt-7 min-h-11 w-full px-5 py-3 text-sm disabled:opacity-50" disabled={busy} onClick={() => void action("finish")}>{busy ? "Please wait…" : "Connect account"}</button>
-          <p className="mt-3 text-xs leading-relaxed text-text-tertiary">Only the configured creator account can connect. Closing this window discards an unfinished login.</p>
-        </div>
-      </div>
-    </section>}
     <section className="mt-10" aria-labelledby="bmc-subscriptions-title">
       <h2 id="bmc-subscriptions-title" className="text-xl font-semibold">Subscription status</h2>
       <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Checked directly against BMC’s subscription records, separately from paid history. Cancelling monthly support does not reverse earlier successful payments.</p>
@@ -189,7 +160,7 @@ export default function BmcConnection() {
     <section className="mt-10" aria-labelledby="bmc-history-title">
       <h2 id="bmc-history-title" className="text-xl font-semibold">Payment verification</h2>
       <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Sentinel checks all available one-time and monthly support history, including cancelled subscriptions. Subscription activity alone does not confirm a payment. Ambiguous records and refunds go to review; missing history never automatically removes XP.</p>
-      {!status.payments.length ? <p className="mt-5 rounded-xl border border-[var(--border)] p-5 text-sm text-text-secondary">{status.health.syncing ? "Fetching your full payment history…" : "Connect BMC and run a history check to see recorded payments here."}</p> : <ul className="mt-5 divide-y divide-[var(--border)] border-y border-[var(--border)]">
+      {!status.payments.length ? <p className="mt-5 rounded-xl border border-[var(--border)] p-5 text-sm text-text-secondary">{status.health.syncing ? "Fetching your full payment history…" : "Import a BMC session and run a history check to see recorded payments here."}</p> : <ul className="mt-5 divide-y divide-[var(--border)] border-y border-[var(--border)]">
         {status.payments.map(payment => {
           const reviews = status.reviews.filter(review => review.id === payment.id);
           return <li key={payment.id} className="py-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-semibold tabular-nums">{new Intl.NumberFormat("en-IN", { style: "currency", currency: payment.currency }).format(Number(payment.amount))}<span className="ml-2 text-xs font-normal text-text-secondary">{payment.frequency === "MONTHLY" ? "Monthly support" : "One-time support"}</span></p><time className="mt-1 block text-xs text-text-tertiary">{new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(payment.occurredAt))}</time></div><span className={`text-xs font-medium ${reviews.length ? "text-amber-200" : "text-lime"}`}>{reviews.length ? "Needs review" : "Recorded in BMC"}</span></div>

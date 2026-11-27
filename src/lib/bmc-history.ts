@@ -3,7 +3,7 @@ import { decryptSecret } from "./secret-crypto";
 import { mutateBmcSession } from "./bmc-private-store";
 
 export class BmcHistoryError extends Error {
-  constructor(public code: string, message: string, public status = 502, public recoveryCommand?: string) { super(message); }
+  constructor(public code: string, message: string, public status = 502) { super(message); }
 }
 
 export type BmcDashboardSession = { cookie: string; xsrfToken?: string; studioCookie?: string; connectedAt?: string; connectedBy?: string; accountSlug?: string; generation?: string };
@@ -34,7 +34,7 @@ export async function bmcDashboardSession(): Promise<Session> {
     if (session.xsrfToken && (typeof session.xsrfToken !== "string" || /[\r\n]/.test(session.xsrfToken))) throw Error();
     return session;
   } catch {
-    throw new BmcHistoryError("SESSION_NOT_CONFIGURED", "Connect your BMC account in Sentinel → Transactions → BMC connection.", 503);
+    throw new BmcHistoryError("SESSION_NOT_CONFIGURED", "Import your Helium BMC session in Sentinel → Transactions → BMC connection.", 503);
   }
 }
 
@@ -79,7 +79,7 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
   if (target.protocol !== "https:" || !["app.buymeacoffee.com", "studio.buymeacoffee.com"].includes(target.hostname) || target.port || target.username || target.password) throw new BmcHistoryError("INVALID_URL", "Invalid BMC endpoint.", 400);
   const session = options?.session || await bmcDashboardSession();
   const cookie = target.hostname === "studio.buymeacoffee.com" ? session.studioCookie : session.cookie;
-  if (!cookie || /[\r\n]/.test(cookie)) throw new BmcHistoryError("SESSION_EXPIRED", "Reconnect BMC in Sentinel to read the complete account history.", 503);
+  if (!cookie || /[\r\n]/.test(cookie)) throw new BmcHistoryError("SESSION_EXPIRED", "Import a fresh Helium BMC session in Sentinel to read the complete account history.", 503);
   const fetcher = options?.fetcher || fetch;
   let response: Response;
   try {
@@ -116,7 +116,7 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
       });
     }
   }
-  if ([301, 302, 303, 307, 308, 401, 419].includes(response.status)) throw new BmcHistoryError("SESSION_EXPIRED", "Reconnect the BMC dashboard session.", 503);
+  if ([301, 302, 303, 307, 308, 401, 419].includes(response.status)) throw new BmcHistoryError("SESSION_EXPIRED", "Update the BMC session from Helium in Sentinel.", 503);
   if (response.status === 403) throw new BmcHistoryError("PROVIDER_ACCESS_DENIED", "BMC denied access. Check the dashboard session and account permissions.", 503);
   if (response.status === 429) throw new BmcHistoryError("PROVIDER_RATE_LIMIT", "BMC rate limited history reads. Try again later.", 503);
   if (response.status === 404) throw new BmcHistoryError("HISTORY_NOT_FOUND", "Subscription history is unavailable for this account.", 404);

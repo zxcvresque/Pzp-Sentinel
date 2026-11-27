@@ -1,32 +1,37 @@
-# Private BMC account history and connection
+# Private BMC account history and session import
 
-Open **Sentinel → Transactions → BMC connection** (`/admin/bmc`) on a phone or computer. Admins can open an isolated, server-hosted Incognito browser, complete BMC email login/OTP/verification, and select **Connect account**. No extension, desktop helper, copied cookie or CSV is needed.
+Open **Sentinel → Transactions → BMC connection** (`/admin/bmc`). Sign in to your own BMC account in Helium, copy its session with the local extractor, then paste it into **Helium session → Verify and save session**. Sentinel no longer opens a browser or handles BMC login, passwords, OTPs or CAPTCHAs.
 
-The browser is controlled inside Sentinel through screenshots, taps, text entry and keyboard controls. Every login starts with a new non-persistent browser context, closes after 15 minutes, and is accessible only to the admin who opened it. External sign-in popups are unavailable; use BMC email login. Sentinel never solves verification challenges or saves passwords. BMC may reject a hosted browser; the connection screen reports failures rather than claiming a successful connection.
+## Copy the session from Helium
+
+1. Download `/downloads/helium-bmc-session-extractor.zip` from Sentinel's connection page and unzip it.
+2. Open `chrome://extensions` in Helium, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder containing `manifest.json`. The browser asks for BMC cookie access; review that permission before enabling it.
+3. In the same Helium window, open your signed-in BMC creator dashboard, open the extractor, and press **Copy session for Sentinel**. If you sign in through Incognito, explicitly enable **Allow in Incognito** on the extension first.
+4. Paste the copied session into Sentinel and select **Verify and save session**. Clear your clipboard afterward.
+
+The extractor runs only on a button press, reads app/studio cookies from the active BMC tab's cookie store (including HttpOnly cookies), and copies a versioned JSON credential to the clipboard. It has no background worker, network calls, local storage or telemetry. A plain console snippet using `document.cookie` cannot read HttpOnly cookies and is not a complete session extractor. Extension source is in `tools/helium-bmc-session-extractor/`; regenerate its downloadable ZIP with `python3 scripts/package-bmc-session-extractor.py` after changing it. The extension works in desktop Helium; the Sentinel paste/import form works on mobile or desktop.
+
+**Manual alternative:** choose **Use copied request headers instead**. In Helium DevTools → Network, copy **Request Headers** (including `Cookie` and `X-XSRF-TOKEN`, if present) from a successful app request such as `https://app.buymeacoffee.com/api/v1/subscriptions?type=2&page=1`. Also copy request headers from the signed-in studio dashboard or one-time history request at `https://studio.buymeacoffee.com/transactions/supporters` or `/api/supporters/onetime`. Paste them into the corresponding app/studio fields. A raw Cookie header value is also supported. Do not paste response headers, JavaScript, or “Copy as fetch”.
+
+## Validation and storage
+
+The server validates the configured creator-profile link on the authenticated studio dashboard, compares nonempty first-page subscription discovery through both cookie sets, and checks one-time history access before saving anything. Mixed, expired, inaccessible, malformed or mismatched sessions leave existing credentials untouched. An account with no monthly subscriptions currently requires an alternate reviewed identity-verification method before import; the importer does not accept two empty lists as proof that sessions belong to the same creator.
+
+The session is encrypted with AES-256-GCM in `data/bmc-dashboard/session.enc` (mode `0600`, directory creation `0700`), using `CREDENTIAL_ENC_KEY`. `BMC_DASHBOARD_SESSION_FILE` overrides the path. Web and bot processes must share the path and key. Session values never appear in API responses or logs, and the form uses no browser local storage. It clears pasted fields after a successful import. Configure `BMC_ACCOUNT_SLUG` and `WEBAPP_URL` to your creator slug and exact public Sentinel origin. Keep proxies from logging request bodies on `/api/bmc/connection`.
+
+Successful provider requests retain provider-issued cookie rotations. If BMC invalidates the session, Sentinel retains the previous history and notifies admins to import a fresh Helium session. Disconnect removes the saved session, pauses automatic checks, and retains encrypted history/audit evidence. Existing valid sessions from older versions remain usable. Importing a session immediately queues a complete history check without needing a restart.
 
 ## VPS deployment
 
 ```bash
 cd ~/Sentinel
+git pull --ff-only origin main
 bash upgrade.sh
 ```
 
-The upgrade installs the pinned Playwright dependency, Chromium and its Linux dependencies, checks browser startup, then builds/restarts Sentinel. Linux dependency installation may invoke sudo. Run PM2 as the same non-root user who runs the upgrade. Chromium must have sandbox support; the app does not fall back to `--no-sandbox`. An existing compatible Chromium can be selected with `BMC_CHROMIUM_EXECUTABLE`.
+No Playwright, Chromium install, sandbox policy, server-side browser or extension on the VPS is required. For installations where the removed browser feature was set up previously, an optional cleanup command is `bash scripts/remove-bmc-browser-setup.sh --apply`. It refuses to remove the managed browser while Chromium processes from that path are running, unloads/removes only Sentinel's dedicated AppArmor profile, and removes only the dedicated root-owned browser directory. It never removes encrypted session/history data or the operator's general browser cache.
 
-Ubuntu's AppArmor user-namespace restriction can block a downloaded Chromium even after a successful installation. The connection API reports `BROWSER_SANDBOX_BLOCKED` separately from missing browsers or Linux libraries. Run `node scripts/check-bmc-browser.mjs` as the PM2 user for a startup check. The one-time scoped setup is:
-
-```bash
-node scripts/setup-bmc-browser.mjs          # preview the exact system changes
-node scripts/setup-bmc-browser.mjs --apply  # administrator-reviewed setup; uses sudo
-```
-
-This copies the pinned Chromium into a versioned, root-owned tree under `/opt/sentinel-bmc-browser/`, strips setuid/setgid and group/other write bits, and installs `/etc/apparmor.d/sentinel-bmc-browser`. Only Chromium executables inside that protected tree receive `userns` permission; the profile follows [Chromium's documented AppArmor approach](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). It does not grant blanket namespace access to user-writable browser caches, disable AppArmor globally, or disable Chromium's sandbox. The app automatically selects the matching managed browser revision. Retry connecting after setup; rerun it after a Playwright revision update if the sandbox check requests it. Rollback: stop private login sessions, unload the profile with `sudo apparmor_parser -R /etc/apparmor.d/sentinel-bmc-browser`, and remove the profile/managed installation after reviewing their contents.
-
-Configure the existing `BMC_ACCOUNT_SLUG`, `WEBAPP_URL` (the exact public Sentinel origin), and `CREDENTIAL_ENC_KEY`. The account must match the creator-profile link on the authenticated BMC dashboard. Sessions and history are stored with AES-256-GCM in the Git-ignored `data/bmc-dashboard/` directory, mode `0600`; directory creation uses `0700`. `BMC_DASHBOARD_SESSION_FILE` can relocate the session and its sibling history/health files. Web and bot processes must share this path and encryption key. Use a single PM2 web process; the interactive login browser is held in process memory and does not support multi-instance load balancing.
-
-Saved session cookies remain server-side. The browser closes once the session is validated/saved. Successful provider requests retain provider-issued cookie rotations. If BMC invalidates the session, Sentinel keeps the previous complete history, marks verification unavailable, and notifies admins once per error transition. Reconnect from Sentinel; no password or OTP is replayed automatically. Disconnect removes the saved session and pauses further checks. Previously fetched history and audit evidence remain encrypted on the server.
-
-The legacy `scripts/install-bmc-dashboard-session.mjs` installer still supports read-only, per-subscription history requests for existing operators. Automatic account-wide verification requires the new in-app connection, including studio cookies and verified creator identity.
+The legacy `scripts/install-bmc-dashboard-session.mjs` remains available for per-subscription read-only API access. The new website importer is preferred for account-wide verification because it validates both origins and creator identity.
 
 ## Automatic verification
 
@@ -52,4 +57,4 @@ Payment fields include stable `bmc-history:<supportId>` identity, provider refer
 
 History is evidence, **not an XP command**. Sentry should consume the existing donation bridge's `xpEligible`/verification fields, review conflicts, and reverse awards only for an explicit audited reversal/refund. An unavailable or absent history row is not evidence of failed payment.
 
-Admin-only `GET/POST /api/bmc/connection` handles health, the owner-bound private browser and sync requests. Writes require an authenticated active admin and the exact configured Sentinel Origin; input, destinations and keyboard actions are bounded. The browser has no arbitrary URL or JavaScript-execution control, accepts no downloads, blocks external top-level navigation and common destructive account/payment routes, and closes external popups. Login screenshots and text are never persisted or logged by the application; keep reverse proxies configured not to log request/response bodies on this route.
+Admin-only `GET/POST /api/bmc/connection` returns connection health and handles `import`, `sync`, and `disconnect`. Writes require an authenticated active admin, JSON, and the exact configured Sentinel Origin. An extractor import sends `{action:"import",sessionToken:"<copied JSON>"}`; manual import sends `{action:"import",appHeaders:"...",studioHeaders:"..."}`. Input is bounded; provider URLs are fixed and redirects are never followed with credentials. Removed browser-control actions return 400, and old screenshot requests return 410. No browser process is started.

@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Sentinel BMC Session Extractor",
+  "version": "1.0.0",
+  "description": "Copy your own signed-in BMC session for encrypted import into Sentinel.",
+  "permissions": ["cookies", "clipboardWrite"],
+  "host_permissions": ["https://buymeacoffee.com/*", "https://*.buymeacoffee.com/*"],
+  "incognito": "split",
+  "action": { "default_popup": "popup.html", "default_title": "Copy BMC session for Sentinel" }
+}

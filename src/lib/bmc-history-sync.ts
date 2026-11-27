@@ -124,7 +124,7 @@ export async function syncBmcAccountHistory() {
   try {
     previous = await readBmcPrivate<BmcSyncHealth>(healthPath());
     const session = await bmcDashboardSession();
-    if (!session.generation || !session.connectedBy || session.accountSlug !== bmcAccountSlug() || !session.studioCookie) throw new BmcHistoryError("SESSION_NOT_CONFIGURED", "Connect BMC inside Sentinel to enable automatic verification.", 503);
+    if (!session.generation || !session.connectedBy || session.accountSlug !== bmcAccountSlug() || !session.studioCookie) throw new BmcHistoryError("SESSION_NOT_CONFIGURED", "Import your Helium BMC session in Sentinel to enable automatic verification.", 503);
     const old = await readBmcHistorySnapshot();
     const result = await fetchEntireBmcAccountHistory(session);
     if ((await bmcDashboardSession()).generation !== session.generation) throw new BmcHistoryError("CONNECTION_CHANGED", "The BMC connection changed during sync. Try again.", 409);
