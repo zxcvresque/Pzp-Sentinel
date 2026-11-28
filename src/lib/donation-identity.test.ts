@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { identityMigrationBatch, PIN_DONATION_IDENTITIES_SQL } from "./donation-identity-migration";
 let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
@@ -32,4 +33,21 @@ it("loads the deployment entry point in its actual Node/tsx format without touch
     env: { ...process.env, DATABASE_URL: "postgresql://unused:unused@127.0.0.1:9/unused" },
   });
   expect(output).toContain("Donation identity migration entry point loaded successfully.");
+});
+
+it("pins a whole batch in one atomic statement and preserves its IDs when replayed", async () => {
+  const isolated = new PGlite();
+  try {
+    await isolated.exec(`CREATE TABLE "Transaction" (id text PRIMARY KEY, "bridgeDonationId" text UNIQUE); INSERT INTO "Transaction" (id) VALUES ('legacy-one'), ('legacy-two')`);
+    const rows = [
+      { id: "legacy-one", method: "BMC", providerPaymentId: "pi_original", bmcEventId: null, orderPaymentId: null },
+      { id: "legacy-two", method: "UPI", providerPaymentId: null, bmcEventId: null, orderPaymentId: null },
+    ];
+    expect((await isolated.query(PIN_DONATION_IDENTITIES_SQL, [JSON.stringify(identityMigrationBatch(rows))])).affectedRows).toBe(2);
+    rows[0].providerPaymentId = "pi_added_later";
+    expect((await isolated.query(PIN_DONATION_IDENTITIES_SQL, [JSON.stringify(identityMigrationBatch(rows))])).affectedRows).toBe(0);
+    expect((await isolated.query('SELECT * FROM "Transaction" ORDER BY id')).rows).toEqual([
+      { id: "legacy-one", bridgeDonationId: "bmc:pi_original" }, { id: "legacy-two", bridgeDonationId: "manual:legacy-two" },
+    ]);
+  } finally { await isolated.close(); }
 });

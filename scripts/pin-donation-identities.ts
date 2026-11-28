@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { prisma } from "../src/lib/db";
-import { donorPaymentIdentity } from "../src/lib/donor-payment-id";
+import { databasePool } from "../src/lib/database-pool";
+import { identityMigrationBatch, PIN_DONATION_IDENTITIES_SQL, type IdentityMigrationRow } from "../src/lib/donation-identity-migration";
 
 // Run after db push, before restarting. Preserve currently published IDs; never
 // rename old donations to the new transaction-based format during an upgrade.
@@ -12,22 +12,21 @@ async function main() {
     }
     let pinned = 0;
     for (;;) {
-      const rows = await prisma.transaction.findMany({
-        where: { bridgeDonationId: null }, take: 200, orderBy: { id: "asc" },
-        select: { id: true, method: true, providerPaymentId: true, bmcEventId: true, razorpayOrder: { select: { paymentId: true } } },
-      });
+      const { rows } = await databasePool.query<IdentityMigrationRow>(`
+        SELECT tx.id, tx.method, tx."providerPaymentId", tx."bmcEventId", ord."paymentId" AS "orderPaymentId"
+        FROM "Transaction" tx LEFT JOIN "RazorpayOrder" ord ON ord."transactionId" = tx.id
+        WHERE tx."bridgeDonationId" IS NULL ORDER BY tx.id LIMIT 200
+      `);
       if (!rows.length) break;
-      await prisma.$transaction(rows.map(row => prisma.transaction.updateMany({
-        where: { id: row.id, bridgeDonationId: null },
-        data: { bridgeDonationId: donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id).id },
-      })));
-      pinned += rows.length;
+      const result = await databasePool.query(PIN_DONATION_IDENTITIES_SQL, [JSON.stringify(identityMigrationBatch(rows))]);
+      pinned += result.rowCount || 0;
     }
     console.log(`Preserved ${pinned} existing donation identities.`);
-  } finally { await prisma.$disconnect(); }
+  } finally { await databasePool.end(); }
 }
 
-main().catch(() => {
-  console.error("Donation identity preservation failed. Keep Sentinel stopped and resolve the migration before restarting.");
+main().catch((error: unknown) => {
+  const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^(P\d{4}|\d{5}|E[A-Z_]{2,40})$/.test(error.code) ? ` (${error.code})` : "";
+  console.error(`Donation identity preservation failed${code}. Keep Sentinel stopped and resolve the migration before restarting.`);
   process.exitCode = 1;
 });
