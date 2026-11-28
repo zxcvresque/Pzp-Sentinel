@@ -45,7 +45,7 @@ it("retains failed payment evidence without adding a captured transaction", asyn
 
 it("returns the history-owned ledger entry for a later webhook without creating or announcing another payment", async () => {
   mocks.findTransaction.mockResolvedValue({ id: "existing", fromUserId: "donor", fromUser: { telegramId: "574705248" }, bmcHistoryPaymentId: "pi_paid" });
-  const response = await POST(request("donation.created", { id: 16287848, status: "succeeded", amount: 5, transaction_id: "pi_paid" }));
+  const response = await POST(request("donation.created", { id: 16287848, status: "succeeded", amount: 5, transaction_id: "pi_paid", currency: "USD" }));
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({ transactionId: "existing", status: "duplicate_resource" });
   expect(mocks.createTransaction).not.toHaveBeenCalled();
@@ -58,7 +58,7 @@ it("returns the history-owned ledger entry for a later webhook without creating 
 it("holds a reference-free webhook near the same Telegram donor's payment without guessing it is new or a duplicate", async () => {
   mocks.findTransaction.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "nearby-charge" });
   mocks.supporter.mockResolvedValue({ userId: "donor" });
-  const response = await POST(request("donation.created", { id: 16287848, supporter_id: 9, status: "succeeded", amount: 5 }));
+  const response = await POST(request("donation.created", { id: 16287848, supporter_id: 9, status: "succeeded", amount: 5, currency: "USD" }));
   expect(await response.json()).toMatchObject({ status: "payment_review_required", transactionId: null });
   expect(mocks.createTransaction).not.toHaveBeenCalled();
   expect(mocks.notify).not.toHaveBeenCalled();

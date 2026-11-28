@@ -49,6 +49,8 @@ export function transactionWhereFromParams(
   if (currency) where.currency = currency;
   if (type) where.type = type;
   if (method) where.method = method;
+  // BMC is the source of truth: rows its complete history has no charge for.
+  if (params.get("bmcRecords") === "NOT_IN_BMC") { where.method = "BMC"; where.bmcReviewReason = "NOT_IN_BMC_HISTORY"; }
   if (lifecycle === "VOIDED") where.voidedAt = { not: null };
   else if (lifecycle !== "ALL") where.voidedAt = null;
 

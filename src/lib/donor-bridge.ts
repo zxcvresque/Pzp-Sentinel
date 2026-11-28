@@ -44,7 +44,8 @@ export async function refreshBridgeEvents() {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(729045821)");
     const sources = await client.query("SELECT payload FROM donor_bridge_sources ORDER BY id");
-    const donations = new Map<string, Donation>(sources.rows.map(r => [r.payload.id, r.payload]));
+    // BMC facts come only from verified publications, never raw provider snapshots.
+    const donations = new Map<string, Donation>(sources.rows.filter(r => r.payload.provider !== "bmc").map(r => [r.payload.id, r.payload]));
     const rows = await client.query(`SELECT t.*, t.date AT TIME ZONE 'UTC' AS date, u."telegramId", u.name,
       o."paymentId" AS order_payment, i."telegramId" AS guest_tg, i."guestName" AS guest_name
       FROM "Transaction" t LEFT JOIN "User" u ON u.id=t."fromUserId"
@@ -56,6 +57,7 @@ export async function refreshBridgeEvents() {
       OR t.id IN (SELECT DISTINCT payload->>'transactionId' FROM donor_bridge_events WHERE payload->>'transactionId' IS NOT NULL)
       ORDER BY t.date,t.id`, [BRIDGE_START]);
     for (const row of rows.rows) {
+      if (row.method === "BMC") continue;
       const { id, provider, paymentId } = donorPaymentIdentity(row.method, row.providerPaymentId || row.order_payment || row.bmcEventId, row.id, row.bridgeDonationId);
       const aliases = donorPaymentAliases(row.method, row.id, [row.providerPaymentId, row.order_payment, row.bmcEventId, row.bmcHistoryPaymentId, row.bmcHistorySupportId]);
       // Old provider snapshots are aliases of this ledger row, not donations
@@ -85,11 +87,13 @@ export async function refreshBridgeEvents() {
         reversalReason: state === "REVERSED" ? row.voidReason || source?.reversalReason || row.providerState : undefined,
       });
     }
+    const published = await client.query('SELECT p.payload FROM "BmcBridgePublication" p ORDER BY p."transactionId"');
+    for (const row of published.rows) donations.set(row.payload.id, row.payload);
     const latest = await client.query("SELECT DISTINCT ON (donation_id) donation_id,digest,payload FROM donor_bridge_events ORDER BY donation_id,seq DESC");
     const digests = new Map(latest.rows.map(r => [r.donation_id, r.digest]));
     const previous = new Map<string, Donation>(latest.rows.map(r => [r.donation_id, r.payload]));
     for (const d of donations.values()) {
-      if (new Date(d.occurredAt) < new Date(BRIDGE_START)) {
+      if (d.provider !== "bmc" && new Date(d.occurredAt) < new Date(BRIDGE_START)) {
         const prior=previous.get(d.id);
         if (!prior) continue;
         // A finance edit moved a previously eligible payment before the cutoff.

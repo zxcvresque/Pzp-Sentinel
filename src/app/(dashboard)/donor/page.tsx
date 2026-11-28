@@ -21,6 +21,7 @@ import { useAutoRefresh } from "@/lib/use-auto-refresh";
 import {
   convertCurrencyAmount,
   formatCurrencyAmount,
+  supporterPaidLabel,
   type DisplayCurrency,
 } from "@/lib/currency-display";
 
@@ -34,6 +35,9 @@ interface Transaction {
   status: string;
   date: string;
   bmcPaidDate?: string | null;
+  bmcSupporterAmount?: string | null;
+  bmcSupporterCurrency?: string | null;
+  bmcReviewReason?: string | null;
   attachments?: string[];
   isTest?: boolean;
   providerVerified?: boolean;
@@ -674,12 +678,13 @@ function DonorView() {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">
                   {tx.description}
+                  {tx.method === "BMC" && tx.bmcReviewReason === "NOT_IN_BMC_HISTORY" && <span title="Buy Me a Coffee's payment history has no record of this payment. It is under review." className="ml-2 rounded bg-coral/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-coral">Not in BMC records</span>}
                   {tx.isTest && <span className="ml-2 rounded bg-violet/10 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-violet">Test</span>}
                 </div>
                 <div className="text-text-tertiary text-xs mt-1">
                   <span className="mr-2">{displayTransactionDate(tx)}{tx.method === "BMC" && <span className="ml-1 text-text-tertiary" title="BMC payment date in UTC">UTC</span>}</span>
                   <PaymentMethodBadge method={tx.method} detail={tx.paymentMethodDetail} />
-                  <span className="ml-1">&middot; paid in {tx.currency}</span>
+                  <span className="ml-1">&middot; {supporterPaidLabel(tx) ? <>paid {supporterPaidLabel(tx)} &rarr; {formatCurrencyAmount(Number(tx.amount), tx.currency as DisplayCurrency)}</> : <>paid in {tx.currency}</>}</span>
                 </div>
                 {tx.attachments && tx.attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">

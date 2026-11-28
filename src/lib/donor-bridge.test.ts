@@ -34,39 +34,38 @@ describe("donor bridge", () => {
   it("rejects unsupported money instead of treating it as INR", async () => {
     await expect(storeProviderDonation({ ...donation, currency: "EUR" })).rejects.toThrow("currency");
   });
-  it("unifies provider support history with a ledger webhook alias", async () => {
-    vi.stubEnv("BMC_ACCOUNT_SLUG", "account");
+  it("emits BMC only as its verified publication, ignoring raw provider snapshots and live ledger rows", async () => {
+    const verified = { ...donation, id: "bmc:pinned", transactionId: "tx1", telegramId: "12345", verification: "BMC_COMPLETE_HISTORY" };
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.startsWith("SELECT payload")) return { rows: [{ payload: donation }] };
-      if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", method: "BMC", bmcEventId: "bmc_support_account_123", telegramId: "12345", name: "Matched", amount: "10.00", currency: "USD", date: donation.occurredAt, donationFrequency: "ONE_TIME", providerState: "CAPTURED" }] };
+      if (sql.startsWith("SELECT payload")) return { rows: [{ payload: donation }] }; // raw provider snapshot
+      if (sql.startsWith("SELECT p.payload")) return { rows: [{ payload: verified }] };
+      if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", method: "BMC", bmcEventId: "bmc_support_account_123", telegramId: "12345", name: "Live", amount: "99.00", currency: "USD", date: donation.occurredAt, donationFrequency: "ONE_TIME", providerState: "CAPTURED" }] };
       return { rows: [] };
     });
     await refreshBridgeEvents();
-    const writes=mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
-    expect(writes).toHaveLength(1);
-    expect(JSON.parse(writes[0][1][2])).toMatchObject({ id: "bmc:123", telegramId: "12345", transactionId: "tx1" });
+    const writes = mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
+    expect(writes.map(([, params]) => JSON.parse(params[2]))).toEqual([verified]);
     expect(mocks.query).toHaveBeenCalledWith("COMMIT");
   });
   it("does not append a duplicate event for an unchanged snapshot", async () => {
     let digest: string | null = null;
+    const razorpay = { ...donation, id: "razorpay:pay_1", provider: "razorpay", paymentId: "pay_1" };
     mocks.query.mockImplementation(async (sql: string, params: string[]) => {
-      if (sql.startsWith("SELECT payload")) return { rows: [{ payload: donation }] };
-      if (sql.startsWith("SELECT DISTINCT")) return { rows: digest ? [{ donation_id: donation.id, digest }] : [] };
+      if (sql.startsWith("SELECT payload")) return { rows: [{ payload: razorpay }] };
+      if (sql.startsWith("SELECT DISTINCT")) return { rows: digest ? [{ donation_id: razorpay.id, digest }] : [] };
       if (sql.startsWith("INSERT INTO donor_bridge_events")) digest=params[1];
       return { rows: [] };
     });
     await refreshBridgeEvents(); await refreshBridgeEvents();
     expect(mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"))).toHaveLength(1);
   });
-  it("keeps missing confirmation separate from explicit financial reversal in the legacy feed", async () => {
+  it("emits nothing for an unpublished BMC ledger row, confirmed or not", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", method: "BMC", bmcEventId: "bmc_monthly_sub_period_123", amount: "25", currency: "USD", date: donation.occurredAt, donationFrequency: "MONTHLY", providerState: "CAPTURED", bmcPaymentConfirmed: false }] };
+      if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", method: "BMC", bmcEventId: "bmc_monthly_sub_period_123", amount: "25", currency: "USD", date: donation.occurredAt, donationFrequency: "MONTHLY", providerState: "CAPTURED", bmcPaymentConfirmed: true }] };
       return { rows: [] };
     });
     await refreshBridgeEvents();
-    const write = mocks.query.mock.calls.find(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
-    expect(JSON.parse(write![1][2])).toMatchObject({ transactionId: "tx1", state: "PAID", paymentConfirmed: false, verificationStatus: "REQUIRES_REVIEW", xpEligible: false });
-    expect(JSON.parse(write![1][2])).not.toHaveProperty("reversalReason");
+    expect(mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"))).toHaveLength(0);
   });
   it("rolls back and releases the connection on a database error", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
@@ -78,15 +77,9 @@ describe("donor bridge", () => {
   });
 });
 
-it("merges a legacy provider alias into a pinned ledger identity without appending a second donation", async () => {
-  vi.stubEnv("BMC_ACCOUNT_SLUG", "account");
-  mocks.query.mockImplementation(async (sql: string) => {
-    if (sql.startsWith("SELECT payload")) return { rows: [{ payload: { ...donation, id: "bmc:123" } }] };
-    if (sql.includes('FROM "Transaction"')) return { rows: [{ id: "tx1", bridgeDonationId: "bmc:pinned", method: "BMC", bmcEventId: "bmc_support_account_123", providerPaymentId: "pi_added", telegramId: "574705248", amount: "5", currency: "USD", date: donation.occurredAt, donationFrequency: "ONE_TIME", bmcPaymentConfirmed: true, providerState: "CAPTURED" }] };
-    return { rows: [] };
-  });
+it("publishes a verified BMC donation dated before the legacy cutoff (BMC history is all-time)", async () => {
+  const early = { ...donation, id: "bmc:pinned", transactionId: "tx1", occurredAt: "2026-08-01T00:00:00Z", verification: "BMC_COMPLETE_HISTORY" };
+  mocks.query.mockImplementation(async (sql: string) => sql.startsWith("SELECT p.payload") ? { rows: [{ payload: early }] } : { rows: [] });
   await refreshBridgeEvents();
-  const writes = mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"));
-  expect(writes).toHaveLength(1);
-  expect(JSON.parse(writes[0][1][2])).toMatchObject({ id: "bmc:pinned", donorKey: "telegram:574705248", idempotencyKey: "sentinel:transaction:tx1", aliases: expect.arrayContaining(["bmc:123", "bmc:pi_added"]) });
+  expect(mocks.query.mock.calls.filter(([sql]) => sql.startsWith("INSERT INTO donor_bridge_events"))).toHaveLength(1);
 });

@@ -13,6 +13,9 @@ BEGIN
   IF TG_OP <> 'INSERT' THEN before_row := to_jsonb(OLD); END IF;
   IF TG_OP <> 'DELETE' THEN after_row := to_jsonb(NEW); END IF;
   ident := COALESCE(after_row->>'id', before_row->>'id');
+  -- BMC donations reach Sentry only through "BmcBridgePublication" (below),
+  -- after the donor's complete history verified. Ledger edits alone are silent.
+  IF COALESCE(before_row->>'method', 'BMC') = 'BMC' AND COALESCE(after_row->>'method', 'BMC') = 'BMC' THEN RETURN NULL; END IF;
   SELECT EXISTS (
     SELECT 1 FROM (VALUES (before_row), (after_row)) AS records(value)
     WHERE value->>'type' = 'DONATION' AND value->>'direction' = 'IN'
@@ -42,7 +45,7 @@ BEGIN
   IF TG_TABLE_NAME = 'User' THEN
     IF OLD."telegramId" IS NOT DISTINCT FROM NEW."telegramId" AND OLD.name IS NOT DISTINCT FROM NEW.name THEN RETURN NULL; END IF;
     INSERT INTO "SentryWebhookDelivery" ("transactionId")
-    SELECT id FROM "Transaction" WHERE "fromUserId" = NEW.id AND type = 'DONATION'
+    SELECT id FROM "Transaction" WHERE "fromUserId" = NEW.id AND type = 'DONATION' AND method::text <> 'BMC'
       AND direction = 'IN' AND status = 'APPROVED' AND NOT "isTest" AND amount > 0;
   ELSIF TG_TABLE_NAME = 'OneTimeDonationInvite' THEN
     IF OLD."telegramId" IS NOT DISTINCT FROM NEW."telegramId" AND OLD."guestName" IS NOT DISTINCT FROM NEW."guestName" THEN RETURN NULL; END IF;
@@ -81,4 +84,23 @@ DROP TRIGGER IF EXISTS sentinel_order_webhook ON "RazorpayOrder";
 CREATE TRIGGER sentinel_order_webhook AFTER INSERT OR UPDATE OR DELETE ON "RazorpayOrder"
 FOR EACH ROW
 EXECUTE FUNCTION sentinel_queue_order_webhook();
+-- A verified publication changed: this is the only BMC event source.
+CREATE OR REPLACE FUNCTION sentinel_queue_bmc_publication_webhook() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.fingerprint IS NOT DISTINCT FROM NEW.fingerprint THEN RETURN NULL; END IF;
+  INSERT INTO "SentryWebhookDelivery" ("transactionId") VALUES (NEW."transactionId");
+  RETURN NULL;
+END $$;
+DROP TRIGGER IF EXISTS sentinel_bmc_publication_webhook ON "BmcBridgePublication";
+CREATE TRIGGER sentinel_bmc_publication_webhook AFTER INSERT OR UPDATE ON "BmcBridgePublication"
+FOR EACH ROW EXECUTE FUNCTION sentinel_queue_bmc_publication_webhook();
+
+-- Undelivered BMC events queued before the gate carry unverified facts.
+UPDATE "SentryWebhookDelivery" AS delivery SET "supersededAt" = now(),
+  "lastError" = 'Superseded: queued before complete BMC history verification'
+FROM "Transaction" tx
+WHERE delivery."transactionId" = tx.id AND tx.method::text = 'BMC'
+  AND delivery."deliveredAt" IS NULL AND delivery."supersededAt" IS NULL
+  AND (delivery.body IS NULL OR delivery.body NOT LIKE '%"verification":"BMC_COMPLETE_HISTORY"%');
 COMMIT;

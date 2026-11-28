@@ -3,7 +3,12 @@ import { decryptSecret } from "./secret-crypto";
 import { mutateBmcSession } from "./bmc-private-store";
 
 export class BmcHistoryError extends Error {
-  constructor(public code: string, message: string, public status = 502) { super(message); }
+  /** `detail` is a short non-sensitive check name (endpoint/page/field), never provider values. */
+  constructor(public code: string, message: string, public status = 502, public detail?: string) { super(message); }
+}
+const FORMAT_MESSAGE = "BMC history format changed. Reconnect or ask an admin to review it.";
+export function bmcFormatError(detail: string) {
+  return new BmcHistoryError("INVALID_PROVIDER_DATA", `${FORMAT_MESSAGE} Failed check: ${detail}.`, 502, detail);
 }
 
 export type BmcDashboardSession = { cookie: string; xsrfToken?: string; studioCookie?: string; connectedAt?: string; connectedBy?: string; accountSlug?: string; generation?: string };
@@ -17,10 +22,23 @@ function identifier(value: unknown) {
   if (!/^[1-9]\d{0,17}$/.test(id)) throw new BmcHistoryError("INVALID_ID", "Use a numeric BMC subscription ID.", 400);
   return id;
 }
-function decimal(value: unknown) {
+function decimal(value: unknown, where = "payment") {
   const text = String(value ?? "");
-  if (!/^\d+(\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned an invalid payment amount.");
+  if (!/^\d+(\.\d+)?$/.test(text) || !Number.isFinite(Number(text))) throw bmcFormatError(`${where}: invalid amount`);
   return text;
+}
+
+/**
+ * What the supporter paid in their own currency, only when BMC's own figures
+ * prove it: credited amount x exchange rate must equal the paid amount
+ * (rounding only), and a same-currency charge must have rate 1. Otherwise null.
+ */
+export function provenSupporterPayment(credited: string, accountCurrency: string, currency: unknown, amount: unknown, rate: unknown) {
+  const paid = String(amount ?? "").replace(/^[^\d]+/, "").replace(/,/g, "");
+  if (typeof currency !== "string" || !/^[A-Z]{3}$/.test(currency) || !/^\d+(\.\d+)?$/.test(paid) || !/^\d+(\.\d+)?$/.test(String(rate ?? "")) || !(Number(rate) > 0)) return null;
+  const ok = currency === accountCurrency ? Number(rate) === 1 && Number(paid) === Number(credited)
+    : Math.abs(Number(credited) * Number(rate) - Number(paid)) <= Math.max(0.01 * Number(paid), 0.05);
+  return ok ? { amount: Number(paid).toFixed(2), currency } : null;
 }
 
 export async function bmcDashboardSession(): Promise<Session> {
@@ -39,22 +57,24 @@ export async function bmcDashboardSession(): Promise<Session> {
 }
 
 function normalize(row: unknown, subscriptionId: string) {
-  if (!object(row) || String(row.fk_subscription_id) !== subscriptionId) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned a mismatched subscription record.");
-  if (!/^[1-9]\d{0,17}$/.test(String(row.support_id ?? ""))) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned an invalid charge ID.");
+  if (!object(row) || String(row.fk_subscription_id) !== subscriptionId) throw bmcFormatError(`monthly history subscription ${subscriptionId}: mismatched subscription record`);
+  if (!/^[1-9]\d{0,17}$/.test(String(row.support_id ?? ""))) throw bmcFormatError(`monthly history subscription ${subscriptionId}: invalid support_id`);
   const supportId = String(row.support_id);
-  if (typeof row.transaction_id !== "string" || !row.transaction_id || row.transaction_id.length > 256) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned no payment reference.");
+  if (typeof row.transaction_id !== "string" || !row.transaction_id || row.transaction_id.length > 256) throw bmcFormatError(`monthly history support ${supportId}: missing transaction_id`);
   const date = typeof row.support_created_on === "string" && /(?:Z|[+-]\d{2}:\d{2})$/.test(row.support_created_on) ? new Date(row.support_created_on) : null;
-  if (!date || !Number.isFinite(date.getTime())) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned an invalid payment date.");
-  if (typeof row.support_currency !== "string" || !/^[A-Z]{3}$/.test(row.support_currency)) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned an invalid currency.");
+  if (!date || !Number.isFinite(date.getTime())) throw bmcFormatError(`monthly history support ${supportId}: invalid support_created_on`);
+  if (typeof row.support_currency !== "string" || !/^[A-Z]{3}$/.test(row.support_currency)) throw bmcFormatError(`monthly history support ${supportId}: invalid support_currency`);
   const refunded = row.is_refunded === true || row.is_refunded === 1 || row.is_refunded === "1" || row.is_refunded === "true";
-  if (![null, undefined, true, false, 0, 1, "0", "1", "true", "false"].includes(row.is_refunded as never)) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned an unknown refund flag.");
+  if (![null, undefined, true, false, 0, 1, "0", "1", "true", "false"].includes(row.is_refunded as never)) throw bmcFormatError(`monthly history support ${supportId}: unknown is_refunded value`);
   return {
     id: `bmc-history:${supportId}`, supportId, subscriptionId,
     paymentId: row.transaction_id,
-    amount: decimal(row.support_total_charged_amount), currency: row.support_currency,
+    amount: decimal(row.support_total_charged_amount, `monthly history support ${supportId}`), currency: row.support_currency,
     occurredAt: date.toISOString(),
     refundStatus: refunded ? "REFUNDED" : row.is_refunded === null || row.is_refunded === undefined ? "NOT_REPORTED" : "NOT_REFUNDED",
     evidenceSource: "BMC_RENEWAL_HISTORY",
+    supporterPaid: provenSupporterPayment(String(row.support_total_charged_amount), row.support_currency, row.psp_subscription_currency, row.psp_subscription_price, row.exchange_rate),
+    exchangeRate: typeof row.exchange_rate === "string" ? row.exchange_rate : null,
     // This endpoint reports what BMC's dashboard records. It does not claim to
     // have independently fetched the Stripe PaymentIntent's capture status.
     state: refunded ? "REFUNDED" : "RECORDED",
@@ -65,11 +85,11 @@ export async function fetchBmcRenewalHistory(rawId: string, page = 1, options?: 
   const subscriptionId = identifier(rawId);
   if (!Number.isSafeInteger(page) || page < 1 || page > 10000) throw new BmcHistoryError("INVALID_PAGE", "page must be an integer from 1 to 10000.", 400);
   const data = await fetchBmcDashboardJson(`https://app.buymeacoffee.com/api/v1/subscriptions/${subscriptionId}/renewal_history?page=${page}`, options);
-  if (!object(data) || !Array.isArray(data.data) || !object(data.meta)) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC history format changed. Manual review is required.");
+  if (!object(data) || !Array.isArray(data.data) || !object(data.meta)) throw bmcFormatError(`monthly history subscription ${subscriptionId} page ${page}: missing data/meta`);
   const { current_page: currentPage, last_page: lastPage, total } = data.meta;
-  if (currentPage !== page || !Number.isSafeInteger(lastPage) || Number(lastPage) < page || Number(lastPage) > 10000 || !Number.isSafeInteger(total) || Number(total) < 0 || data.data.length > 1000) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned inconsistent pagination.");
+  if (currentPage !== page || !Number.isSafeInteger(lastPage) || Number(lastPage) < page || Number(lastPage) > 10000 || !Number.isSafeInteger(total) || Number(total) < 0 || data.data.length > 1000) throw bmcFormatError(`monthly history subscription ${subscriptionId} page ${page}: inconsistent pagination`);
   const payments = data.data.map(row => normalize(row, subscriptionId));
-  if (new Set(payments.map(row => row.supportId)).size !== payments.length) throw new BmcHistoryError("INVALID_PROVIDER_DATA", "BMC returned duplicate payment records.");
+  if (new Set(payments.map(row => row.supportId)).size !== payments.length) throw bmcFormatError(`monthly history subscription ${subscriptionId} page ${page}: duplicate support_id`);
   return { subscriptionId, payments, page, total, hasMore: page < Number(lastPage), nextPage: page < Number(lastPage) ? page + 1 : null, fetchedAt: new Date().toISOString(), source: "BMC_DASHBOARD", readOnly: true };
 }
 
@@ -87,6 +107,7 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
   // GETs are safe to replay. Never retry permission/session failures or treat
   // an unavailable page as an empty page; complete history is all-or-nothing.
   for (let attempt = 0; attempt < 3; attempt++) {
+    let delay = 300 * 2 ** attempt;
     try {
       response = await fetcher(url, {
         method: "GET", headers: { Accept: "application/json", Cookie: cookie, "X-Requested-With": "XMLHttpRequest",
@@ -94,12 +115,17 @@ export async function fetchBmcDashboardJson(url: string, options?: { session?: S
           ...(session.xsrfToken ? { "X-XSRF-TOKEN": session.xsrfToken } : {}),
         }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(15000),
       });
-      if (![500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break;
+      // Honour BMC's rate-limit hint (bounded) instead of failing the whole sync.
+      if (response.status === 429) {
+        const hint = Number(response.headers.get("retry-after"));
+        delay = Math.min(30_000, Number.isFinite(hint) && hint > 0 ? hint * 1000 : 5_000 * (attempt + 1));
+      }
       await response.body?.cancel();
     } catch {
       if (attempt === 2) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} could not be reached after three attempts. The last complete history is retained.`, 503);
     }
-    await new Promise(resolve => setTimeout(resolve, 300 * 2 ** attempt));
+    await new Promise(resolve => setTimeout(resolve, delay));
   }
   if (!response) throw new BmcHistoryError("PROVIDER_UNAVAILABLE", `BMC ${endpoint} is unavailable. The last complete history is retained.`, 503);
   // Persist provider-issued rotations, never credentials supplied by a caller.

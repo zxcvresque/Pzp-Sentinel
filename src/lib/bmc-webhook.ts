@@ -19,6 +19,8 @@ export interface NormalizedBmcEvent extends BmcEnvelope {
   supporterEmail: string | null;
   amount: number;
   currency: BmcCurrency;
+  /** False when BMC did not state INR or USD. Such an event is never booked as income. */
+  currencyKnown: boolean;
   note: string | null;
   itemLabel: string | null;
   occurredAt: Date;
@@ -135,9 +137,10 @@ function donationFrequency(type: string, data: Record<string, unknown>): "ONE_TI
 // BMC's SubscriptionFields contain a subscription amount and billing period,
 // but no charge result. Even status=active does not prove a renewal was paid.
 // Only payment events with an explicit successful result enter the ledger.
-export function isConfirmedBmcPayment(event: Pick<NormalizedBmcEvent, "type" | "data" | "amount" | "resourceId">): boolean {
+export function isConfirmedBmcPayment(event: Pick<NormalizedBmcEvent, "type" | "data" | "amount" | "resourceId"> & { currencyKnown?: boolean }): boolean {
   return ["donation.created", "extra_purchase.created", "commission_order.created", "wishlist_payment.created"].includes(event.type)
     && event.amount > 0
+    && event.currencyKnown !== false
     && event.resourceId !== "unknown"
     && text(event.data.status)?.toLowerCase() === "succeeded"
     && event.data.refunded !== true && event.data.refunded !== "true";
@@ -212,8 +215,11 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     text(data.currency)
     || text(data.support_currency)
     || text(data.subscription_currency)
-    || "USD"
+    || ""
   ).toUpperCase();
+  // Never guess money: a missing or other currency (e.g. EUR) is not USD. The
+  // history sync books such a charge only with BMC's own recorded currency.
+  const currencyKnown = rawCurrency === "INR" || rawCurrency === "USD";
   const currency: BmcCurrency = rawCurrency === "INR" ? "INR" : "USD";
   const note = text(data.support_note)
     || text(data.extra_note)
@@ -249,6 +255,7 @@ export function parseBmcWebhook(rawBody: string): NormalizedBmcEvent {
     supporterEmail,
     amount,
     currency,
+    currencyKnown,
     note,
     itemLabel: itemLabel(type, data),
     occurredAt,

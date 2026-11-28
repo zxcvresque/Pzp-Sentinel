@@ -1,10 +1,18 @@
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./db";
 import { bmcAccountSlug } from "./bmc-attribution";
 import type { Donation } from "./donor-bridge";
 import { donorPaymentAliases, donorPaymentIdentity } from "./donor-payment-id";
 
 export class DonationQueryError extends Error {}
+
+/** A BMC payment exists in the ledger but its donor's complete history has not
+ * passed verification. This asserts nothing about the payment: never treat it
+ * as a failure, a reversal or a missing donation. */
+export class BmcUnverifiedError extends Error {
+  code = "BMC_HISTORY_UNVERIFIED";
+  constructor() { super("This BMC payment has not been published: the donor's complete BMC history has not yet reconciled. Do not award or deduct XP; retry after the next verification."); }
+}
 
 export type DonationQuery = {
   states: Donation["state"][];
@@ -57,7 +65,7 @@ export function parseDonationQuery(params: URLSearchParams): DonationQuery {
   };
 }
 
-const donationSelect = {
+export const donationSelect = {
   id: true, method: true, providerPaymentId: true, bmcEventId: true,
   amount: true, currency: true, date: true, donationFrequency: true,
   voidedAt: true, voidReason: true, providerState: true,
@@ -67,8 +75,11 @@ const donationSelect = {
     paymentId: true, invite: { select: { telegramId: true, guestName: true } },
   } },
 } satisfies Prisma.TransactionSelect;
+const bridgeSelect = { ...donationSelect, bmcBridgePublication: { select: { payload: true } } } satisfies Prisma.TransactionSelect;
 
-type DonationRow = Prisma.TransactionGetPayload<{ select: typeof donationSelect }>;
+export type DonationRow = Prisma.TransactionGetPayload<{ select: typeof donationSelect }>;
+type BridgeRow = Prisma.TransactionGetPayload<{ select: typeof bridgeSelect }>;
+export type BridgeDonation = ReturnType<typeof serializeLedgerDonation>;
 
 const reversed: Prisma.TransactionWhereInput = {
   OR: [
@@ -87,7 +98,9 @@ function eligible(from?: Date, to?: Date): Prisma.TransactionWhereInput {
   };
 }
 
-function serializeDonation(row: DonationRow) {
+/** Live ledger view. Served directly for Razorpay/manual rows; for BMC rows it is
+ * only the input to a verified publication (see bmc-donor-gate.ts). */
+export function serializeLedgerDonation(row: DonationRow) {
   const identity = donorPaymentIdentity(row.method, row.providerPaymentId || row.razorpayOrder?.paymentId || row.bmcEventId, row.id, row.bridgeDonationId);
   const unconfirmed = row.method === "BMC" && (!row.bmcPaymentConfirmed || !!row.bmcReviewReason);
   const isReversed = !!row.voidedAt || /REFUND|REVERSE|DISPUTE|FAILED/i.test(row.providerState);
@@ -121,6 +134,14 @@ function serializeDonation(row: DonationRow) {
   };
 }
 
+// BMC rows are served exclusively from their frozen verified publication.
+// An unpublished BMC row is not part of any bridge response.
+function serializeBridgeDonation(row: BridgeRow): BridgeDonation | null {
+  if (row.method !== "BMC") return serializeLedgerDonation(row);
+  const payload = row.bmcBridgePublication?.payload;
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload as unknown as BridgeDonation : null;
+}
+
 function donorWhere(telegramId: string): Prisma.TransactionWhereInput {
   // Registered attribution wins over an older guest invitation. Neither names
   // nor email addresses are donor identities.
@@ -130,18 +151,41 @@ function donorWhere(telegramId: string): Prisma.TransactionWhereInput {
   ] };
 }
 
-export async function donorDonationSummary(telegramId: string, db: Pick<Prisma.TransactionClient, "transaction"> = prisma) {
-  const base = { ...eligible(), AND: [donorWhere(telegramId)] };
-  const confirmed: Prisma.TransactionWhereInput = { OR: [{ method: { not: "BMC" } }, { bmcPaymentConfirmed: true, bmcReviewReason: null }] };
+type SummaryClient = Pick<Prisma.TransactionClient, "transaction" | "bmcBridgePublication" | "bmcDonorVerification">;
+
+export async function donorDonationSummary(telegramId: string, db: SummaryClient = prisma) {
+  const live = { ...eligible(), method: { not: "BMC" as const }, AND: [donorWhere(telegramId)] };
   // Counts are for the donor's entire history, independently of list pagination
-  // and date filters. Decimal totals stay in the original currencies.
-  const [totals, reviewCount, reversedCount] = await Promise.all([
-    db.transaction.groupBy({ by: ["currency"], orderBy: { currency: "asc" }, where: { ...base, AND: [...base.AND, { NOT: reversed }, confirmed] }, _count: { _all: true }, _sum: { amount: true } }),
-    db.transaction.count({ where: { ...base, AND: [...base.AND, { NOT: reversed }, { NOT: confirmed }] } }),
-    db.transaction.count({ where: { ...base, AND: [...base.AND, reversed] } }),
+  // and date filters. Decimal totals stay in the original currencies. BMC
+  // figures come only from the donor's last verified publication.
+  const [liveTotals, liveReversed, bmcTotals, bmcReversed, unpublished, verification] = await Promise.all([
+    db.transaction.groupBy({ by: ["currency"], orderBy: { currency: "asc" }, where: { ...live, AND: [...live.AND, { NOT: reversed }] }, _count: { _all: true }, _sum: { amount: true } }),
+    db.transaction.count({ where: { ...live, AND: [...live.AND, reversed] } }),
+    db.bmcBridgePublication.groupBy({ by: ["currency"], orderBy: { currency: "asc" }, where: { telegramId, state: "PAID" }, _count: { _all: true }, _sum: { amount: true } }),
+    db.bmcBridgePublication.count({ where: { telegramId, state: "REVERSED" } }),
+    db.transaction.count({ where: { ...eligible(), method: "BMC", bmcBridgePublication: { is: null }, AND: [donorWhere(telegramId), { NOT: reversed }] } }),
+    db.bmcDonorVerification.findFirst({ where: { user: { is: { telegramId } } }, select: { status: true, issues: true, lastAttemptAt: true, lastVerifiedAt: true, historyFetchedAt: true } }),
   ]);
-  return { telegramId, donorKey: `telegram:${telegramId}`, donationCount: totals.reduce((sum, row) => sum + row._count._all, 0), reviewCount, reversedCount,
-    totals: totals.map(row => ({ currency: row.currency, amount: row._sum.amount?.toString() || "0", donationCount: row._count._all })) };
+  const totals = new Map<string, { amount: Prisma.Decimal; donationCount: number }>();
+  for (const row of [...liveTotals, ...bmcTotals]) {
+    const total = totals.get(row.currency) || { amount: new Prisma.Decimal(0), donationCount: 0 };
+    total.amount = total.amount.plus(row._sum.amount?.toString() || "0"); total.donationCount += row._count._all;
+    totals.set(row.currency, total);
+  }
+  const issues = Array.isArray(verification?.issues) ? (verification.issues as Array<{ code?: string }>).flatMap(issue => issue?.code ? [issue.code] : []) : [];
+  return { telegramId, donorKey: `telegram:${telegramId}`,
+    donationCount: [...totals.values()].reduce((sum, row) => sum + row.donationCount, 0),
+    // Ledger BMC payments awaiting verification: neither paid nor failed for XP purposes.
+    reviewCount: unpublished, reversedCount: liveReversed + bmcReversed,
+    totals: [...totals].sort(([a], [b]) => a.localeCompare(b)).map(([currency, row]) => ({ currency, amount: row.amount.toString(), donationCount: row.donationCount })),
+    bmcVerification: {
+      status: verification?.status || (unpublished ? "UNVERIFIED" : "NOT_APPLICABLE"),
+      upToDate: verification?.status === "VERIFIED" && unpublished === 0,
+      unpublishedCount: unpublished, issues: [...new Set(issues)].sort(),
+      lastVerifiedAt: verification?.lastVerifiedAt?.toISOString() || null,
+      lastAttemptAt: verification?.lastAttemptAt?.toISOString() || null,
+      historyFetchedAt: verification?.historyFetchedAt?.toISOString() || null,
+    } };
 }
 
 export async function listDonations(query: DonationQuery) {
@@ -149,23 +193,30 @@ export async function listDonations(query: DonationQuery) {
   return listDonationPage(query, prisma);
 }
 
-async function listDonationPage(query: DonationQuery, db: Pick<Prisma.TransactionClient, "transaction">) {
-  const where: Prisma.TransactionWhereInput = {
-    ...eligible(query.from, query.to),
+async function listDonationPage(query: DonationQuery, db: SummaryClient) {
+  const live: Prisma.TransactionWhereInput = {
+    ...eligible(query.from, query.to), method: { not: "BMC" },
     AND: [
       ...(query.telegramId ? [donorWhere(query.telegramId)] : []),
       ...(query.states.length === 1 ? [query.states[0] === "REVERSED" ? reversed : { NOT: reversed }] : []),
     ],
   };
+  // BMC rows are filtered on their published facts, never on live ledger columns.
+  const published: Prisma.TransactionWhereInput = { method: "BMC", isTest: false, bmcBridgePublication: { is: {
+    ...(query.telegramId ? { telegramId: query.telegramId } : {}),
+    ...(query.states.length === 1 ? { state: query.states[0] } : {}),
+    ...(query.from || query.to ? { occurredAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } } : {}),
+  } } };
+  const where: Prisma.TransactionWhereInput = { OR: [live, published] };
   // One bounded live read. No feed refresh, provider sweep, cursor or mirror tables.
   const rows = await db.transaction.findMany({
-    where, select: donationSelect,
+    where, select: bridgeSelect,
     orderBy: [{ date: "asc" }, { id: "asc" }],
     take: query.limit + 1, skip: query.offset,
   });
   const hasMore = rows.length > query.limit;
   return {
-    donations: rows.slice(0, query.limit).map(serializeDonation),
+    donations: rows.slice(0, query.limit).flatMap(row => serializeBridgeDonation(row) || []),
     ...(query.telegramId ? { donor: await donorDonationSummary(query.telegramId, db) } : {}),
     limit: query.limit, offset: query.offset, hasMore,
     nextOffset: hasMore ? query.offset + query.limit : null,
@@ -207,10 +258,25 @@ export async function getDonation(id: string) {
   const identity = identityWhere(id);
   if (!identity) return null;
   const rows = await prisma.transaction.findMany({
-    where: { AND: [eligible(), { OR: [{ bridgeDonationId: id }, identity] }] }, select: donationSelect,
+    where: { AND: [{ isTest: false, direction: "IN", type: "DONATION" }, { OR: [{ bridgeDonationId: id }, identity] }] },
+    select: { ...bridgeSelect, status: true },
     // Each candidate reference is unique in the ledger. Do not scan donation history.
   });
-  const matches = rows.map(serializeDonation).filter(d => d.id === id || d.transactionId === id || (d.provider === "bmc" && d.aliases.includes(id)));
+  const matches: BridgeDonation[] = [];
+  let unverified = false;
+  for (const row of rows) {
+    const ledger = serializeLedgerDonation(row);
+    const named = (d: BridgeDonation) => d.id === id || d.transactionId === id || (d.provider === "bmc" && d.aliases.includes(id));
+    if (row.method !== "BMC") {
+      if (row.status === "APPROVED" && Number(row.amount) > 0 && named(ledger)) matches.push(ledger);
+      continue;
+    }
+    if (!named(ledger) && !(row.bmcBridgePublication && named(serializeBridgeDonation(row)!))) continue;
+    const published = serializeBridgeDonation(row);
+    if (published) matches.push(published);
+    else if (row.status === "APPROVED" && Number(row.amount) > 0) unverified = true;
+  }
   if (matches.length > 1) throw new Error("Ambiguous donation identity");
+  if (!matches.length && unverified) throw new BmcUnverifiedError();
   return matches[0] || null;
 }

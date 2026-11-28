@@ -10,13 +10,15 @@ import { notifyAdmins } from "./notifications";
 import { monthlyReminderUpdate } from "./donation-frequency";
 import { bmcTransactionKeys } from "./bmc-webhook";
 import { bmcSyncFailure, type BmcSyncStage } from "./bmc-sync-error";
+import { publishVerifiedBmcDonors } from "./bmc-donor-gate";
 
 export type BmcHistoryReview = { id: string; reason: string; transactionId?: string };
 export type BmcHistorySnapshot = {
   accountSlug: string; fetchedAt: string; coverage: readonly string[];
   subscriptions: BmcSubscription[]; payments: BmcAccountPayment[]; reviews: BmcHistoryReview[];
 };
-export type BmcSyncHealth = { lastAttemptAt: string; lastSuccessAt?: string; errorCode?: string; error?: string; failedStage?: BmcSyncStage; diagnosticCode?: string; reviewed?: number; confirmed?: number; recovered?: number };
+export type BmcBridgeSummary = { verified: number; blocked: number; failed: number; published: number };
+export type BmcSyncHealth = { lastAttemptAt: string; lastSuccessAt?: string; errorCode?: string; error?: string; failedStage?: BmcSyncStage; diagnosticCode?: string; diagnosticDetail?: string; reviewed?: number; confirmed?: number; recovered?: number; bridge?: BmcBridgeSummary; lastPublishedAt?: string };
 const snapshotPath = () => bmcPrivatePath("history.enc");
 const healthPath = () => bmcPrivatePath("health.enc");
 export async function readBmcHistorySnapshot() {
@@ -28,16 +30,36 @@ export async function bmcHistoryHealth() {
   const lock = await stat(bmcPrivatePath("sync.lock")).catch(() => null);
   return { ...health, syncing: Boolean(lock && Date.now() - lock.mtimeMs < 20 * 60_000), lastSuccessAt: snapshot?.fetchedAt || null,
     paymentCount: snapshot?.payments.length || 0, reviewCount: snapshot?.reviews.length || 0,
+    notInBmcCount: await prisma.transaction.count({ where: { method: "BMC", status: "APPROVED", voidedAt: null, isTest: false, bmcReviewReason: NOT_IN_BMC_HISTORY } }).catch(() => null),
     subscriptions: snapshot?.subscriptions.length || 0, cancelledSubscriptions: snapshot?.subscriptions.filter(row => row.status === "CANCELLED").length || 0, coverage: snapshot?.coverage || [] };
 }
 
-type Candidate = { id: string; amount: { toString(): string }; currency: string; donationFrequency: string; date: Date; bmcEventId: string | null; providerPaymentId: string | null; bmcHistoryPaymentId?: string | null; bmcHistorySupportId?: string | null; bmcPaidDate?: string | null; bmcReviewReason?: string | null; fromUserId: string | null; voidedAt: Date | null; status: string; providerState: string; bmcPaymentConfirmed: boolean };
+type Candidate = { id: string; amount: { toString(): string }; currency: string; donationFrequency: string; date: Date; bmcEventId: string | null; providerPaymentId: string | null; bmcHistoryPaymentId?: string | null; bmcHistorySupportId?: string | null; bmcPaidDate?: string | null; bmcSupporterAmount?: { toString(): string } | null; bmcSupporterCurrency?: string | null; bmcReviewReason?: string | null; fromUserId: string | null; voidedAt: Date | null; status: string; providerState: string; bmcPaymentConfirmed: boolean };
+// Display-only: what the supporter paid in their own currency, from BMC history.
+const supporterFields = (payment: BmcAccountPayment) => ({
+  bmcSupporterAmount: payment.supporterPaid?.amount ?? null, bmcSupporterCurrency: payment.supporterPaid?.currency ?? null });
+
+// Monthly webhook rows carry their billing-period start in the event key
+// (`…_period_<unix seconds>`). That is the provider's own fact about which month
+// a row is for, even when the row's date was written wrongly.
+function billingPeriodStart(eventId: string | null) {
+  const seconds = eventId?.match(/_period_(\d{9,11})$/)?.[1];
+  return seconds ? Number(seconds) * 1000 : null;
+}
+
 export function matchBmcHistoryPayment(payment: BmcAccountPayment, candidates: Candidate[], linkedUserId: string | null) {
   const exact = candidates.filter(tx => (payment.paymentId && (tx.providerPaymentId === payment.paymentId || tx.bmcHistoryPaymentId === payment.paymentId)) || tx.bmcHistorySupportId === payment.supportId || (payment.frequency === "ONE_TIME" && bmcTransactionKeys("donation.created", payment.supportId).includes(tx.bmcEventId || "")));
+  // A row already claimed by a different BMC charge is never a candidate for this one.
   const plausible = candidates.filter(tx => tx.donationFrequency === payment.frequency && Math.abs(tx.date.getTime() - Date.parse(payment.occurredAt)) <= 36 * 3600_000 &&
+    !(tx.bmcHistorySupportId && tx.bmcHistorySupportId !== payment.supportId) &&
+    // A row for a different billing period is not this charge, whatever its date says.
+    !(payment.frequency === "MONTHLY" && billingPeriodStart(tx.bmcEventId) !== null && Math.abs(billingPeriodStart(tx.bmcEventId)! - Date.parse(payment.occurredAt)) > 36 * 3600_000) &&
     ((payment.stripeSubscriptionId && tx.bmcEventId?.includes(payment.stripeSubscriptionId)) || (linkedUserId && tx.fromUserId === linkedUserId)));
-  const matches = exact.length ? exact : plausible;
-  if (matches.length > 1) return { kind: "REVIEW", reason: "AMBIGUOUS_MATCH" } as const;
+  // An already-voided duplicate beside exactly one live row does not make the
+  // match ambiguous; two live rows still do (one of them is an extra credit).
+  const live = plausible.filter(tx => !tx.voidedAt);
+  const matches = exact.length ? exact : plausible.length > 1 && live.length === 1 ? live : plausible;
+  if (matches.length > 1) return { kind: "REVIEW", reason: "AMBIGUOUS_MATCH", candidateIds: matches.map(tx => tx.id) } as const;
   if (!matches.length) return { kind: "MISSING" } as const;
   const tx = matches[0];
   if (Math.abs(tx.date.getTime() - Date.parse(payment.occurredAt)) > 36 * 3600_000 || tx.donationFrequency !== payment.frequency) return { kind: "REVIEW", reason: "DATE_OR_FREQUENCY_MISMATCH", transactionId: tx.id } as const;
@@ -51,6 +73,9 @@ export function matchBmcHistoryPayment(payment: BmcAccountPayment, candidates: C
 async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, generation: string, automaticFrom: string) {
   const reviews: BmcHistoryReview[] = [];
   const matchedIds = new Set<string>();
+  // Rows BMC does have a charge for, but which could not be settled (ambiguous):
+  // never flagged as "not in BMC records".
+  const contestedIds = new Set<string>();
   let confirmed = 0;
   let recovered = 0;
   for (const payment of payments) {
@@ -70,6 +95,9 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       const result = matchBmcHistoryPayment(payment, candidates, link?.userId || null);
       if (payment.refundStatus === "REFUNDED") {
         const transactionId = result.kind === "MATCH" ? result.transaction.id : "transactionId" in result ? result.transactionId : undefined;
+        const refunded = candidates.find(tx => tx.id === transactionId);
+        // Already voided/reversed in the ledger: the refund is applied, nothing to review.
+        if (refunded && (refunded.voidedAt || /REFUND|REVERSE|DISPUTE|FAILED/i.test(refunded.providerState))) { matchedIds.add(refunded.id); return; }
         if (transactionId) {
           matchedIds.add(transactionId);
           const held = await db.transaction.updateMany({ where: { id: transactionId, method: "BMC", OR: [{ bmcReviewReason: null }, { bmcReviewReason: { not: "PROVIDER_REFUND_REQUIRES_REVIEW" } }] }, data: { bmcReviewReason: "PROVIDER_REFUND_REQUIRES_REVIEW" } });
@@ -79,6 +107,7 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
         reviews.push({ id: payment.id, reason: "PROVIDER_REFUND_REQUIRES_REVIEW", ...(transactionId ? { transactionId } : {}) });
         return;
       }
+      if (result.kind === "REVIEW" && "candidateIds" in result) for (const id of result.candidateIds || []) contestedIds.add(id);
       if (result.kind === "REVIEW") { reviews.push({ id: payment.id, reason: result.reason, ...("transactionId" in result ? { transactionId: result.transactionId } : {}) }); return; }
       if (result.kind === "MATCH") {
         const tx = result.transaction;
@@ -88,12 +117,14 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
           return;
         }
         const paidDate = payment.occurredAt.slice(0, 10);
-        if (tx.bmcReviewReason || !tx.bmcPaymentConfirmed || tx.bmcHistoryPaymentId !== payment.paymentId || tx.bmcHistorySupportId !== payment.supportId || tx.bmcPaidDate !== paidDate || (!tx.fromUserId && link?.userId)) {
+        const supporter = supporterFields(payment);
+        if (tx.bmcReviewReason || !tx.bmcPaymentConfirmed || tx.bmcHistoryPaymentId !== payment.paymentId || tx.bmcHistorySupportId !== payment.supportId || tx.bmcPaidDate !== paidDate || (!tx.fromUserId && link?.userId) ||
+          (tx.bmcSupporterAmount?.toString() ?? null) !== (supporter.bmcSupporterAmount === null ? null : new Prisma.Decimal(supporter.bmcSupporterAmount).toString()) || (tx.bmcSupporterCurrency ?? null) !== supporter.bmcSupporterCurrency) {
           // A concurrent void/refund must win. Never resurrect a reversed entry.
           const changed = await db.transaction.updateMany({ where: { id: tx.id, voidedAt: null, status: "APPROVED", providerState: tx.providerState, bmcPaymentConfirmed: tx.bmcPaymentConfirmed,
             fromUserId: tx.fromUserId, providerPaymentId: tx.providerPaymentId, amount: tx.amount.toString(), currency: tx.currency as "INR" | "USD", date: tx.date },
             data: { bmcPaymentConfirmed: true, providerVerified: true, bmcReviewReason: null, bmcHistoryPaymentId: payment.paymentId,
-              bmcHistorySupportId: payment.supportId, bmcPaidDate: paidDate, fromUserId: tx.fromUserId || link?.userId || null, providerState: "CAPTURED" } });
+              bmcHistorySupportId: payment.supportId, bmcPaidDate: paidDate, ...supporter, fromUserId: tx.fromUserId || link?.userId || null, providerState: "CAPTURED" } });
           if (changed.count) {
             await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_CONFIRMED", entityType: "Transaction", entityId: tx.id, transactionId: tx.id,
               after: { source: payment.evidenceSource, supportId: payment.supportId, paymentId: payment.paymentId } } });
@@ -111,7 +142,7 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       const tx = await db.transaction.create({ data: {
         amount: payment.amount, currency: payment.currency as "INR" | "USD", method: "BMC", type: "DONATION", direction: "IN", status: historical ? "PENDING" : "APPROVED",
         donationFrequency: payment.frequency, date: new Date(payment.occurredAt), fromUserId: link.userId, createdById: actorId,
-        providerPaymentId: payment.paymentId, bmcHistoryPaymentId: payment.paymentId, bmcHistorySupportId: payment.supportId, bmcPaidDate: payment.occurredAt.slice(0, 10), providerVerified: true, bmcPaymentConfirmed: true, providerState: "CAPTURED",
+        providerPaymentId: payment.paymentId, bmcHistoryPaymentId: payment.paymentId, bmcHistorySupportId: payment.supportId, bmcPaidDate: payment.occurredAt.slice(0, 10), ...supporterFields(payment), providerVerified: true, bmcPaymentConfirmed: true, providerState: "CAPTURED",
         bmcEventId: payment.frequency === "ONE_TIME" ? bmcTransactionKeys("donation.created", payment.supportId)[0] : `bmc_history_${bmcAccountSlug()}_${payment.supportId}`,
         description: `BMC ${payment.frequency === "MONTHLY" ? "monthly" : "one-time"} payment recovered from account history`,
         providerDetailsEncrypted: encryptSecret(JSON.stringify({ ...payment, source: "BMC_DASHBOARD_HISTORY" })),
@@ -124,7 +155,28 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
       matchedIds.add(tx.id);
     }, { maxWait: 10000, timeout: 20000 });
   }
-  return { reviews, confirmed, recovered, matchedIds };
+  return { reviews, confirmed, recovered, matchedIds, contestedIds };
+}
+
+/** Stored on a ledger row whose payment BMC's complete history does not contain. */
+export const NOT_IN_BMC_HISTORY = "NOT_IN_BMC_HISTORY";
+
+// BMC is the source of truth. Flag every active BMC ledger row that no BMC charge
+// accounts for, and clear the flag from rows BMC now accounts for. Never voids:
+// that stays an admin decision. Returns the newly flagged row IDs.
+async function flagLedgerRowsMissingFromBmc(missing: string[], accounted: string[], actorId: string, generation: string) {
+  return prisma.$transaction(async db => {
+    await db.$queryRaw<Array<{ acquired: number }>>`SELECT 1::int AS acquired FROM pg_advisory_xact_lock(hashtext('sentinel-bmc-history'))`;
+    if ((await bmcDashboardSession()).generation !== generation) throw new BmcHistoryError("CONNECTION_CHANGED", "BMC was disconnected or reconnected during sync. Run sync again.", 409);
+    // A row already under a more specific review (e.g. a refund) keeps that reason.
+    const flag = missing.length ? await db.transaction.findMany({ where: { id: { in: missing }, method: "BMC", status: "APPROVED", voidedAt: null, bmcReviewReason: null }, select: { id: true } }) : [];
+    if (flag.length) {
+      await db.transaction.updateMany({ where: { id: { in: flag.map(row => row.id) }, status: "APPROVED", voidedAt: null, bmcReviewReason: null }, data: { bmcReviewReason: NOT_IN_BMC_HISTORY } });
+      for (const row of flag) await db.auditLog.create({ data: { userId: actorId, action: "BMC_HISTORY_NOT_FOUND", entityType: "Transaction", entityId: row.id, transactionId: row.id, after: { reason: NOT_IN_BMC_HISTORY } } });
+    }
+    if (accounted.length) await db.transaction.updateMany({ where: { id: { in: accounted }, bmcReviewReason: NOT_IN_BMC_HISTORY }, data: { bmcReviewReason: null } });
+    return flag.map(row => row.id);
+  }, { maxWait: 10000, timeout: 20000 });
 }
 
 export async function syncBmcAccountHistory() {
@@ -150,16 +202,23 @@ export async function syncBmcAccountHistory() {
     stage = "FETCH_HISTORY";
     const result = await fetchEntireBmcAccountHistory(session);
     if ((await bmcDashboardSession()).generation !== session.generation) throw new BmcHistoryError("CONNECTION_CHANGED", "The BMC connection changed during sync. Try again.", 409);
+    // A signed-out studio/app session can answer with empty lists rather than an
+    // error. Never let that masquerade as an account whose payments vanished.
+    for (const kind of ["MONTHLY", "ONE_TIME"] as const) {
+      const before = old?.payments.filter(row => row.frequency === kind).length || 0;
+      if (before && !result.payments.some(row => row.frequency === kind)) throw new BmcHistoryError("SESSION_EXPIRED", `BMC returned no ${kind === "MONTHLY" ? "monthly" : "one-time"} payments although ${before} were recorded before. The session is probably signed out; import a fresh Helium session. Nothing was changed.`, 503, `${kind.toLowerCase()} history empty`);
+    }
     stage = "RECONCILE_LEDGER";
     const reconciliation = await reconcileHistory(result.payments, session.connectedBy, session.generation, old?.fetchedAt || attempt);
-    // Compare both ways: subscription updates may have produced legacy ledger
-    // rows that never existed in paid history. Flag these without voiding them.
-    const ledger = await prisma.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", status: "APPROVED", isTest: false, voidedAt: null,
-      OR: [{ bmcEventId: { startsWith: `bmc_support_${bmcAccountSlug()}_` } },
-        ...result.subscriptions.map(subscription => ({ bmcEventId: { contains: subscription.stripeId } }))] },
-      select: { id: true } });
-    const missingLedger = ledger.filter(tx => !reconciliation.matchedIds.has(tx.id) && !reconciliation.reviews.some(review => review.transactionId === tx.id))
+    // Compare both ways. BMC is the source of truth: every active BMC ledger row
+    // (whatever created it: webhook, history recovery or a manual entry) must be
+    // a charge in BMC's complete history. Flag the rest without voiding them.
+    const ledger = await prisma.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", status: "APPROVED", isTest: false, voidedAt: null },
+      select: { id: true, providerState: true } });
+    const accounted = (id: string) => reconciliation.matchedIds.has(id) || reconciliation.contestedIds.has(id) || reconciliation.reviews.some(review => review.transactionId === id);
+    const missingLedger = ledger.filter(tx => !accounted(tx.id) && !/REFUND|REVERSE|DISPUTE|FAILED/i.test(tx.providerState))
       .map(tx => ({ id: `ledger:${tx.id}`, reason: "LEDGER_PAYMENT_NOT_RETURNED", transactionId: tx.id }));
+    const newlyNotInBmc = await flagLedgerRowsMissingFromBmc(missingLedger.map(row => row.transactionId), ledger.filter(tx => accounted(tx.id)).map(tx => tx.id), session.connectedBy, session.generation);
     const disappeared = (old?.payments || []).filter(p => !result.payments.some(row => row.id === p.id));
     const missingSubscriptions = (old?.subscriptions || []).filter(subscription => !result.subscriptions.some(row => row.id === subscription.id));
     const subscriptions = [...result.subscriptions.map(subscription => ({ ...subscription, lastSeenAt: result.fetchedAt, missingFromLatestCheck: false })),
@@ -167,7 +226,12 @@ export async function syncBmcAccountHistory() {
     const reviews = [...reconciliation.reviews, ...missingLedger, ...disappeared.map(p => ({ id: p.id, reason: "PREVIOUSLY_RECORDED_PAYMENT_NOT_RETURNED" }))];
     stage = "SAVE_HISTORY";
     await writeBmcPrivate(snapshotPath(), { ...result, subscriptions, accountSlug: session.accountSlug, payments: [...result.payments, ...disappeared], reviews });
-    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: result.fetchedAt, reviewed: reviews.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered });
+    stage = "PUBLISH_BRIDGE";
+    if ((await bmcDashboardSession()).generation !== session.generation) throw new BmcHistoryError("CONNECTION_CHANGED", "The BMC connection changed before publication. Run another check.", 409);
+    // Per-donor all-or-nothing publication to the Sentry bridge.
+    const gate = await publishVerifiedBmcDonors({ fetchedAt: result.fetchedAt, coverage: result.coverage, subscriptions, reviews, payments: [...result.payments, ...disappeared] });
+    const bridge = { verified: gate.verified, blocked: gate.blocked, failed: gate.failed, published: gate.published };
+    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: result.fetchedAt, reviewed: reviews.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, bridge, lastPublishedAt: new Date().toISOString() });
     stage = "NOTIFY_ADMINS";
     const newReviews = reviews.filter(row => !old?.reviews.some(prior => prior.id === row.id && prior.reason === row.reason));
     const lifecycleChanges = old ? result.subscriptions.filter(row => {
@@ -179,13 +243,18 @@ export async function syncBmcAccountHistory() {
       actionUrl: "/admin/bmc", priority: "HIGH" });
     if (missingSubscriptions.some(subscription => !subscription.missingFromLatestCheck)) await notifyAdmins({ type: "SYSTEM", title: "BMC subscription status unavailable",
       message: "BMC did not return a previously recorded subscription. Its last known status and paid history were retained. Review the account; no cancellation or payment reversal was inferred.", actionUrl: "/admin/bmc", priority: "HIGH" });
+    if (newlyNotInBmc.length) await notifyAdmins({ type: "SYSTEM", title: "Ledger payments not in BMC records",
+      message: `${newlyNotInBmc.length} BMC ledger payment(s) are not in BMC's own payment history and were flagged "Not in BMC records". They are not sent to Sentry. Void each one that was never paid.`, actionUrl: "/admin/transactions?bmcRecords=NOT_IN_BMC", priority: "HIGH" });
+    if (gate.newlyBlocked.length || gate.failed) await notifyAdmins({ type: "SYSTEM", title: "BMC donor verification held",
+      message: `${gate.newlyBlocked.length + gate.failed} donor(s) did not pass complete-history verification. Their previously verified Sentry data is unchanged; new BMC updates for them are held until the listed issues are resolved.`, actionUrl: "/admin/bmc", priority: "HIGH" });
     if (newReviews.length || reconciliation.recovered) await notifyAdmins({ type: "SYSTEM", title: "BMC history verification completed", message: `${result.payments.length} recorded payments checked. ${reconciliation.confirmed} confirmed, ${reconciliation.recovered} recovered, ${newReviews.length} new items need review.`, actionUrl: "/admin/bmc", priority: "HIGH" });
-    return { checked: result.payments.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, reviews: reviews.length };
+    return { checked: result.payments.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, reviews: reviews.length, bridge };
   } catch (error) {
     const failure = bmcSyncFailure(error, stage);
     const known = failure.error;
     console.warn("[bmc-history] Verification failed", { stage, code: known.code, diagnosticCode: failure.diagnosticCode });
-    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: previous?.lastSuccessAt, errorCode: known.code, error: known.message, failedStage: stage, diagnosticCode: failure.diagnosticCode });
+    await writeBmcPrivate(healthPath(), { lastAttemptAt: attempt, lastSuccessAt: previous?.lastSuccessAt, errorCode: known.code, error: known.message, failedStage: stage, diagnosticCode: failure.diagnosticCode,
+      diagnosticDetail: known.detail, bridge: previous?.bridge, lastPublishedAt: previous?.lastPublishedAt });
     if (known.code !== previous?.errorCode && known.code !== "SESSION_NOT_CONFIGURED") await notifyAdmins({ type: "SYSTEM", title: "BMC verification needs attention", message: known.message, actionUrl: "/admin/bmc", priority: "HIGH" });
     return { error: known.message, code: known.code, failedStage: stage, ...(failure.diagnosticCode ? { diagnosticCode: failure.diagnosticCode } : {}) };
   } finally { clearInterval(heartbeat); await rm(lock, { recursive: true, force: true }); }

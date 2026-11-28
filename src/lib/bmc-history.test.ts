@@ -27,7 +27,7 @@ it.each(["../1", "1?secret", "0", "https://evil.example", "1146135/path"])("reje
 it.each([0, -1, 1.2, 10001])( "rejects invalid page %s", async page => {
   await expect(fetchBmcRenewalHistory("1146135", page, { session, fetcher: vi.fn() })).rejects.toMatchObject({ code: "INVALID_PAGE" });
 });
-it.each([[302, "SESSION_EXPIRED"], [401, "SESSION_EXPIRED"], [419, "SESSION_EXPIRED"], [403, "PROVIDER_ACCESS_DENIED"], [429, "PROVIDER_RATE_LIMIT"], [404, "HISTORY_NOT_FOUND"]])("reports provider HTTP %s as %s instead of returning empty history", async (status, code) => {
+it.each([[302, "SESSION_EXPIRED"], [401, "SESSION_EXPIRED"], [419, "SESSION_EXPIRED"], [403, "PROVIDER_ACCESS_DENIED"], [404, "HISTORY_NOT_FOUND"]])("reports provider HTTP %s as %s instead of returning empty history", async (status, code) => {
   await expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher: vi.fn().mockResolvedValue(new Response(null, { status: Number(status) })) })).rejects.toMatchObject({ code });
 });
 it("distinguishes a recorded refund", async () => {
@@ -66,4 +66,24 @@ it("recognizes a successful HTTP response containing a sign-in form without retr
   const fetcher = vi.fn().mockResolvedValue(new Response('<form action="/login"><input type="password"></form>', { headers: { "Content-Type": "text/html" } }));
   await expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher })).rejects.toMatchObject({ code: "SESSION_EXPIRED" });
   expect(fetcher).toHaveBeenCalledOnce();
+});
+
+it("retries a rate limit with bounded backoff before reporting PROVIDER_RATE_LIMIT", async () => {
+  vi.useFakeTimers();
+  try {
+    const fetcher = vi.fn().mockImplementation(async () => new Response(null, { status: 429, headers: { "retry-after": "2" } }));
+    const outcome = expect(fetchBmcRenewalHistory("1146135", 1, { session, fetcher })).rejects.toMatchObject({ code: "PROVIDER_RATE_LIMIT" });
+    await vi.runAllTimersAsync();
+    await outcome;
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  } finally { vi.useRealTimers(); }
+});
+it("recovers from a transient rate limit without losing any page", async () => {
+  vi.useFakeTimers();
+  try {
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 429 })).mockResolvedValueOnce(envelope([row]));
+    const result = fetchBmcRenewalHistory("1146135", 1, { session, fetcher });
+    await vi.runAllTimersAsync();
+    expect((await result).payments).toHaveLength(1);
+  } finally { vi.useRealTimers(); }
 });

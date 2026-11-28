@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { bmcConnectionStatus, importBmcSession, disconnectBmcSession } from "@/lib/bmc-session-import";
 import { bmcHistoryHealth, readBmcHistorySnapshot, syncBmcAccountHistory } from "@/lib/bmc-history-sync";
 import { BmcHistoryError } from "@/lib/bmc-history";
+import { bmcDonorVerificationList } from "@/lib/bmc-donor-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +21,8 @@ export async function GET(request: Request) {
   if (!user) return json({ error: "Admin access required" }, 403);
   if (new URL(request.url).searchParams.has("loginId")) return json({ error: "Browser login has been removed. Import your Helium session instead." }, 410);
   try {
-    const [connection, health, snapshot] = await Promise.all([bmcConnectionStatus(), bmcHistoryHealth(), readBmcHistorySnapshot()]);
-    return json({ ...connection, health, subscriptions: snapshot?.subscriptions || [], reviews: snapshot?.reviews || [], payments: (snapshot?.payments || []).slice().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 30) });
+    const [connection, health, snapshot, donors] = await Promise.all([bmcConnectionStatus(), bmcHistoryHealth(), readBmcHistorySnapshot(), bmcDonorVerificationList()]);
+    return json({ ...connection, health, donors, subscriptions: snapshot?.subscriptions || [], reviews: snapshot?.reviews || [], payments: (snapshot?.payments || []).slice().sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, 30) });
   } catch (error) { return fail(error); }
 }
 export async function POST(request: Request) {

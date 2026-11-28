@@ -35,6 +35,13 @@
 - [ ] Re-check 24h session persistence after production hotfix deploy.
 - [ ] Verify GitHub repo/activity stats in production after tracked repos are added.
 - [ ] Verify the signed BMC webhook in production.
+- [x] BMC complete-history verification gate: Sentry sees a donor's BMC payments only after their entire BMC history reconciles (DB publication tables, triggers, read-back proof, admin per-donor status, dry-run/diagnose scripts).
+- [ ] Deploy the gate (`bash upgrade.sh`), press "Check history now", confirm INotProud/Ryuzaki/Omar publish (USD 75 / 24 / 5).
+- [x] Ledger rows BMC has no record of are flagged on the row (Not in BMC records), filterable, counted on /admin/bmc, never sent to Sentry, never auto-voided.
+- [ ] Void Ace's extra row …j6tv99 (will show as Not in BMC records after the first check) (dated 16 Aug, but its billing period is September; it duplicates the recovered 17 Sep $1.03 row …6zzs33). Not sent to Sentry either way; shown as a warning on /admin/bmc.
+- [x] Extra ledger rows BMC never charged no longer hold a donor's verified charges (still never published). Monthly matching uses the billing period in the event key. Sentinel shows what the supporter paid (₹2,500.00 → $25.85).
+- [x] One-time BMC history paired the USD credited amount with the supporter's currency ("₹25.85" for ₹2,500 → $25.85). Now reads the account currency and proves amt × rate = paid amount. Ledger rows for Resource Infinite and Lucky Jain were already correct (USD).
+- [ ] Sentry: treat 503 `BMC_HISTORY_UNVERIFIED` as "no award, no deduction".
 
 ---
 

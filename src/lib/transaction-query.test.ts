@@ -6,6 +6,9 @@ describe("transaction query parsing", () => {
     expect(transactionWhereFromParams(new URLSearchParams())).toEqual({ voidedAt: null });
   });
 
+  it("lists BMC rows that BMC's own records do not contain", () => {
+    expect(transactionWhereFromParams(new URLSearchParams("bmcRecords=NOT_IN_BMC&method=RAZORPAY"))).toMatchObject({ method: "BMC", bmcReviewReason: "NOT_IN_BMC_HISTORY", voidedAt: null });
+  });
   it("can target one reconciliation transaction directly", () => {
     expect(transactionWhereFromParams(new URLSearchParams({ transactionId: "tx-bmc-1" })))
       .toEqual({ id: "tx-bmc-1", voidedAt: null });

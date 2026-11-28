@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { bridgePool } from "./donor-bridge";
-import { getDonation } from "./donor-bridge-donations";
+import { BmcUnverifiedError, getDonation } from "./donor-bridge-donations";
 
 type Delivery = {
   id: string; transactionId: string | null; body: string | null;
@@ -54,7 +54,7 @@ export async function drainSentryWebhooks(limit = 20) {
       const result = await bridgePool.query<Delivery>(`
         WITH candidate AS (
           SELECT id FROM "SentryWebhookDelivery"
-          WHERE "deliveredAt" IS NULL AND "nextAttemptAt" <= now()
+          WHERE "deliveredAt" IS NULL AND "nextAttemptAt" <= now() AND "supersededAt" IS NULL
             AND ("lockedUntil" IS NULL OR "lockedUntil" < now())
           ORDER BY "createdAt", id FOR UPDATE SKIP LOCKED LIMIT 1
         )
@@ -63,10 +63,22 @@ export async function drainSentryWebhooks(limit = 20) {
         FROM candidate WHERE delivery.id = candidate.id RETURNING delivery.*`, [lease]);
       const job = result.rows[0];
       if (!job) break;
+      // Never deliver BMC facts that did not come from a verified publication.
+      const supersede = async (reason: string) => { await bridgePool.query(`UPDATE "SentryWebhookDelivery" SET lease = NULL, "lockedUntil" = NULL,
+        "supersededAt" = now(), "lastError" = $1 WHERE id = $2 AND lease = $3`, [reason, job.id, lease]); };
       try {
         let body = job.body;
+        const method = job.transactionId ? (await bridgePool.query<{ method: string }>('SELECT method::text AS method FROM "Transaction" WHERE id = $1', [job.transactionId])).rows[0]?.method : undefined;
+        if (body && method === "BMC") {
+          const frozen = JSON.parse(body) as { donation?: { verification?: string } | null };
+          if (frozen.donation?.verification !== "BMC_COMPLETE_HISTORY") { await supersede("Superseded: BMC payload was not a verified publication"); continue; }
+        }
         if (!body) {
-          const donation = job.transactionId ? await getDonation(job.transactionId) : null;
+          let donation = null;
+          try { donation = job.transactionId ? await getDonation(job.transactionId) : null; }
+          catch (error) { if (error instanceof BmcUnverifiedError) { await supersede("Superseded: BMC payment not yet verified"); continue; } throw error; }
+          // Removal of an unpublished BMC row is not a payment correction.
+          if (method === "BMC" && !donation) { await supersede("Superseded: BMC payment not published"); continue; }
           body = JSON.stringify({
             id: job.id, schemaVersion: 1, type: donation ? "donation.changed" : "donation.unavailable",
             createdAt: job.createdAt.toISOString(), observedAt: new Date().toISOString(),
@@ -106,8 +118,9 @@ export async function webhookStatus(eventId?: string) {
     return { configured: !!config, event: result.rows[0] || null };
   }
   const result = await bridgePool.query(`SELECT
-    count(*) FILTER (WHERE "deliveredAt" IS NULL)::int AS pending,
-    count(*) FILTER (WHERE "deliveredAt" IS NULL AND "lastError" IS NOT NULL)::int AS retrying,
+    count(*) FILTER (WHERE "deliveredAt" IS NULL AND "supersededAt" IS NULL)::int AS pending,
+    count(*) FILTER (WHERE "deliveredAt" IS NULL AND "supersededAt" IS NULL AND "lastError" IS NOT NULL)::int AS retrying,
+    count(*) FILTER (WHERE "supersededAt" IS NOT NULL)::int AS superseded,
     max("deliveredAt") AS "lastDeliveredAt" FROM "SentryWebhookDelivery"`);
   return { configured: !!config, ...result.rows[0] };
 }

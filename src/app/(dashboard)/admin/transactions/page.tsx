@@ -8,6 +8,7 @@ import { TransactionsSkeleton, TransactionRowsSkeleton } from "@/components/Page
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import RazorpayMark from "@/components/RazorpayMark";
+import { supporterPaidLabel } from "@/lib/currency-display";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Dropdown from "@/components/Dropdown";
 import PageTour from "@/components/PageTour";
@@ -41,6 +42,9 @@ interface Transaction {
   providerState?: string | null;
   date: string;
   bmcPaidDate?: string | null;
+  bmcSupporterAmount?: string | null;
+  bmcSupporterCurrency?: string | null;
+  bmcReviewReason?: string | null;
   attachments: string[];
   reviewNote?: string | null;
   fromUser?: Person | null;
@@ -65,7 +69,7 @@ type ActionKind = "APPROVE" | "REJECT" | "VOID";
 
 const defaultFilters = {
   status: "ALL", direction: "ALL", currency: "ALL", type: "ALL", method: "ALL",
-  lifecycle: "ACTIVE", dateFrom: "", dateTo: "", amountMin: "", amountMax: "", sort: "newest",
+  lifecycle: "ACTIVE", dateFrom: "", dateTo: "", amountMin: "", amountMax: "", sort: "newest", bmcRecords: "ALL",
 };
 
 function emptyTransactionForm() {
@@ -161,7 +165,7 @@ function TransactionsView() {
   const [search, setSearch] = useState("");
   const [targetTransactionId, setTargetTransactionId] = useState(() => searchParams.get("transactionId")?.trim() || "");
   const openedTargetRef = useRef("");
-  const [filters, setFilters] = useState(defaultFilters);
+  const [filters, setFilters] = useState(() => ({ ...defaultFilters, ...(searchParams.get("bmcRecords") === "NOT_IN_BMC" ? { bmcRecords: "NOT_IN_BMC" } : {}) }));
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
@@ -202,6 +206,7 @@ function TransactionsView() {
     if (search) params.set("search", search);
     for (const key of ["status", "direction", "currency", "type", "method"] as const) if (filters[key] !== "ALL") params.set(key, filters[key]);
     for (const key of ["dateFrom", "dateTo", "amountMin", "amountMax"] as const) if (filters[key]) params.set(key, filters[key]);
+    if (filters.bmcRecords !== "ALL") params.set("bmcRecords", filters.bmcRecords);
     return params.toString();
   }, [filters, limit, page, search, targetTransactionId]);
 
@@ -473,6 +478,7 @@ function TransactionsView() {
             <SelectField label="Status" value={filters.status} options={[["ALL", "All statuses"], ["PENDING", "Pending"], ["APPROVED", "Approved"], ["REJECTED", "Rejected"]]} onChange={(v) => updateFilter("status", v)} />
             <SelectField label="Direction" value={filters.direction} options={[["ALL", "All directions"], ["IN", "Incoming"], ["OUT", "Outgoing"]]} onChange={(v) => updateFilter("direction", v)} />
             <SelectField label="Currency" value={filters.currency} options={[["ALL", "All currencies"], ["INR", "INR"], ["USD", "USD"]]} onChange={(v) => updateFilter("currency", v)} />
+            <SelectField label="BMC records" value={filters.bmcRecords} options={[["ALL", "Any"], ["NOT_IN_BMC", "Not in BMC records"]]} onChange={(v) => updateFilter("bmcRecords", v)} />
             <SelectField label="Lifecycle" value={filters.lifecycle} options={[["ACTIVE", "Active only"], ["VOIDED", "Voided only"], ["ALL", "Active + voided"]]} onChange={(v) => updateFilter("lifecycle", v)} />
             <SelectField label="Type" value={filters.type} options={[["ALL", "All types"], ["DONATION", "Donation"], ["EXPENSE", "Expense"], ["SUBSCRIPTION", "Subscription"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("type", v)} />
             <SelectField label="Method" value={filters.method} options={[["ALL", "All methods"], ["UPI", "UPI"], ["RAZORPAY", "Razorpay"], ["BMC", "Buy Me a Coffee"], ["BANK", "Bank Transfer"], ["OTHER", "Other"]]} onChange={(v) => updateFilter("method", v)} />
@@ -526,6 +532,7 @@ function TransactionsView() {
               <span>{tx.type}</span>
               {(tx.method === "BMC" || tx.method === "RAZORPAY") && <span className={`rounded-full px-2 py-1 font-mono text-[8px] font-bold uppercase ${tx.providerVerified === false ? "bg-coral/10 text-coral" : "bg-mint/10 text-mint"}`}>{tx.providerVerified === false ? "Provider unverified" : "Provider verified"}</span>}
               {tx.linkedService && <><span>·</span><a href={`/admin/services/${tx.linkedService.id}`} className="text-lime hover:underline">Service: {tx.linkedService.name}</a></>}
+              {tx.method === "BMC" && tx.bmcReviewReason === "NOT_IN_BMC_HISTORY" && <span title="BMC's own payment history has no charge for this entry. It is not sent to Sentry. Void it if it was never paid." className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Not in BMC records</span>}
               {tx.method === "BMC" && !tx.fromUser && <span className="rounded-full bg-coral/10 px-2 py-1 font-mono text-[8px] font-bold uppercase text-coral">Unmatched · assign donor</span>}
               {tx.method === "BMC" && !tx.fromUser && tx.bmcWebhookEvents?.[0]?.supporterEmail && <><span>·</span><span title="BMC supporter email" className="text-text-secondary">{tx.bmcWebhookEvents[0].supporterEmail}</span></>}
               {tx.attachments.length > 0 && <><span>·</span><span>📎 {tx.attachments.length} receipt{tx.attachments.length === 1 ? "" : "s"}</span></>}
@@ -536,7 +543,7 @@ function TransactionsView() {
             {tx.attachments.length > 0 && <div className="mt-2 flex max-w-full flex-wrap gap-1.5">{tx.attachments.map((url) => <AttachmentViewer key={url} url={url} className="max-w-full truncate rounded-full border border-violet/20 bg-violet/8 px-2.5 py-1 text-[10px] text-violet">{attachmentName(url, "Receipt")}</AttachmentViewer>)}</div>}
             {tx.voidedAt && <div className="mt-2 rounded-lg bg-coral/8 p-2 text-[11px] text-coral">Voided by {tx.voidedBy?.name || "admin"}: {tx.voidReason}</div>}
           </div>
-          <div role="cell" className={`flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-sm font-semibold lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span><span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span></span></div>
+          <div role="cell" className={`flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-sm font-semibold lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap ${tx.direction === "IN" ? "text-mint" : "text-coral"}`}><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Amount</span><span>{money(tx)} <span className="text-[9px] text-text-tertiary">{tx.currency}</span>{supporterPaidLabel(tx) && <span className="block text-[10px] font-normal text-text-tertiary" title="What the supporter paid in their own currency, per BMC">paid {supporterPaidLabel(tx)}</span>}</span></div>
           <div role="cell" className="flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 lg:block lg:rounded-none lg:bg-transparent lg:p-4 lg:text-right lg:whitespace-nowrap"><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Status</span><span><span className={`status-tag ${tx.status === "APPROVED" ? "status-approved" : tx.status === "PENDING" ? "status-pending" : "status-rejected"}`}>{tx.status}</span>{tx.voidedAt && <span className="ml-1 rounded bg-coral/10 px-2 py-1 font-mono text-[9px] text-coral">VOIDED</span>}</span></div>
           <div role="cell" className="flex items-center justify-between rounded-lg bg-white/[.025] px-3 py-2 text-xs text-text-secondary lg:block lg:rounded-none lg:bg-transparent lg:p-3 lg:text-right"><span className="font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Date</span><span className="text-right"><span className="block whitespace-nowrap">{formattedDate.day}</span><span className="mt-0.5 block whitespace-nowrap text-[10px] text-text-tertiary">{formattedDate.time}</span></span></div>
           <div role="cell" className={`${selectionMode ? "col-span-2 lg:col-span-1" : ""} min-w-0 lg:p-3`}><span className="mb-2 block font-mono text-[8px] uppercase text-text-tertiary lg:hidden">Actions</span><div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-2 lg:gap-1">{!tx.voidedAt && tx.status === "PENDING" && <><button onClick={() => setAction({ kind: "APPROVE", ids: [tx.id] })} className="pill text-mint">Approve</button><button onClick={() => setAction({ kind: "REJECT", ids: [tx.id] })} className="pill text-coral">Reject</button></>}<button disabled={Boolean(tx.voidedAt)} onClick={() => startEdit(tx)} className="pill text-violet disabled:opacity-30">{editingId === tx.id ? "Editing" : tx.method === "BMC" && !tx.fromUser ? "Reconcile" : "Edit"}</button><button disabled={Boolean(tx.voidedAt)} onClick={() => { setReceiptTargetId(receiptTargetId === tx.id ? null : tx.id); setNewReceiptFiles([]); }} className="pill text-violet disabled:opacity-30">{receiptTargetId === tx.id ? "Close receipts" : tx.attachments.length ? "Add receipt" : "Upload receipt"}</button>{!tx.voidedAt && <button onClick={() => setAction({ kind: "VOID", ids: [tx.id] })} className="pill text-coral">Void</button>}<ShareButton entityType="transaction" entityId={tx.id} label="Share" className="py-1" /></div></div>

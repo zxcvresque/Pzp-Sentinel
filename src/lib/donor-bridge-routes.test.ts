@@ -28,7 +28,14 @@ it("returns 404 for missing or newly ineligible payments", async () => {
   const response = await detail(request(), context);
   expect(response.status).toBe(404);
   expect(response.headers.get("cache-control")).toContain("no-store");
-  expect(mocks.findMany.mock.calls[0][0].where.AND[0]).toMatchObject({ isTest: false, status: "APPROVED", direction: "IN", type: "DONATION" });
+  expect(mocks.findMany.mock.calls[0][0].where.AND[0]).toMatchObject({ isTest: false, direction: "IN", type: "DONATION" });
+});
+it("answers an unpublished BMC payment with a retryable 503, never a 404 that could look like a removal", async () => {
+  mocks.findMany.mockResolvedValue([{ id: "tx1", method: "BMC", status: "APPROVED", amount: { toString: () => "5" }, currency: "USD", date: new Date(), donationFrequency: "ONE_TIME",
+    voidedAt: null, voidReason: null, providerState: "CAPTURED", providerPaymentId: null, bmcEventId: null, fromUser: null, razorpayOrder: null, bmcBridgePublication: null }]);
+  const response = await detail(request(), context);
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({ code: "BMC_HISTORY_UNVERIFIED" });
 });
 it("fails closed during a database outage without exposing exception details", async () => {
   mocks.findMany.mockRejectedValue(new Error("private database connection details"));

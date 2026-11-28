@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ query: vi.fn(), getDonation: vi.fn() }));
 vi.mock("./donor-bridge", () => ({ bridgePool: { query: mocks.query } }));
-vi.mock("./donor-bridge-donations", () => ({ getDonation: mocks.getDonation }));
+vi.mock("./donor-bridge-donations", () => ({ getDonation: mocks.getDonation, BmcUnverifiedError: class BmcUnverifiedError extends Error {} }));
 import { drainSentryWebhooks } from "./sentry-webhook";
 
 let db: PGlite;
@@ -26,18 +26,19 @@ beforeAll(async () => {
     CREATE TABLE "SentryWebhookDelivery" (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "transactionId" text,
       body text, "createdAt" timestamp DEFAULT now(), "nextAttemptAt" timestamp DEFAULT now(),
-      attempts integer DEFAULT 0, lease uuid, "lockedUntil" timestamp, "deliveredAt" timestamp, "lastError" text
+      attempts integer DEFAULT 0, lease uuid, "lockedUntil" timestamp, "deliveredAt" timestamp, "supersededAt" timestamp, "lastError" text
     );
+    CREATE TABLE "BmcBridgePublication" ("transactionId" text PRIMARY KEY, "userId" text, state text, fingerprint text);
   `);
   await db.exec(triggers);
   await db.exec(triggers); // Upgrades must be safely repeatable.
 }, 30_000);
-beforeEach(async () => { await db.exec('TRUNCATE "SentryWebhookDelivery", "Transaction", "User", "RazorpayOrder", "OneTimeDonationInvite"'); });
+beforeEach(async () => { await db.exec('TRUNCATE "SentryWebhookDelivery", "Transaction", "User", "RazorpayOrder", "OneTimeDonationInvite", "BmcBridgePublication"'); });
 afterAll(async () => { await db?.close(); });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function events() { return (await db.query<{ transactionId: string }>('SELECT "transactionId" FROM "SentryWebhookDelivery"')).rows; }
 
-it.each(["OTHER", "RAZORPAY", "BMC"])("queues an approved %s donation atomically", async method => {
+it.each(["OTHER", "RAZORPAY"])("queues an approved %s donation atomically", async method => {
   await db.query('INSERT INTO "Transaction" (id, method) VALUES ($1, $2)', ["tx1", method]);
   expect(await events()).toEqual([{ transactionId: "tx1" }]);
   await db.exec('BEGIN; INSERT INTO "Transaction" (id) VALUES (\'rolled_back\'); ROLLBACK;');
@@ -82,10 +83,34 @@ it("queues donor and guest identity corrections and order linkage", async () => 
   expect(await events()).toHaveLength(6);
 });
 
-it("queues a fresh live verification when BMC payment evidence is confirmed", async () => {
-  await db.exec(`INSERT INTO "Transaction" (id, method) VALUES ('bmc', 'BMC')`);
-  await db.exec(`UPDATE "Transaction" SET "bmcPaymentConfirmed" = true WHERE id = 'bmc'`);
+it("never queues BMC ledger writes: only a changed verified publication reaches Sentry", async () => {
+  await db.exec(`
+    INSERT INTO "User" VALUES ('u1', '5988446905', 'Donor');
+    INSERT INTO "Transaction" (id, method, "fromUserId") VALUES ('bmc', 'BMC', 'u1');
+    UPDATE "Transaction" SET "bmcPaymentConfirmed" = true WHERE id = 'bmc';
+    UPDATE "Transaction" SET "voidedAt" = now(), "voidReason" = 'phantom October' WHERE id = 'bmc';
+    UPDATE "User" SET name = 'Renamed' WHERE id = 'u1';
+  `);
+  expect(await events()).toEqual([]);
+  await db.exec(`INSERT INTO "BmcBridgePublication" VALUES ('bmc', 'u1', 'PAID', 'f1')`);
+  await db.exec(`UPDATE "BmcBridgePublication" SET fingerprint = 'f1' WHERE "transactionId" = 'bmc'`); // unchanged re-verification
+  expect(await events()).toEqual([{ transactionId: "bmc" }]);
+  await db.exec(`UPDATE "BmcBridgePublication" SET state = 'REVERSED', fingerprint = 'f2' WHERE "transactionId" = 'bmc'`);
   expect(await events()).toEqual([{ transactionId: "bmc" }, { transactionId: "bmc" }]);
+  await db.exec(`BEGIN; INSERT INTO "BmcBridgePublication" VALUES ('rolled', 'u1', 'PAID', 'f'); ROLLBACK;`);
+  expect(await events()).toHaveLength(2);
+});
+it("still queues a ledger row that moves into or out of BMC", async () => {
+  await db.exec(`INSERT INTO "Transaction" (id, method) VALUES ('moved', 'UPI'); UPDATE "Transaction" SET method = 'BMC' WHERE id = 'moved'`);
+  expect(await events()).toHaveLength(2);
+});
+it("supersedes undelivered pre-gate BMC events when the triggers are installed", async () => {
+  await db.exec(`INSERT INTO "Transaction" (id, method) VALUES ('old_bmc', 'BMC'), ('old_upi', 'UPI')`);
+  await db.exec(`DELETE FROM "SentryWebhookDelivery"; INSERT INTO "SentryWebhookDelivery" ("transactionId", body) VALUES
+    ('old_bmc', NULL), ('old_bmc', '{"donation":{"provider":"bmc"}}'), ('old_bmc', '{"donation":{"verification":"BMC_COMPLETE_HISTORY"}}'), ('old_upi', NULL)`);
+  await db.exec(triggers);
+  const rows = (await db.query<{ transactionId: string; superseded: boolean }>('SELECT "transactionId", "supersededAt" IS NOT NULL AS superseded FROM "SentryWebhookDelivery" ORDER BY "transactionId", body NULLS FIRST')).rows;
+  expect(rows.map(row => row.superseded)).toEqual([true, true, false, false]);
 });
 
 function useRealQueue() {

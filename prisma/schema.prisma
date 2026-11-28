@@ -19,6 +19,8 @@ model SentryWebhookDelivery {
   lease         String?   @db.Uuid
   lockedUntil   DateTime?
   deliveredAt   DateTime?
+  // Set when a queued BMC event was not backed by a verified publication.
+  supersededAt  DateTime?
   lastError     String?
 
   @@index([deliveredAt, nextAttemptAt])
@@ -193,30 +195,30 @@ enum BroadcastRecipientMode {
 }
 
 model User {
-  id                String     @id @default(cuid())
-  telegramId        String     @unique
-  telegramUser      String
-  name              String
-  photoUrl          String?
-  themeColor        String     @default("#6FD1D7")
-  subtextColor      String     @default("#AEB4BF")
-  formLayout        FormLayout @default(SECTION_CARDS)
-  onboardingVersion Int        @default(0)
-  savedColors       String[]   @default([])
-  chatId            String?
-  roles             Role[]
-  status            UserStatus @default(ACTIVE)
+  id                   String     @id @default(cuid())
+  telegramId           String     @unique
+  telegramUser         String
+  name                 String
+  photoUrl             String?
+  themeColor           String     @default("#6FD1D7")
+  subtextColor         String     @default("#AEB4BF")
+  formLayout           FormLayout @default(SECTION_CARDS)
+  onboardingVersion    Int        @default(0)
+  savedColors          String[]   @default([])
+  chatId               String?
+  roles                Role[]
+  status               UserStatus @default(ACTIVE)
   // Hide unused accounts without losing late payment attribution or history.
-  autoRemovedAt     DateTime?
+  autoRemovedAt        DateTime?
   donorAccessGrantedAt DateTime?
-  dmPreferences     String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
-  inAppPreferences  String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
-  preferredCurrency Currency   @default(USD)
-  githubUsername    String?
-  createdById       String?
-  createdBy         User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
-  createdUsers      User[]     @relation("CreatedByAdmin")
-  createdAt         DateTime   @default(now())
+  dmPreferences        String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  inAppPreferences     String[]   @default(["TX_PENDING", "TX_APPROVED", "TX_REJECTED", "TASK_ASSIGNED", "REMINDER", "SYSTEM", "ROLE_ASSIGNED", "CREDENTIAL_ASSIGNED", "CREDENTIAL_REVIEWED", "USER_REGISTERED"])
+  preferredCurrency    Currency   @default(USD)
+  githubUsername       String?
+  createdById          String?
+  createdBy            User?      @relation("CreatedByAdmin", fields: [createdById], references: [id])
+  createdUsers         User[]     @relation("CreatedByAdmin")
+  createdAt            DateTime   @default(now())
 
   otpCode        String?
   otpExpiresAt   DateTime?
@@ -253,6 +255,7 @@ model User {
   oneTimeInvitesCreated        OneTimeDonationInvite[]        @relation("OneTimeInviteCreator")
   bmcCheckoutIntents           BmcCheckoutIntent[]
   bmcSupporterLinks            BmcSupporterLink[]
+  bmcDonorVerification         BmcDonorVerification?
   bmcSubscriptionFeedback      BmcSubscriptionFeedback[]
   shareLinksCreated            ShareLink[]                    @relation("ShareLinkCreator")
 
@@ -306,6 +309,9 @@ model Transaction {
   bmcHistorySupportId           String?           @unique
   bmcReviewReason               String?
   bmcPaidDate                   String?
+  /// What the supporter paid in their own currency (e.g. 2500.00 INR for a $25.85 credit), from BMC history. Display only.
+  bmcSupporterAmount            Decimal?
+  bmcSupporterCurrency          String?
   razorpaySubscriptionId        String?
   // Encrypted provider metadata (payer email/name/note/payment context). Never
   // expose this ciphertext through general transaction APIs.
@@ -353,11 +359,12 @@ model Transaction {
   linkedService                 Service?          @relation("ServiceTransactions", fields: [serviceId], references: [id], onDelete: SetNull)
   documents                     Document[]
 
-  service           Service?           @relation("SubPaidTx")
-  auditLogs         AuditLog[]
-  razorpayOrder     RazorpayOrder?
-  bmcWebhookEvents  BmcWebhookEvent[]
-  bmcCheckoutIntent BmcCheckoutIntent?
+  service              Service?              @relation("SubPaidTx")
+  auditLogs            AuditLog[]
+  razorpayOrder        RazorpayOrder?
+  bmcWebhookEvents     BmcWebhookEvent[]
+  bmcCheckoutIntent    BmcCheckoutIntent?
+  bmcBridgePublication BmcBridgePublication?
 
   @@index([razorpaySubscriptionId, date])
   @@index([serviceId, date])
@@ -540,6 +547,46 @@ model BmcCheckoutIntent {
 
 // A BMC supporter ID becomes trusted only after a signed webhook carries a
 // valid donor-bound checkout code, or an administrator reconciles a payment.
+// The only BMC facts the Sentry bridge reads. A donor's rows are (re)published
+// together, in one database transaction, only after that donor's complete BMC
+// history reconciled with the ledger. Ledger edits stay invisible to Sentry
+// until the next passing verification; a failed check keeps these rows as-is.
+model BmcBridgePublication {
+  transactionId String            @id
+  transaction   Transaction       @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  userId        String
+  telegramId    String
+  state         String // PAID | REVERSED
+  amount        Decimal
+  currency      Currency
+  occurredAt    DateTime
+  frequency     DonationFrequency
+  payload       Json
+  fingerprint   String
+  runId         String
+  publishedAt   DateTime          @default(now())
+
+  @@index([telegramId, state])
+  @@index([userId])
+}
+
+// Latest per-donor gate result. `issues` lists every unresolved check from the
+// most recent attempt; publication only happens when it is empty.
+model BmcDonorVerification {
+  userId           String    @id
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramId       String?
+  status           String // VERIFIED | BLOCKED
+  issues           Json      @default("[]")
+  lastAttemptAt    DateTime
+  lastVerifiedAt   DateTime?
+  historyFetchedAt DateTime?
+  verifiedTotals   Json?
+  verifiedCount    Int       @default(0)
+  publishedRunId   String?
+  updatedAt        DateTime  @updatedAt
+}
+
 model BmcSupporterLink {
   id                        String            @id @default(cuid())
   accountSlug               String

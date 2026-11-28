@@ -5,10 +5,13 @@ import Link from "next/link";
 import TransactionsNav from "./TransactionsNav";
 import { displayDateTime } from "@/lib/date-format";
 
+type DonorVerification = { userId: string; name: string; status: "VERIFIED" | "BLOCKED"; lastAttemptAt: string; lastVerifiedAt: string | null;
+  verifiedTotals: Record<string, string> | null; verifiedCount: number; issues: { code: string; text: string; transactionId?: string; supportId?: string }[] };
 type Payment = { id: string; amount: string; currency: string; occurredAt: string; frequency: string; refundStatus: string };
 type Status = { connected: boolean; connectedAt: string | null; accountSlug: string;
   subscriptions: { id: string; stripeId: string; status: "ACTIVE" | "PAUSED" | "CANCELLING" | "CANCELLED"; cancelledAt: string | null; renewalAt: string | null; lastSeenAt?: string; missingFromLatestCheck?: boolean }[];
-  health: { syncing: boolean; lastSuccessAt: string | null; lastAttemptAt?: string; error?: string; errorCode?: string; paymentCount: number; subscriptions: number; reviewCount: number };
+  health: { syncing: boolean; lastSuccessAt: string | null; lastAttemptAt?: string; error?: string; errorCode?: string; paymentCount: number; subscriptions: number; reviewCount: number; notInBmcCount?: number | null; bridge?: { verified: number; blocked: number; failed: number; published: number } };
+  donors?: DonorVerification[];
   payments: Payment[]; reviews: { id: string; reason: string; transactionId?: string }[] };
 const reasons: Record<string, string> = {
   AMBIGUOUS_MATCH: "More than one ledger entry could match this payment.", LEDGER_CONFLICT: "This payment has a rejected, voided or refunded ledger entry.",
@@ -134,9 +137,24 @@ export default function BmcConnection() {
         <div className="col-span-2 sm:col-span-1"><dt className="text-text-tertiary">Last complete check</dt><dd className="mt-1 font-medium">{status.health.lastSuccessAt ? displayDateTime(status.health.lastSuccessAt) : "Waiting for first check"}</dd></div>
         <div><dt className="text-text-tertiary">Recorded payments</dt><dd className="mt-1 font-medium tabular-nums">{status.health.paymentCount}</dd></div>
         <div><dt className="text-text-tertiary">Needs review</dt><dd className="mt-1 font-medium tabular-nums">{status.health.reviewCount}</dd></div>
+        {typeof status.health.notInBmcCount === "number" && <div><dt className="text-text-tertiary">Ledger payments not in BMC records</dt><dd className={`mt-1 font-medium tabular-nums ${status.health.notInBmcCount ? "text-amber-200" : ""}`}>{status.health.notInBmcCount ? <Link className="underline" href="/admin/transactions?bmcRecords=NOT_IN_BMC">{status.health.notInBmcCount}</Link> : 0}</dd></div>}
+        {status.health.bridge && <><div><dt className="text-text-tertiary">Donors verified for Sentry</dt><dd className="mt-1 font-medium tabular-nums">{status.health.bridge.verified}</dd></div>
+        <div><dt className="text-text-tertiary">Donors held</dt><dd className={`mt-1 font-medium tabular-nums ${status.health.bridge.blocked + status.health.bridge.failed ? "text-amber-200" : ""}`}>{status.health.bridge.blocked + status.health.bridge.failed}</dd></div></>}
       </dl>
       <p className="mt-4 max-w-[70ch] text-xs leading-relaxed text-text-tertiary">Checks run every 15 minutes while the Sentinel bot is online. If BMC expires the session, admins receive a session-update notification. Previous history stays available.</p>
     </section>
+    {!!status.donors?.length && <section className="mt-10" aria-labelledby="bmc-donors-title">
+      <h2 id="bmc-donors-title" className="text-xl font-semibold">Sentry publication</h2>
+      <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Sentry sees a donor’s BMC payments only after their entire BMC history matches the ledger exactly. A held donor keeps their last verified data; new BMC changes for them wait until every issue below is resolved.</p>
+      <ul className="mt-5 divide-y divide-[var(--border)] border-y border-[var(--border)]">{status.donors.map(donor => <li key={donor.userId} className="py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold">{donor.name}</h3>
+          <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${donor.status === "VERIFIED" ? "bg-lime/10 text-lime" : "bg-amber-400/10 text-amber-200"}`}>{donor.status === "VERIFIED" ? "Verified" : "Held"}</span></div>
+        <p className="mt-1 text-xs text-text-tertiary">{donor.lastVerifiedAt ? `Last verified ${displayDateTime(donor.lastVerifiedAt)}: ${donor.verifiedCount} paid charge${donor.verifiedCount === 1 ? "" : "s"}${donor.verifiedTotals && Object.keys(donor.verifiedTotals).length ? `, ${Object.entries(donor.verifiedTotals).map(([currency, amount]) => `${currency} ${amount}`).join(" + ")}` : ""}` : "Never verified: nothing published to Sentry yet"}</p>
+        {donor.issues.length > 0 && <ul className="mt-2 space-y-2">{donor.issues.map((issue, index) => <li key={index} className="text-sm leading-relaxed text-amber-200">{issue.text}
+          {issue.transactionId && <Link className="ml-2 text-lime underline underline-offset-4" href={`/admin/transactions?transactionId=${encodeURIComponent(issue.transactionId)}&lifecycle=ALL`}>Open ledger entry</Link>}
+          {issue.supportId && <span className="ml-2 text-xs text-text-tertiary">BMC charge {issue.supportId}</span>}</li>)}</ul>}
+      </li>)}</ul>
+    </section>}
     <section className="mt-10" aria-labelledby="bmc-subscriptions-title">
       <h2 id="bmc-subscriptions-title" className="text-xl font-semibold">Subscription status</h2>
       <p className="mt-3 max-w-[70ch] text-sm leading-relaxed text-text-secondary">Checked directly against BMC’s subscription records, separately from paid history. Cancelling monthly support does not reverse earlier successful payments.</p>

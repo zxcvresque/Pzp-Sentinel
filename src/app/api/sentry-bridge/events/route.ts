@@ -7,7 +7,9 @@ export async function GET(request: Request) {
   if (!/^\d{1,18}$/.test(cursor)) return Response.json({ error: "Invalid cursor" }, { status: 400 });
   try {
     await refreshBridgeEvents();
-    const events = await bridgePool.query("SELECT seq::text AS seq,payload FROM donor_bridge_events WHERE seq>$1 ORDER BY seq LIMIT 100", [cursor]);
+    // Pre-gate BMC events were unverified; only publication-backed BMC events are served.
+    const events = await bridgePool.query(`SELECT seq::text AS seq,payload FROM donor_bridge_events WHERE seq>$1
+      AND (payload->>'provider' IS DISTINCT FROM 'bmc' OR payload->>'verification' = 'BMC_COMPLETE_HISTORY') ORDER BY seq LIMIT 100`, [cursor]);
     const state = await bridgePool.query("SELECT key,value FROM donor_bridge_state");
     return Response.json({ events: events.rows, cutoff: BRIDGE_START, health: Object.fromEntries(state.rows.map(r => [r.key, r.value])) }, { headers: { "Cache-Control": "no-store" } });
   } catch {

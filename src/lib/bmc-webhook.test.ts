@@ -18,8 +18,13 @@ describe("Buy Me a Coffee webhook", () => {
     expect(isConfirmedBmcPayment(parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 123, amount: 25, status } })))).toBe(false);
   });
   it("records only successful payments and dates a monthly charge by its payment timestamp", () => {
-    const event = parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 123, amount: 25, status: "succeeded", object: "recurring_donation", current_period_start: 1793266334, created_at: "2026-11-25T10:35:10Z" } }));
+    const event = parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 123, amount: 25, currency: "USD", status: "succeeded", object: "recurring_donation", current_period_start: 1793266334, created_at: "2026-11-25T10:35:10Z" } }));
     expect(isConfirmedBmcPayment(event)).toBe(true);
+    // Money is never booked in a guessed currency: missing or unsupported (EUR) is not USD.
+    for (const currency of [undefined, "EUR", "usd ", ""]) {
+      const other = parseBmcWebhook(JSON.stringify({ type: "donation.created", data: { id: 124, amount: 22.25, ...(currency === undefined ? {} : { currency }), status: "succeeded" } }));
+      expect(isConfirmedBmcPayment(other)).toBe(currency === "usd ");
+    }
     expect(event.occurredAt.toISOString()).toBe("2026-11-25T10:35:10.000Z");
     expect(isConfirmedBmcPayment({ ...event, data: { ...event.data, refunded: "true" } })).toBe(false);
     expect(isConfirmedBmcPayment({ ...event, resourceId: "unknown" })).toBe(false);

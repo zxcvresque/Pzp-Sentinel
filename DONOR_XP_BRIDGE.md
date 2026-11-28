@@ -66,7 +66,44 @@ Follow `nextOffset` until `hasMore=false` to read all historical records. Existi
 
 Returns `{ "donation": { ...same fields... } }`. The path accepts a pinned donation ID, immutable `transactionId`, or a known BMC alias (original webhook or history payment/support reference). Aliases resolve to the same donation and are never extra donation records. Sentry uses the saved transaction ID to check a previous award even if its provider reference changed.
 
-Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/incorrect bearer key, `400` invalid list filters, `404` missing or currently ineligible payment, `503` failed read. A `404` blocks new approval; a previous award can be inspected for manual reversal.
+Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/incorrect bearer key, `400` invalid list filters, `404` missing or currently ineligible payment, `503` failed read, or `503` with `code: "BMC_HISTORY_UNVERIFIED"` for a BMC payment whose donor has not yet passed complete-history verification (see the gate section). A `404` blocks new approval; a previous award can be inspected for manual reversal.
+
+## BMC complete-history verification gate
+
+BMC has no public payment-history API and its webhooks are not trustworthy on their own: subscription events are not charges, and a webhook can arrive for a charge BMC later refunds or never lists. Sentinel therefore never shows Sentry a BMC donation straight from the ledger.
+
+**Flow:** complete BMC history download (every subscription's renewal pages and every one-time page, all-or-nothing) → ledger reconciliation (stamps each ledger row with the exact BMC charge it represents) → **per-donor gate** → publication → Sentry.
+
+For each Telegram donor, the gate (`src/lib/bmc-donor-gate.ts`) compares the donor's entire BMC history (every linked supporter) with every BMC ledger row they own. It publishes only when all of these hold:
+
+- every paid BMC charge has exactly one approved, confirmed ledger row with the same amount, currency, monthly/one-time frequency and UTC paid date, owned by this donor;
+- an active BMC ledger row that is not one of those charges (an unpaid month, a duplicate, or a charge BMC has not listed yet) is **never published**; it is shown as a warning on `/admin/bmc` and does not hold the donor's real charges. It holds the donor only if Sentry was already told that row was paid (withdrawing a published payment needs a human);
+- refunds reported by BMC are already voided/reversed in the ledger;
+- every subscription and every previously recorded charge was returned by this check;
+- per-currency totals agree, and after writing, the published rows are read back and must equal the verified totals.
+
+If all checks pass, the donor's rows are written to `BmcBridgePublication` in **one database transaction** under the BMC advisory lock: paid charges as `state=PAID, verificationStatus=CONFIRMED, xpEligible=true`, reviewed voids as `state=REVERSED`. Each record carries `"verification": "BMC_COMPLETE_HISTORY"`. If any check fails or cannot complete, nothing about that donor changes: their last published records stay exactly as they were and the reasons are stored in `BmcDonorVerification` and shown on `/admin/bmc` (with links to the ledger entries). Other donors are unaffected.
+
+What Sentry sees for BMC:
+
+- **List** (`/donations`): only published BMC records, filtered on their published facts. Unpublished BMC rows are absent. Razorpay/manual rows are unchanged (live ledger).
+- **Amounts** are what BMC credited, in the account currency (USD). A supporter paying ₹2,500.00 is published as USD 25.85, the same figure BMC's dashboard shows after the arrow. Sentinel's own pages also show what the supporter paid (`bmcSupporterAmount`/`bmcSupporterCurrency`, display only).
+- **Donor summary** (`telegramId=`): totals and counts combine live non-BMC rows with published BMC records. `reviewCount` is the number of this donor's BMC ledger payments not yet published. `bmcVerification` = `{ status: VERIFIED | BLOCKED | UNVERIFIED | NOT_APPLICABLE, upToDate, unpublishedCount, issues[], lastVerifiedAt, lastAttemptAt, historyFetchedAt }`.
+- **Detail** (`/donations/:id`): the frozen published record, even if the ledger row changed since. An approved but unpublished BMC payment returns **503 `{ code: "BMC_HISTORY_UNVERIFIED" }`**, never 404 or REVERSED. Sentry must treat it like a temporary lookup failure: no award, no deduction.
+- **Webhooks**: BMC ledger writes no longer enqueue anything. Only an insert or a changed fingerprint in `BmcBridgePublication` enqueues a delivery (database trigger, same transaction). Unchanged re-verifications enqueue nothing. Undelivered BMC deliveries queued before the gate are marked `supersededAt` during the upgrade and never sent.
+- **Legacy `/events` feed**: BMC events come only from publications.
+
+Right after deployment nothing BMC is published until the first successful check (automatic within 15 minutes, or **Check history now**).
+
+**Prove it at any time (read-only):**
+
+```bash
+npx tsx scripts/bmc-history-diagnose.ts     # can BMC history be fully downloaded? counts or the exact failed check
+npx tsx scripts/bmc-gate-dry-run.ts         # per donor: would publish / held, totals, and every issue
+npx tsx scripts/bmc-gate-dry-run.ts --saved # same, against the last saved complete snapshot
+```
+
+The dry run executes inside a `READ ONLY` database transaction that is rolled back, and projects the reconciliation step in memory, so it cannot change anything.
 
 ## Sentry workflow
 
