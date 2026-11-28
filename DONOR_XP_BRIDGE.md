@@ -1,13 +1,12 @@
 # Sentinel → Sentry: donor bridge
 
-Sentinel owns payment facts and verified Telegram identity. Sentry owns XP policy (how much, minimum amounts, reviewers, grant history). Sentry uses exactly **one API** and **one webhook**:
+Sentinel owns payment facts and verified Telegram identity. Sentry owns XP policy (how much, minimum amounts, reviewers, grant history). Sentry uses exactly **one API** and polls it:
 
 | | What | Use |
 |---|---|---|
 | API | `GET /api/sentry-bridge/donations` | Read a donor (`?telegramId=`) or page through all donations |
-| Webhook | Signed `POST` from Sentinel to Sentry's receiver ([format](SENTRY_WEBHOOK.md)) | Sentinel tells Sentry a donor changed, with that donor's current state |
 
-Removed: the legacy `/api/sentry-bridge/events` feed, `/api/sentry-bridge/donations/:id`, and the raw `/api/sentry-bridge/bmc/*` endpoints. Two utility routes remain: `/api/sentry-bridge/webhook` (delivery status and a test delivery, see [SENTRY_WEBHOOK.md](SENTRY_WEBHOOK.md)) and `POST /api/sentry-bridge/entry` (creates a one-time donate link for a Telegram ID).
+Removed: the legacy `/api/sentry-bridge/events` feed, `/api/sentry-bridge/donations/:id`, the raw `/api/sentry-bridge/bmc/*` endpoints, and the outbound Sentry webhook with its `/api/sentry-bridge/webhook` status/test route. Sentinel never pushes to Sentry. The `POST /api/sentry-bridge/entry` donate-link route was removed too: the bridge is only `GET /api/sentry-bridge/donations`.
 
 ## Authentication
 
@@ -68,9 +67,9 @@ Computed by Sentinel from the donor's **verified, XP-eligible** payments only (`
 
 ## What Sentry should do
 
-1. On every webhook: verify the signature, then use its `donor` (current state, including `autoXp`). If you prefer, fetch `GET /donations?telegramId=…&limit=1` instead; it returns the same summary.
-2. Every hour or so, re-read the donors you track (`?telegramId=…&limit=1`) so a missed webhook fixes itself.
-3. Auto-XP is on while now < `autoXp.graceUntil`. No webhook is needed for expiry.
+1. Once, page through `GET /api/sentry-bridge/donations` (no `telegramId`) and keep every `telegramId` it contains. Those are the donors to track.
+2. Every 5–15 minutes, call `GET /api/sentry-bridge/donations?telegramId=123456789&limit=1` for each tracked donor and store its `donor.autoXp`. Re-read the full list now and then to pick up new donors.
+3. Auto-XP is on while now < `autoXp.graceUntil`. Expiry needs no event: compare the time.
 4. Never shorten anything because a donation is missing, a request failed (503), or `bmcVerification.status` is `BLOCKED`/`UNVERIFIED`. A refund or void arrives explicitly as `state=REVERSED` and is already reflected in `autoXp`.
 5. Whether XP already claimed is taken back after a refund is Sentry's policy.
 
@@ -95,7 +94,7 @@ What Sentry sees for BMC:
 - **API** (`/donations`): only published BMC records. Unpublished BMC rows are absent from the list, the totals and `autoXp`. Razorpay/manual rows come from the live ledger.
 - **Amounts** are what BMC credited, in the account currency (USD). A supporter paying ₹2,500.00 is published as USD 25.85, the same figure BMC's dashboard shows after the arrow. Sentinel's own pages also show what the supporter paid (`bmcSupporterAmount`/`bmcSupporterCurrency`, display only).
 - **Donor summary** (`telegramId=`): totals, counts and `autoXp` combine live non-BMC rows with published BMC records. `reviewCount` is the number of this donor's BMC ledger payments not yet published. `bmcVerification` = `{ status: VERIFIED | BLOCKED | UNVERIFIED | NOT_APPLICABLE, upToDate, unpublishedCount, issues[], lastVerifiedAt, lastAttemptAt, historyFetchedAt }`.
-- **Webhook**: BMC ledger writes enqueue nothing. Only an insert or a changed fingerprint in `BmcBridgePublication` enqueues a delivery (database trigger, same transaction). Unchanged re-verifications enqueue nothing. A signed BMC webhook makes Sentinel check BMC history about 30 seconds later (re-checking every 2 minutes, up to 5 times, while a just-recorded payment is not yet listed), so a verified BMC payment usually reaches Sentry within a minute or two; the 15-minute check is the backstop. A just-recorded payment is not flagged "Not in BMC records" until it has been missing from BMC's history for an hour.
+- **Timing**: a signed webhook from BMC (inbound) makes Sentinel check BMC history about 30 seconds later, re-checking every 2 minutes (up to 5 times) while a just-recorded payment is not yet listed. A verified BMC payment usually appears in the API within a minute or two; the 15-minute check is the backstop. A just-recorded payment is not flagged "Not in BMC records" until it has been missing from BMC's history for an hour.
 
 Right after deployment nothing BMC is published until the first successful check (automatic within 15 minutes, or **Check history now**).
 
@@ -130,9 +129,9 @@ node --env-file=.env scripts/reconcile-bmc-payments.mjs reviewed-manifest.json
 node --env-file=.env scripts/reconcile-bmc-payments.mjs reviewed-manifest.json --apply
 ```
 
-The manifest contains `userId`, `supporterId`, `reason` (the reviewed evidence), and `payments`. Every payment includes its immutable `id`, exact `bmcEventId`, `date` (`YYYY-MM-DD` in India time), decimal-string `amount`, `currency`, and `state` (`PAID` or `UNPAID`). All current ledger facts and supporter attribution must match. The atomic, idempotent correction confirms reviewed payments, voids unpaid credits, retains audits, corrects the donor's old notification, and queues bridge and finance sync updates. It cannot restore refunded/voided charges or create missing charges from a subscription schedule.
+The manifest contains `userId`, `supporterId`, `reason` (the reviewed evidence), and `payments`. Every payment includes its immutable `id`, exact `bmcEventId`, `date` (`YYYY-MM-DD` in India time), decimal-string `amount`, `currency`, and `state` (`PAID` or `UNPAID`). All current ledger facts and supporter attribution must match. The atomic, idempotent correction confirms reviewed payments, voids unpaid credits, retains audits, corrects the donor's old notification, and queues finance sync updates. Sentry sees the corrected payments on its next API read. It cannot restore refunded/voided charges or create missing charges from a subscription schedule.
 
-Apply the additive fields through `bash upgrade.sh`, or manually run `scripts/bmc-payment-confirmation.sql` before deploying the new app and bot, then install the updated `scripts/sentry-webhook-triggers.sql`. The Prisma schema includes these fields. Older monthly entries must be reviewed; a signed subscription event alone is not payment evidence.
+Apply the additive fields through `bash upgrade.sh`, or manually run `scripts/bmc-payment-confirmation.sql` before deploying the new app and bot. `upgrade.sh` also runs `scripts/sentry-webhook-teardown.sql` before `prisma db push`: it drops the retired webhook's trigger functions (and with them their triggers) first, then its never-delivered queue table, so no ledger write can reference a missing queue. The Prisma schema includes these fields. Older monthly entries must be reviewed; a signed subscription event alone is not payment evidence.
 
 ### Payment review
 
@@ -152,7 +151,7 @@ Deploy Sentinel before Sentry. Configure the secret on both servers, rebuild Sen
 
 Stop the old Sentry webapp before the upgrade and preserve its SQLite volume. New startup uses SQLite's backup API, migrates awards/rejections/reversal outcomes into the grant ledger, adds transaction-ID uniqueness, then removes obsolete donor tables in one transaction. Conflicting legacy transaction awards abort migration rather than deleting history. Keep the generated `*.before-manual-donor-xp-*` backup. Existing user balances and XP history are not recalculated.
 
-This identity update requires the additive Prisma schema fields and `scripts/donation-identity.sql`. `bash upgrade.sh` installs the database guard and runs `scripts/pin-donation-identities.ts` during a brief pause of both PM2 processes after a successful build, then restarts both. The backfill preserves currently published IDs; it does not rename old donations, change their amounts, or recalculate XP. Guest checkout `/api/sentry-bridge/entry` still uses its existing bridge entry tables. Sentinel's legacy `/events` endpoint and optional provider-recovery CLI remain compatible for other consumers; Sentry no longer calls/requires them. Records missing from Sentinel's finance ledger must be recovered there before they can appear in this list.
+This identity update requires the additive Prisma schema fields and `scripts/donation-identity.sql`. `bash upgrade.sh` installs the database guard and runs `scripts/pin-donation-identities.ts` during a brief pause of both PM2 processes after a successful build, then restarts both. The backfill preserves currently published IDs; it does not rename old donations, change their amounts, or recalculate XP. Records missing from Sentinel's finance ledger must be recovered there before they can appear in this list.
 
 ## Verification
 

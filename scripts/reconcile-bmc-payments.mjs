@@ -37,8 +37,6 @@ export async function reconcileBmcPayments(client, manifest, apply = false) {
         : await client.query('UPDATE "Transaction" SET "bmcPaymentConfirmed"=false,"providerState"=$2,"voidedAt"=now(),"voidedById"=$3,"voidReason"=$4 WHERE id=$1 RETURNING *', [item.id, "PAYMENT_FAILED", actor.rows[0].id, manifest.reason]);
       const facts = payment => ({ id: payment.id, amount: payment.amount, currency: payment.currency, date: payment.date, providerState: payment.providerState, bmcPaymentConfirmed: payment.bmcPaymentConfirmed, voidedAt: payment.voidedAt, voidReason: payment.voidReason });
       await client.query('INSERT INTO "AuditLog" (id,"userId",action,"entityType","entityId","transactionId",before,after,"timestamp") VALUES ($1,$2,$3,$4,$5,$5,$6,$7,now())', [randomUUID(), actor.rows[0].id, "BMC_PAYMENT_RECONCILED", "Transaction", item.id, JSON.stringify(facts(row)), JSON.stringify({ ...facts(updated.rows[0]), evidence: manifest.reason })]);
-      // Include a correction even if the server has not installed the new trigger.
-      await client.query('INSERT INTO "SentryWebhookDelivery" (id,"transactionId") SELECT $1,$2 WHERE NOT EXISTS (SELECT 1 FROM "SentryWebhookDelivery" WHERE "transactionId"=$2 AND "deliveredAt" IS NULL)', [randomUUID(), item.id]);
       await client.query('INSERT INTO "FinanceSyncJob" (id,action,"actorName","transactionId","updatedAt") VALUES ($1,$2,$3,$4,now())', [randomUUID(), "UPDATED", "BMC payment reconciliation", item.id]);
       if (item.state === "UNPAID") {
         // Historical notifications must no longer claim that this charge passed.

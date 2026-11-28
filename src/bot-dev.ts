@@ -31,7 +31,6 @@ import { handleDonorEntry } from "./lib/donor-entry-bot";
 import { startMessage } from "./lib/start-message";
 import { removeUndonatedAccounts } from "./lib/undonated-account-cleanup";
 import { grantPzpMemberAccess, registerTelegramUser } from "./lib/member-access";
-import { drainSentryWebhooks } from "./lib/sentry-webhook";
 import { drainBmcFeedbackDelivery } from "./lib/bmc-feedback-service";
 import {
   deliverTelegramWithRetry,
@@ -1359,9 +1358,6 @@ async function checkSubscriptionRenewals() {
   bot.start({
     onStart: () => {
       console.log("Sentinel bot is live! Send /start to @" + process.env.BOT_USERNAME);
-      // Durable outbound delivery for every ledger source, independent of Sheets.
-      void drainSentryWebhooks();
-      setInterval(() => void drainSentryWebhooks(), 5_000);
       const deliverFeedback = () => void drainBmcFeedbackDelivery(prisma, bot).catch(() => console.error("[bmc-feedback] Delivery pending; retrying next cycle."));
       deliverFeedback();
       setInterval(deliverFeedback, 30_000);

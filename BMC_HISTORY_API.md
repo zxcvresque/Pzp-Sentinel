@@ -63,7 +63,7 @@ Payment webhooks are booked only when BMC explicitly states INR or USD. A missin
 
 ## APIs
 
-BMC's raw history is not exposed to Sentry. Sentry reads only verified publications through `GET /api/sentry-bridge/donations` and the signed webhook ([DONOR_XP_BRIDGE.md](DONOR_XP_BRIDGE.md)). The former `/api/sentry-bridge/bmc/*` endpoints were removed.
+BMC's raw history is not exposed to Sentry. Sentry reads only verified publications, by polling `GET /api/sentry-bridge/donations` ([DONOR_XP_BRIDGE.md](DONOR_XP_BRIDGE.md)); Sentinel sends Sentry no webhooks. The former `/api/sentry-bridge/bmc/*` endpoints were removed.
 
 Admin-only `GET/POST /api/bmc/connection` returns connection health and handles `import`, `sync`, and `disconnect`. Writes require an authenticated active admin, JSON, and the exact configured Sentinel Origin. An extractor import sends `{action:"import",sessionToken:"<copied JSON>"}`; manual import sends `{action:"import",appHeaders:"...",studioHeaders:"..."}`. Input is bounded; provider URLs are fixed and redirects are never followed with credentials. Removed browser-control actions return 400, and old screenshot requests return 410. No browser process is started.
 

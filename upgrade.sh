@@ -127,6 +127,11 @@ BEGIN
 END $$;
 SQL
 
+step "Removing the retired Sentry webhook triggers and queue…"
+# Must run before db push: the queue table leaves the Prisma schema, and its
+# triggers must be gone before the table so no ledger write can fail.
+npx prisma db execute --file scripts/sentry-webhook-teardown.sql
+
 step "Applying Prisma schema…"
 npx prisma db push --accept-data-loss
 
@@ -149,8 +154,6 @@ step "Preserving existing bridge donation identities…"
 npx prisma db execute --file scripts/donation-identity.sql
 node --import tsx scripts/pin-donation-identities.ts
 
-step "Installing durable donation webhook triggers…"
-npx prisma db execute --file scripts/sentry-webhook-triggers.sql
 
 step "Restarting PM2 (sentinel-web + sentinel-bot)…"
 pm2 restart sentinel-web sentinel-bot

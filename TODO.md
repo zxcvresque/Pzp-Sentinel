@@ -41,10 +41,12 @@
 - [ ] Void the extra monthly row …j6tv99 (will show as Not in BMC records after the first check) (dated 16 Aug, but its billing period is September; it duplicates the recovered 17 Sep $1.03 row …6zzs33). Not sent to Sentry either way; shown as a warning on /admin/bmc.
 - [x] Extra ledger rows BMC never charged no longer hold a donor's verified charges (still never published). Monthly matching uses the billing period in the event key. Sentinel shows what the supporter paid (₹2,500.00 → $25.85).
 - [x] One-time BMC history paired the USD credited amount with the supporter's currency ("₹25.85" for ₹2,500 → $25.85). Now reads the account currency and proves amt × rate = paid amount. The two affected ledger rows were already correct (USD).
-- [x] One API + one webhook for Sentry: removed /events feed, /donations/:id, /bmc/*; webhook carries the donor's current summary incl. autoXp (schemaVersion 2).
+- [x] One API for Sentry: removed /events feed, /donations/:id, /bmc/*.
+- [x] Removed the outbound Sentry webhook (never configured): code, /api/sentry-bridge/webhook, bot drain, queue table and triggers (upgrade.sh drops triggers before the table, before db push).
+- [x] /api/sentry-bridge/entry removed; the bridge is only GET /api/sentry-bridge/donations.
 - [x] donor.autoXp: 30 days per verified payment, stacked, 3-day monthly grace; Sentry applies its own minimum if any.
 - [x] A signed BMC webhook triggers a history check ~30s later (follow-ups while unlisted); new payments get 1h before 'Not in BMC records'.
-- [ ] Sentry: switch to the single API/webhook, use donor.autoXp.graceUntil, verify signature with schemaVersion 2.
+- [ ] Sentry: poll `GET /api/sentry-bridge/donations?telegramId=…&limit=1` per donor every 5–15 min; auto-XP on while now < donor.autoXp.graceUntil.
 - [ ] Production: if a PM2 process runs `npm run bridge:watch`, delete it (the script was removed).
 
 ---

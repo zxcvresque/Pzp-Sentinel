@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { bridgePool } from "../src/lib/donor-bridge";
 
-// Installs the additive bridge tables still used by the app: donor_bridge_entries
-// (POST /api/sentry-bridge/entry donate links) and donor_bridge_bmc_intents
-// (guest BMC attribution). The legacy /events feed and its sync/watch worker
-// were removed: Sentry reads /api/sentry-bridge/donations and the signed webhook.
+// Installs donor_bridge_bmc_intents (guest BMC attribution), the only bridge
+// table the app still uses. The Sentry bridge is only
+// GET /api/sentry-bridge/donations; the legacy /events feed, its sync/watch
+// worker, the outbound webhook and the /entry donate-link route were removed.
 async function main() {
   if (!process.argv.includes("--setup")) {
     console.log("Usage: npm run bridge:setup. The legacy bridge sync/watch worker was removed.");

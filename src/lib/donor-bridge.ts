@@ -1,9 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { databasePool as bridgePool } from "./database-pool";
 
-// Sentry reads one API (/api/sentry-bridge/donations) and receives one signed
-// webhook (sentry-webhook.ts). The legacy /events feed and its
-// donor_bridge_sources/donor_bridge_events tables are no longer read or written.
+// The Sentry bridge is only GET /api/sentry-bridge/donations, authenticated by
+// bridgeAuthorized. bridgePool is the shared database pool (also used by
+// scripts/donor-bridge.ts setup).
 export { bridgePool };
 export type Donation = {
   id: string; provider: string; paymentId: string; telegramId: string | null;
