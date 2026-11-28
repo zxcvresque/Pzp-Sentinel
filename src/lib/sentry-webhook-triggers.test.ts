@@ -133,7 +133,8 @@ it("claims a real queued row, freezes its payload and acknowledges delivery", as
   expect(rows[0].deliveredAt).not.toBeNull();
   expect(rows[0].attempts).toBe(1);
   expect(rows[0].lease).toBeNull();
-  expect(rows[0].body).toBe(fetcher.mock.calls[0][1].body);
+  // Stored record is frozen; delivery adds only the send time and the donor's current state.
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ ...JSON.parse(rows[0].body), sentAt: expect.any(String), donor: null });
 });
 
 it("retries a failed real delivery and recovers expired worker leases", async () => {
@@ -151,5 +152,6 @@ it("retries a failed real delivery and recovers expired worker leases", async ()
   result = await db.query('SELECT * FROM "SentryWebhookDelivery"');
   expect(result.rows[0].deliveredAt).not.toBeNull();
   expect(result.rows[0].attempts).toBe(2);
-  expect(fetcher.mock.calls[1][1].body).toBe(body);
+  expect(result.rows[0].body).toBe(body);
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ ...JSON.parse(body), sentAt: expect.any(String), donor: null });
 });

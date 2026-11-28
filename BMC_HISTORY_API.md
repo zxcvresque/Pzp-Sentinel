@@ -61,17 +61,9 @@ Monthly webhook rows carry their billing-period start in the event key (`…_per
 
 Payment webhooks are booked only when BMC explicitly states INR or USD. A missing or other currency is never assumed to be USD; the history check books such a charge with BMC's recorded currency (INR/USD) or holds it for review (other currencies).
 
-## Server-only APIs
+## APIs
 
-Use `Authorization: Bearer <SENTRY_BRIDGE_SECRET>` for all routes below. No cookies, payer email addresses or raw provider payloads are returned. Every response is `private, no-store`.
-
-- `GET /api/sentry-bridge/bmc/subscriptions?page=1`: live subscription discovery, lifecycle flags/status and `hasMore`; construct `page + 1` until complete. Includes active and cancelled monthly support.
-- `GET /api/sentry-bridge/bmc/subscriptions/:id/history?page=1`: live paginated renewal-history evidence. Use BMC's numeric subscription ID, not Stripe `sub_...` or supporter ID. Returns `total`, `hasMore`, `nextPage` and `fetchedAt`.
-- `GET /api/sentry-bridge/bmc/history?page=1`: the latest complete account snapshot, 100 payments per page, full subscription lifecycle list, coverage, sync health, freshness and per-payment review reasons. Returns 503 until a complete account sync succeeds. `stale=true` when the last check failed or the snapshot is over 30 minutes old. Previously retained missing charges carry `PREVIOUSLY_RECORDED_PAYMENT_NOT_RETURNED`.
-
-Payment fields include stable `bmc-history:<supportId>` identity, provider reference (nullable for older one-time records), amount/currency, date, frequency and evidence source. Renewal payment timestamps preserve their timezone as ISO UTC. One-time dashboard dates have day precision and are represented at UTC midnight; do not claim an exact capture time. `refundStatus` is `REFUNDED`, `NOT_REFUNDED` or `NOT_REPORTED`; null/blank flags stay unknown. `state=RECORDED` reports existence in BMC's paid-history view, not an independent Stripe PaymentIntent capture lookup.
-
-History is evidence, **not an XP command**. Sentry should consume the existing donation bridge's `xpEligible`/verification fields, review conflicts, and reverse awards only for an explicit audited reversal/refund. An unavailable or absent history row is not evidence of failed payment.
+BMC's raw history is not exposed to Sentry. Sentry reads only verified publications through `GET /api/sentry-bridge/donations` and the signed webhook ([DONOR_XP_BRIDGE.md](DONOR_XP_BRIDGE.md)). The former `/api/sentry-bridge/bmc/*` endpoints were removed.
 
 Admin-only `GET/POST /api/bmc/connection` returns connection health and handles `import`, `sync`, and `disconnect`. Writes require an authenticated active admin, JSON, and the exact configured Sentinel Origin. An extractor import sends `{action:"import",sessionToken:"<copied JSON>"}`; manual import sends `{action:"import",appHeaders:"...",studioHeaders:"..."}`. Input is bounded; provider URLs are fixed and redirects are never followed with credentials. Removed browser-control actions return 400, and old screenshot requests return 410. No browser process is started.
 

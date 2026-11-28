@@ -4,16 +4,13 @@ vi.mock("./db", () => ({ prisma: { transaction: { findMany: mocks.findMany } } }
 vi.mock("@/lib/donor-bridge", () => import("./donor-bridge"));
 vi.mock("@/lib/donor-bridge-donations", () => import("./donor-bridge-donations"));
 import { GET as list } from "../app/api/sentry-bridge/donations/route";
-import { GET as detail } from "../app/api/sentry-bridge/donations/[id]/route";
 
-const context = { params: Promise.resolve({ id: "tx1" }) };
 const request = (query = "", authorized = true) => new Request("https://sentinel.test/api/sentry-bridge/donations" + query, { headers: authorized ? { Authorization: `Bearer ${"a".repeat(64)}` } : {} });
 beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("SENTRY_BRIDGE_SECRET", "a".repeat(64)); mocks.findMany.mockResolvedValue([]); });
 afterEach(() => vi.unstubAllEnvs());
 
-it("rejects unauthorized list and detail reads before touching the database", async () => {
+it("rejects unauthorized reads before touching the database", async () => {
   expect((await list(request("", false))).status).toBe(401);
-  expect((await detail(request("", false), context)).status).toBe(401);
   expect(mocks.findMany).not.toHaveBeenCalled();
 });
 it("returns a 400 for bad filters and an uncached empty page for valid reads", async () => {
@@ -24,23 +21,9 @@ it("returns a 400 for bad filters and an uncached empty page for valid reads", a
   expect(response.headers.get("cache-control")).toContain("no-store");
   expect(await response.json()).toMatchObject({ donations: [], hasMore: false, nextOffset: null });
 });
-it("returns 404 for missing or newly ineligible payments", async () => {
-  const response = await detail(request(), context);
-  expect(response.status).toBe(404);
-  expect(response.headers.get("cache-control")).toContain("no-store");
-  expect(mocks.findMany.mock.calls[0][0].where.AND[0]).toMatchObject({ isTest: false, direction: "IN", type: "DONATION" });
-});
-it("answers an unpublished BMC payment with a retryable 503, never a 404 that could look like a removal", async () => {
-  mocks.findMany.mockResolvedValue([{ id: "tx1", method: "BMC", status: "APPROVED", amount: { toString: () => "5" }, currency: "USD", date: new Date(), donationFrequency: "ONE_TIME",
-    voidedAt: null, voidReason: null, providerState: "CAPTURED", providerPaymentId: null, bmcEventId: null, fromUser: null, razorpayOrder: null, bmcBridgePublication: null }]);
-  const response = await detail(request(), context);
-  expect(response.status).toBe(503);
-  expect(await response.json()).toMatchObject({ code: "BMC_HISTORY_UNVERIFIED" });
-});
 it("fails closed during a database outage without exposing exception details", async () => {
   mocks.findMany.mockRejectedValue(new Error("private database connection details"));
-  for (const response of [await list(request()), await detail(request(), context)]) {
-    expect(response.status).toBe(503);
-    expect(await response.text()).not.toContain("private database");
-  }
+  const response = await list(request());
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain("private database");
 });

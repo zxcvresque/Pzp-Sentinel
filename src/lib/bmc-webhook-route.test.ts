@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 const mocks = vi.hoisted(() => ({
   findReceipt: vi.fn(), createReceipt: vi.fn(), updateReceipt: vi.fn(), findTransaction: vi.fn(),
-  createTransaction: vi.fn(), transaction: vi.fn(), raw: vi.fn(), admin: vi.fn(), supporter: vi.fn(), notifyAdmins: vi.fn(), notify: vi.fn(),
+  createTransaction: vi.fn(), transaction: vi.fn(), raw: vi.fn(), admin: vi.fn(), supporter: vi.fn(), notifyAdmins: vi.fn(), notify: vi.fn(), requestCheck: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({ prisma: {
   user: { findFirst: mocks.admin },
@@ -18,6 +18,7 @@ vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
 vi.mock("@/lib/telegram-log", () => ({ logTransaction: vi.fn() }));
 vi.mock("@/lib/donation-announcement", () => ({ announceDonationTransaction: vi.fn() }));
 vi.mock("@/lib/secret-crypto", () => ({ encryptSecret: () => "encrypted-receipt" }));
+vi.mock("@/lib/bmc-history-sync", () => ({ requestBmcHistoryCheck: mocks.requestCheck }));
 import { POST } from "../app/api/bmc/webhook/route";
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("BMC_WEBHOOK_SECRET", "test-secret");
@@ -64,4 +65,12 @@ it("holds a reference-free webhook near the same Telegram donor's payment withou
   expect(mocks.notify).not.toHaveBeenCalled();
   expect(mocks.notifyAdmins).toHaveBeenCalledOnce();
   expect(mocks.findTransaction.mock.calls[1][0].where).toMatchObject({ fromUserId: "donor", method: "BMC" });
+});
+
+it("starts a BMC history check for signed live activity, never for test-mode events", async () => {
+  await POST(request("recurring_donation.updated", { id: 1, psp_id: "sub_live", status: "active", amount: 6 }));
+  expect(mocks.requestCheck).toHaveBeenCalledOnce();
+  mocks.requestCheck.mockClear();
+  await POST(new NextRequest("https://sentinel.test/api/bmc/webhook", { method: "POST", body: JSON.stringify({ event_id: 124, type: "donation.created", live_mode: false, data: { id: 2 } }) }));
+  expect(mocks.requestCheck).not.toHaveBeenCalled();
 });

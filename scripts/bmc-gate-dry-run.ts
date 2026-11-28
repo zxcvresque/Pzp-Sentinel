@@ -5,6 +5,7 @@ import { fetchEntireBmcAccountHistory } from "../src/lib/bmc-account-history";
 import { BmcHistoryError } from "../src/lib/bmc-history";
 import { matchBmcHistoryPayment, readBmcHistorySnapshot } from "../src/lib/bmc-history-sync";
 import { evaluateBmcDonorHistory, GATE_ISSUE_TEXT } from "../src/lib/bmc-donor-gate";
+import { computeAutoXp } from "../src/lib/auto-xp";
 
 // Read-only proof of what the Sentry bridge gate would publish right now.
 //   npx tsx scripts/bmc-gate-dry-run.ts            fetch live BMC history
@@ -55,6 +56,9 @@ async function main() {
         bmcCharges: own.length, verifiedTotals: result.totals, bmcTotals: result.expectedTotals,
         issues: result.issues.map(issue => ({ ...issue, text: GATE_ISSUE_TEXT[issue.code] })),
         warnings: result.warnings.map(issue => ({ ...issue, text: GATE_ISSUE_TEXT[issue.code] })),
+        // BMC payments only (Razorpay/manual donations are added by the live API).
+        autoXpFromBmc: result.verified ? (({ activeUntil, graceUntil, active }) => ({ activeUntil, graceUntil, active }))(computeAutoXp(result.paid.map(({ row, payment }) =>
+          ({ id: row.id, paymentDate: payment.occurredAt.slice(0, 10), frequency: payment.frequency, amount: payment.amount, currency: payment.currency })))) : null,
         supporterPaid: own.flatMap(payment => payment.supporterPaid && payment.supporterPaid.currency !== payment.currency ? [`${payment.supporterPaid.amount} ${payment.supporterPaid.currency} -> ${payment.amount} ${payment.currency}`] : []) });
     }
     const unlinked = rows.filter(row => !row.fromUserId && row.status === "APPROVED" && !row.voidedAt).length;

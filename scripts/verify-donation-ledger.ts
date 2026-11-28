@@ -23,12 +23,15 @@ async function main() {
   let offset = 0, total = 0, matched = 0;
   const transactions = new Set<string>();
   const identities = new Set<string>();
+  const eligible = new Set<string>();
+  let autoXp: { payments?: Array<{ id: string }>; activeUntil?: string | null } | undefined;
   for (;;) {
     const page = await read(`/api/sentry-bridge/donations?telegramId=${telegramId}&limit=500&offset=${offset}`);
     if (page.cutoff !== null) throw new Error("Server still applies the old history cutoff; upgrade it first");
     if (!Array.isArray(page.donations)) throw new Error("Invalid ledger page");
     if (page.donor?.donorKey !== `telegram:${telegramId}` || !Number.isSafeInteger(page.donor.donationCount)) throw new Error("Telegram donor summary is missing; deploy the identity update first");
-    if (offset === 0) console.log(JSON.stringify({ donor: page.donor }));
+    if (offset === 0) { console.log(JSON.stringify({ donor: page.donor })); autoXp = page.donor.autoXp; }
+    if (!autoXp || !Array.isArray(autoXp.payments)) throw new Error("donor.autoXp is missing; deploy the auto-XP update first");
     total += page.donations.length;
     for (const donation of page.donations) {
       if (donation.telegramId !== telegramId || donation.donorKey !== `telegram:${telegramId}`) throw new Error("API returned a different Telegram donor");
@@ -36,16 +39,17 @@ async function main() {
       if (transactions.has(donation.transactionId) || identities.has(donation.id)) throw new Error("A donation appeared more than once");
       transactions.add(donation.transactionId); identities.add(donation.id);
       matched++;
-      const live = await read(`/api/sentry-bridge/donations/${encodeURIComponent(donation.transactionId)}`);
-      if (live.donation?.transactionId !== donation.transactionId || live.donation?.telegramId !== telegramId || live.donation?.id !== donation.id || live.donation?.idempotencyKey !== donation.idempotencyKey) {
-        throw new Error("List/detail identity changed; refresh and inspect the payment");
-      }
-      console.log(JSON.stringify({ telegramId, transactionId: donation.transactionId, id: donation.id, idempotencyKey: donation.idempotencyKey, occurredAt: live.donation.occurredAt, state: live.donation.state, detailVerified: true }));
+      if (donation.state === "PAID" && donation.xpEligible) eligible.add(donation.id);
+      console.log(JSON.stringify({ telegramId, transactionId: donation.transactionId, id: donation.id, idempotencyKey: donation.idempotencyKey, occurredAt: donation.occurredAt, state: donation.state, xpEligible: donation.xpEligible }));
     }
     if (!page.hasMore) break;
     if (!Number.isSafeInteger(page.nextOffset) || page.nextOffset <= offset) throw new Error("Invalid pagination");
     offset = page.nextOffset;
   }
+  // auto-XP must count exactly the listed PAID, XP-eligible payments.
+  const counted = new Set((autoXp?.payments || []).map(payment => payment.id));
+  if (counted.size !== eligible.size || [...eligible].some(id => !counted.has(id))) throw new Error("donor.autoXp does not count exactly the listed XP-eligible payments");
+  console.log(JSON.stringify({ autoXpActiveUntil: autoXp?.activeUntil ?? null, autoXpPayments: counted.size }));
   console.log(`Read ${total} historical/current payments; verified ${matched} payments for Telegram ${telegramId}. No records were written.`);
   if (!matched) {
     console.error("No eligible recorded donations for this Telegram ID; a production payment test has not been completed.");

@@ -18,6 +18,7 @@ import { logTransaction } from "@/lib/telegram-log";
 import { dmThanks } from "@/lib/donation-thanks";
 import { announceDonationTransaction } from "@/lib/donation-announcement";
 import { monthlyReminderUpdate } from "@/lib/donation-frequency";
+import { requestBmcHistoryCheck } from "@/lib/bmc-history-sync";
 import {
   bmcFeedbackKeyboard,
   isBmcCancellationEvent,
@@ -491,6 +492,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid payload" }, { status: 400 });
   }
+  // Authenticated live BMC activity: verify against BMC's history now rather
+  // than at the next 15-minute check. Debounced; never runs inline.
+  if (event.liveMode) requestBmcHistoryCheck();
 
   const admin = await prisma.user.findFirst({
     where: { roles: { has: "ADMIN" }, status: "ACTIVE" },

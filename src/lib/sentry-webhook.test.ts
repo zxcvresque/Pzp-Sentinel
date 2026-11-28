@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ query: vi.fn(), getDonation: vi.fn() }));
+const mocks = vi.hoisted(() => ({ query: vi.fn(), getDonation: vi.fn(), summary: vi.fn() }));
 vi.mock("./donor-bridge", () => ({ bridgePool: { query: mocks.query } }));
-vi.mock("./donor-bridge-donations", () => ({ getDonation: mocks.getDonation, BmcUnverifiedError: class BmcUnverifiedError extends Error {} }));
+vi.mock("./donor-bridge-donations", () => ({ getDonation: mocks.getDonation, donorDonationSummary: mocks.summary, BmcUnverifiedError: class BmcUnverifiedError extends Error {} }));
 import { drainSentryWebhooks, queueWebhookTest, webhookConfig, webhookHeaders } from "./sentry-webhook";
 import { BmcUnverifiedError } from "./donor-bridge-donations";
 // Each drain step: lease query, transaction-method lookup, then body save / delivery updates.
@@ -57,7 +57,9 @@ it.each([302, 429, 500])("retries HTTP %i with unchanged ID/body and no redirect
   vi.stubGlobal("fetch", fetcher);
   lease({ id: "retry1", transactionId: "tx1", createdAt: new Date(), attempts: 2, body });
   await drainSentryWebhooks(1);
-  expect(fetcher.mock.calls[0][1]).toMatchObject({ body, redirect: "manual" });
+  // Same event ID and frozen facts on every retry; only the donor's current state is added.
+  expect(fetcher.mock.calls[0][1]).toMatchObject({ redirect: "manual", headers: { "X-Sentinel-Event-Id": "retry1" } });
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ ...JSON.parse(body), schemaVersion: 2, sentAt: expect.any(String), donor: null });
   expect(mocks.getDonation).not.toHaveBeenCalled();
   expect(mocks.query.mock.calls[2][1].slice(0, 3)).toEqual([10, `Receiver HTTP ${status}`, "retry1"]);
 });
@@ -104,4 +106,20 @@ describe("BMC deliveries are verified publications only", () => {
     await drainSentryWebhooks(1);
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ donation: { verification: "BMC_COMPLETE_HISTORY" } });
   });
+});
+
+it("carries the donor's current summary and auto-XP, computed at send time, even on a late retry", async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetcher);
+  const body = JSON.stringify({ id: "late1", schemaVersion: 1, type: "donation.changed", transactionId: "tx1", donation: { telegramId: "900000002", state: "PAID" } });
+  lease({ id: "late1", transactionId: "tx1", createdAt: new Date("2026-11-01T00:00:00Z"), attempts: 4, body });
+  const donor = { telegramId: "900000002", autoXp: { activeUntil: "2026-12-16T00:00:00.000Z", graceUntil: "2026-12-19T00:00:00.000Z" } };
+  mocks.summary.mockResolvedValue(donor);
+  await drainSentryWebhooks(1);
+  expect(mocks.summary).toHaveBeenCalledWith("900000002");
+  const sent = fetcher.mock.calls[0][1];
+  expect(JSON.parse(sent.body)).toMatchObject({ id: "late1", schemaVersion: 2, donation: { state: "PAID" }, donor });
+  // The signature covers exactly what was sent.
+  const { "X-Sentinel-Timestamp": timestamp, "X-Sentinel-Signature": signature } = sent.headers;
+  expect(signature).toBe(`sha256=${createHmac("sha256", "x".repeat(64)).update(`${timestamp}.${sent.body}`).digest("hex")}`);
 });

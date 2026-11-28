@@ -158,6 +158,43 @@ async function reconcileHistory(payments: BmcAccountPayment[], actorId: string, 
   return { reviews, confirmed, recovered, matchedIds, contestedIds };
 }
 
+/** How long a newly recorded BMC payment may be absent from BMC's history before it is flagged. */
+export const BMC_LISTING_GRACE_MS = 60 * 60_000;
+
+const WEBHOOK_CHECK_DELAY_MS = 30_000;
+const FOLLOW_UP_DELAY_MS = 2 * 60_000;
+const MAX_FOLLOW_UPS = 5;
+let pendingCheck: ReturnType<typeof setTimeout> | null = null;
+let runningCheck: Promise<void> | null = null;
+let followUps = 0;
+
+/** Resolves when a webhook-requested check that is running now has finished (and scheduled any follow-up). */
+export function bmcHistoryCheckSettled() {
+  return runningCheck || Promise.resolve();
+}
+
+/**
+ * Check BMC history soon after BMC reports activity (a signed webhook) instead
+ * of waiting for the 15-minute schedule, so a verified payment reaches Sentry
+ * within about a minute. Bursts collapse into one check. It checks again a few
+ * times if another check held the lock or the new payment is not listed by BMC
+ * yet. The 15-minute schedule remains the backstop. Returns false if a check
+ * is already scheduled.
+ */
+export function requestBmcHistoryCheck(delayMs = WEBHOOK_CHECK_DELAY_MS) {
+  if (pendingCheck) return false;
+  pendingCheck = setTimeout(() => {
+    pendingCheck = null;
+    runningCheck = syncBmcAccountHistory().then(result => {
+      const retry = "skipped" in result || ("awaitingBmc" in result && (result.awaitingBmc ?? 0) > 0);
+      if (retry && followUps < MAX_FOLLOW_UPS) { followUps++; requestBmcHistoryCheck(FOLLOW_UP_DELAY_MS); }
+      else followUps = 0;
+    }, () => { followUps = 0; }).finally(() => { runningCheck = null; });
+  }, delayMs);
+  pendingCheck.unref?.();
+  return true;
+}
+
 /** Stored on a ledger row whose payment BMC's complete history does not contain. */
 export const NOT_IN_BMC_HISTORY = "NOT_IN_BMC_HISTORY";
 
@@ -214,9 +251,14 @@ export async function syncBmcAccountHistory() {
     // (whatever created it: webhook, history recovery or a manual entry) must be
     // a charge in BMC's complete history. Flag the rest without voiding them.
     const ledger = await prisma.transaction.findMany({ where: { method: "BMC", type: "DONATION", direction: "IN", status: "APPROVED", isTest: false, voidedAt: null },
-      select: { id: true, providerState: true } });
+      select: { id: true, providerState: true, createdAt: true } });
     const accounted = (id: string) => reconciliation.matchedIds.has(id) || reconciliation.contestedIds.has(id) || reconciliation.reviews.some(review => review.transactionId === id);
-    const missingLedger = ledger.filter(tx => !accounted(tx.id) && !/REFUND|REVERSE|DISPUTE|FAILED/i.test(tx.providerState))
+    const unaccounted = ledger.filter(tx => !accounted(tx.id) && !/REFUND|REVERSE|DISPUTE|FAILED/i.test(tx.providerState));
+    // A payment recorded moments ago (e.g. from a webhook) may not be in BMC's
+    // list yet: it is awaiting BMC, not missing. It stays unpublished meanwhile.
+    const listedBy = Date.now() - BMC_LISTING_GRACE_MS;
+    const awaitingBmc = unaccounted.filter(tx => (tx.createdAt?.getTime() ?? 0) > listedBy).length;
+    const missingLedger = unaccounted.filter(tx => (tx.createdAt?.getTime() ?? 0) <= listedBy)
       .map(tx => ({ id: `ledger:${tx.id}`, reason: "LEDGER_PAYMENT_NOT_RETURNED", transactionId: tx.id }));
     const newlyNotInBmc = await flagLedgerRowsMissingFromBmc(missingLedger.map(row => row.transactionId), ledger.filter(tx => accounted(tx.id)).map(tx => tx.id), session.connectedBy, session.generation);
     const disappeared = (old?.payments || []).filter(p => !result.payments.some(row => row.id === p.id));
@@ -248,7 +290,7 @@ export async function syncBmcAccountHistory() {
     if (gate.newlyBlocked.length || gate.failed) await notifyAdmins({ type: "SYSTEM", title: "BMC donor verification held",
       message: `${gate.newlyBlocked.length + gate.failed} donor(s) did not pass complete-history verification. Their previously verified Sentry data is unchanged; new BMC updates for them are held until the listed issues are resolved.`, actionUrl: "/admin/bmc", priority: "HIGH" });
     if (newReviews.length || reconciliation.recovered) await notifyAdmins({ type: "SYSTEM", title: "BMC history verification completed", message: `${result.payments.length} recorded payments checked. ${reconciliation.confirmed} confirmed, ${reconciliation.recovered} recovered, ${newReviews.length} new items need review.`, actionUrl: "/admin/bmc", priority: "HIGH" });
-    return { checked: result.payments.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, reviews: reviews.length, bridge };
+    return { checked: result.payments.length, confirmed: reconciliation.confirmed, recovered: reconciliation.recovered, reviews: reviews.length, bridge, awaitingBmc };
   } catch (error) {
     const failure = bmcSyncFailure(error, stage);
     const known = failure.error;

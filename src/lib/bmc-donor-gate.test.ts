@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ transaction: vi.fn(), db: {} as Record<string,
 import { evaluateBmcDonorHistory, publishVerifiedBmcDonors, type GateInput, type GateLedgerRow } from "./bmc-donor-gate";
 import type { BmcAccountPayment } from "./bmc-account-history";
 
-const USER = "user_inotproud", TG = "1934522041";
+const USER = "user_donor_a", TG = "900000001";
 function charge(supportId: string, date: string, amount = "25", extra: Partial<BmcAccountPayment> = {}): BmcAccountPayment {
   return { id: `bmc-history:${supportId}`, supportId, paymentId: `pi_${supportId}`, subscriptionId: "1", stripeSubscriptionId: "sub_one", supporterId: "9",
     amount, currency: "USD", occurredAt: date, refundStatus: "NOT_REPORTED", state: "RECORDED", evidenceSource: "BMC_RENEWAL_HISTORY", frequency: "MONTHLY", ...extra };
@@ -14,18 +14,18 @@ function row(payment: BmcAccountPayment, extra: Partial<GateLedgerRow> = {}): Ga
     providerState: "CAPTURED", fromUserId: USER, bmcPaymentConfirmed: true, bmcReviewReason: null, donationFrequency: payment.frequency,
     bmcHistorySupportId: payment.supportId, bmcHistoryPaymentId: payment.paymentId, providerPaymentId: null, bmcPaidDate: payment.occurredAt.slice(0, 10), publishedUserId: null, ...extra };
 }
-// INotProud: three real $25 charges (Aug, Sep, Nov). There was no October charge.
+// Donor A: three real $25 charges (Aug, Sep, Nov). There was no October charge.
 const paid = [charge("1", "2026-08-29T16:00:00Z"), charge("2", "2026-09-29T16:00:00Z"), charge("3", "2026-11-25T16:00:00Z")];
 const input = (over: Partial<GateInput> = {}): GateInput => ({ userId: USER, telegramId: TG, supporterIds: ["9"], payments: paid, subscriptions: [],
   rows: paid.map(payment => row(payment)), unreturnedPaymentIds: new Set(), ...over });
 const codes = (result: ReturnType<typeof evaluateBmcDonorHistory>) => result.issues.map(issue => issue.code);
 
-it("verifies INotProud's three real charges as exactly USD 75", () => {
+it("verifies Donor A's three real charges as exactly USD 75", () => {
   const result = evaluateBmcDonorHistory(input());
   expect(result).toMatchObject({ verified: true, issues: [], totals: { USD: "75" }, expectedTotals: { USD: "75" } });
   expect(result.paid).toHaveLength(3);
 });
-it("publishes INotProud's three real charges and never the phantom October credit", () => {
+it("publishes Donor A's three real charges and never the phantom October credit", () => {
   const october = row(charge("phantom", "2026-10-29T16:00:00Z"), { id: "tx_october", bmcHistorySupportId: null, bmcHistoryPaymentId: null, bmcPaymentConfirmed: false });
   const result = evaluateBmcDonorHistory(input({ rows: [...paid.map(payment => row(payment)), october] }));
   expect(result).toMatchObject({ verified: true, issues: [], totals: { USD: "75" } });
@@ -41,21 +41,21 @@ it("holds the donor when a row Sentry was already told is paid is no longer a BM
   expect(result.verified).toBe(false);
   expect(result.issues).toEqual([{ code: "LEDGER_PAYMENT_NOT_IN_BMC_HISTORY", transactionId: "tx_told" }]);
 });
-it("verifies Ryuzaki's four $6 payments even though the ledger once lacked confirmation", () => {
+it("verifies Donor B's four $6 payments even though the ledger once lacked confirmation", () => {
   const six = ["08", "09", "10", "11"].map((month, index) => charge(`r${index}`, `2026-${month}-16T00:16:27Z`, "6"));
   expect(evaluateBmcDonorHistory(input({ payments: six, rows: six.map(payment => row(payment)) }))).toMatchObject({ verified: true, totals: { USD: "24" } });
   // A missing confirmation flag holds verification; it never turns into a reversal.
   const unconfirmed = evaluateBmcDonorHistory(input({ payments: six, rows: six.map((payment, index) => row(payment, index ? {} : { bmcPaymentConfirmed: false })) }));
   expect(codes(unconfirmed)).toEqual(["LEDGER_REVIEW_PENDING"]);
 });
-it("treats Omar's enriched payment as one donation, not two", () => {
+it("treats Donor C's enriched payment as one donation, not two", () => {
   const five = charge("o1", "2026-10-02T00:00:00Z", "5", { frequency: "ONE_TIME", evidenceSource: "BMC_ONE_TIME_HISTORY" });
   const enriched = row(five, { providerPaymentId: five.paymentId, bmcHistoryPaymentId: five.paymentId });
   expect(evaluateBmcDonorHistory(input({ payments: [five], rows: [enriched] }))).toMatchObject({ verified: true, totals: { USD: "5" } });
   const duplicate = { ...enriched, id: "tx_second", bmcHistorySupportId: null, bmcHistoryPaymentId: null };
   expect(codes(evaluateBmcDonorHistory(input({ payments: [five], rows: [enriched, duplicate] })))).toEqual(["DUPLICATE_LEDGER_ROWS"]);
 });
-it("publishes Ace/Varad's two BMC charges ($2.07) and leaves the extra ledger row unpublished", () => {
+it("publishes Donor D's two BMC charges ($2.07) and leaves the extra ledger row unpublished", () => {
   const ace = [charge("a1", "2026-08-17T20:31:40Z", "1.04"), charge("a2", "2026-09-17T20:31:40Z", "1.03")];
   const extra = row(charge("a_dup", "2026-08-18T00:00:00Z", "1.04"), { id: "tx_extra_august", bmcHistorySupportId: null, bmcHistoryPaymentId: null });
   const result = evaluateBmcDonorHistory(input({ payments: ace, rows: [...ace.map(payment => row(payment)), extra] }));
@@ -133,7 +133,7 @@ function database(ledger: Array<Record<string, unknown>>, store: Store, verifica
   };
 }
 const ledgerRow = (payment: BmcAccountPayment, extra: Record<string, unknown> = {}) => ({ ...row(payment), method: "BMC", bmcEventId: `bmc_monthly_sub_one_${payment.supportId}`, bridgeDonationId: `bmc:${payment.supportId}`,
-  date: new Date(payment.occurredAt), voidReason: null, fromUser: { telegramId: TG, name: "INotProud" }, razorpayOrder: null, ...extra });
+  date: new Date(payment.occurredAt), voidReason: null, fromUser: { telegramId: TG, name: "Donor A" }, razorpayOrder: null, ...extra });
 const snapshot = (payments = paid) => ({ fetchedAt: "2026-11-28T00:00:00Z", coverage: ["MONTHLY_SUPPORT", "ONE_TIME_SUPPORT"], payments, subscriptions: [], reviews: [] });
 
 let store: Store, verifications: Map<string, Record<string, unknown>>;

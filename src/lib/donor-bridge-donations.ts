@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { bmcAccountSlug } from "./bmc-attribution";
 import type { Donation } from "./donor-bridge";
 import { donorPaymentAliases, donorPaymentIdentity } from "./donor-payment-id";
+import { computeAutoXp } from "./auto-xp";
 
 export class DonationQueryError extends Error {}
 
@@ -158,14 +159,22 @@ export async function donorDonationSummary(telegramId: string, db: SummaryClient
   // Counts are for the donor's entire history, independently of list pagination
   // and date filters. Decimal totals stay in the original currencies. BMC
   // figures come only from the donor's last verified publication.
-  const [liveTotals, liveReversed, bmcTotals, bmcReversed, unpublished, verification] = await Promise.all([
+  const [liveTotals, liveReversed, bmcTotals, bmcReversed, unpublished, verification, livePaid, bmcPaid] = await Promise.all([
     db.transaction.groupBy({ by: ["currency"], orderBy: { currency: "asc" }, where: { ...live, AND: [...live.AND, { NOT: reversed }] }, _count: { _all: true }, _sum: { amount: true } }),
     db.transaction.count({ where: { ...live, AND: [...live.AND, reversed] } }),
     db.bmcBridgePublication.groupBy({ by: ["currency"], orderBy: { currency: "asc" }, where: { telegramId, state: "PAID" }, _count: { _all: true }, _sum: { amount: true } }),
     db.bmcBridgePublication.count({ where: { telegramId, state: "REVERSED" } }),
     db.transaction.count({ where: { ...eligible(), method: "BMC", bmcBridgePublication: { is: null }, AND: [donorWhere(telegramId), { NOT: reversed }] } }),
     db.bmcDonorVerification.findFirst({ where: { user: { is: { telegramId } } }, select: { status: true, issues: true, lastAttemptAt: true, lastVerifiedAt: true, historyFetchedAt: true } }),
+    // Inputs for auto-XP: live non-BMC payments and BMC's verified publications only.
+    db.transaction.findMany({ where: { ...live, AND: [...live.AND, { NOT: reversed }] }, select: donationSelect }),
+    db.bmcBridgePublication.findMany({ where: { telegramId, state: "PAID" }, select: { payload: true } }),
   ]);
+  const xpPayments = [
+    ...livePaid.filter(row => row.method !== "BMC").map(serializeLedgerDonation),
+    ...bmcPaid.flatMap(row => row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? [row.payload as unknown as BridgeDonation] : []),
+  ].filter(donation => donation.state === "PAID" && donation.xpEligible && donation.telegramId === telegramId)
+    .map(donation => ({ id: donation.id, paymentDate: donation.paymentDate, frequency: donation.frequency, amount: donation.amount, currency: donation.currency }));
   const totals = new Map<string, { amount: Prisma.Decimal; donationCount: number }>();
   for (const row of [...liveTotals, ...bmcTotals]) {
     const total = totals.get(row.currency) || { amount: new Prisma.Decimal(0), donationCount: 0 };
@@ -185,7 +194,10 @@ export async function donorDonationSummary(telegramId: string, db: SummaryClient
       lastVerifiedAt: verification?.lastVerifiedAt?.toISOString() || null,
       lastAttemptAt: verification?.lastAttemptAt?.toISOString() || null,
       historyFetchedAt: verification?.historyFetchedAt?.toISOString() || null,
-    } };
+    },
+    // 30 days per verified payment, stacked; see auto-xp.ts. Unverified BMC
+    // payments are not counted until published, and never shorten the window.
+    autoXp: computeAutoXp(xpPayments) };
 }
 
 export async function listDonations(query: DonationQuery) {

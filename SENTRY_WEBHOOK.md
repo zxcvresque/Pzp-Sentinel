@@ -30,7 +30,7 @@ X-Sentinel-Signature: sha256=<hex HMAC>
 ```json
 {
   "id": "3bda2831-56bc-4a4c-beb2-c26b51b2a766",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "type": "donation.changed",
   "createdAt": "2026-09-12T10:00:00.000Z",
   "observedAt": "2026-09-12T10:00:03.000Z",
@@ -50,12 +50,22 @@ X-Sentinel-Signature: sha256=<hex HMAC>
     "frequency": "ONE_TIME",
     "state": "PAID",
     "lifecycle": "ACTIVE",
+    "xpEligible": true,
     "reversalReason": null
+  },
+  "sentAt": "2026-09-12T10:00:04.000Z",
+  "donor": {
+    "telegramId": "5988446905",
+    "totals": [{ "currency": "USD", "amount": "1", "donationCount": 1 }],
+    "bmcVerification": { "status": "NOT_APPLICABLE", "upToDate": false, "unpublishedCount": 0, "issues": [] },
+    "autoXp": { "activeUntil": "2026-10-12T00:00:00.000Z", "graceUntil": "2026-10-12T00:00:00.000Z", "active": true, "inGrace": false, "payments": ["…"] }
   }
 }
 ```
 
-`donation` has the same fields as the list/detail API. Manual/admin entries, Razorpay, BMC, recurring charges and recovered payments use this one outbound format. An entry first appears when it becomes an approved, positive, non-test incoming donation. Edits, provider-reference changes and donor identity corrections enqueue notifications too. Voids/refunds send `state=REVERSED` (voids also `lifecycle=VOIDED`). If a previously eligible transaction is deleted or made ineligible, the event is `donation.unavailable`, with its `transactionId` and `donation=null`.
+`donor` is that Telegram donor's **current** summary, exactly as `GET /api/sentry-bridge/donations?telegramId=…` returns it (counts, totals, `bmcVerification` and `autoXp`; see [DONOR_XP_BRIDGE.md](DONOR_XP_BRIDGE.md)). It is computed when the request is sent, not when the change happened, so even a late retry carries current facts. It is `null` when the payment has no verified Telegram ID.
+
+`donation` has the same fields as the API's `donations[]` items. Manual/admin entries, Razorpay, BMC, recurring charges and recovered payments use this one outbound format. An entry first appears when it becomes an approved, positive, non-test incoming donation. Edits, provider-reference changes and donor identity corrections enqueue notifications too. Voids/refunds send `state=REVERSED` (voids also `lifecycle=VOIDED`). If a previously eligible transaction is deleted or made ineligible, the event is `donation.unavailable`, with its `transactionId` and `donation=null`.
 
 Events are change notifications containing the current state when first prepared for delivery, not an immutable history of every intermediate payment state. Closely spaced writes may produce multiple notifications of the same final state. Queuing is atomic with the database write, including bulk operations; rollbacks leave no notification. Receipt and announcement housekeeping does not enqueue changes.
 
@@ -82,16 +92,16 @@ def verify_sentinel(raw_body: bytes, headers, signing_secret: str):
     if not hmac.compare_digest(signature, "sha256=" + digest):
         raise ValueError("Invalid webhook signature")
     event = json.loads(raw_body)
-    if event.get("schemaVersion") != 1 or event.get("id") != headers.get("x-sentinel-event-id"):
+    if event.get("schemaVersion") != 2 or event.get("id") != headers.get("x-sentinel-event-id"):
         raise ValueError("Invalid webhook envelope")
     return event
 ```
 
-Use case-insensitive HTTP header lookup (the example assumes framework-normalized headers). Return 401 for invalid signatures. Persist accepted events by unique `id` before returning a 2xx response; duplicate IDs should also return 2xx without repeating side effects. Delivery is at least once. Retries use the same body/ID but a fresh timestamp/signature. Keep the server clocks synchronized.
+Use case-insensitive HTTP header lookup (the example assumes framework-normalized headers). Return 401 for invalid signatures. Persist accepted events by unique `id` before returning a 2xx response; duplicate IDs should also return 2xx without repeating side effects. Delivery is at least once. Retries keep the same event ID and `donation`, with a fresh `sentAt`, `donor`, timestamp and signature. Keep the server clocks synchronized.
 
-Treat `webhook.test` as diagnostic only: never create a payment or award XP. Donation notifications should update/invalidate the review view; XP approval/reversal remains manual. Notifications can arrive out of order, so use `transactionId` to retrieve the latest detail before making a decision rather than allowing an older delivery to overwrite a newer payment state. The detail API remains authoritative; a missing/ineligible record returns 404 and blocks approval.
+Treat `webhook.test` as diagnostic only: never create a payment or award XP. For auto-XP, use `donor.autoXp` from the delivery with the newest `sentAt` you have seen for that Telegram ID (deliveries can arrive out of order; ignore an older `sentAt`). Re-reading `GET /api/sentry-bridge/donations?telegramId=…&limit=1` gives the same summary at any time.
 
-Sentinel accepts any 2xx as acknowledgement. Timeouts, redirects and other status codes retry after 5 seconds, exponentially increasing to at most one hour, until acknowledged. Requests time out after 10 seconds. Redirects are not followed. Delivery delays do not roll back the saved payment. The delivery table retains event IDs, attempts and errors for diagnostics. There is no automatic historical webhook replay: read the full paginated API for past payments, then use notifications and detail checks for changes.
+Sentinel accepts any 2xx as acknowledgement. Timeouts, redirects and other status codes retry after 5 seconds, exponentially increasing to at most one hour, until acknowledged. Requests time out after 10 seconds. Redirects are not followed. Delivery delays do not roll back the saved payment. The delivery table retains event IDs, attempts and errors for diagnostics. There is no automatic historical webhook replay: read the paginated API for past payments and donors, then rely on notifications plus a periodic re-read of tracked donors.
 
 ## Sentinel status and safe test URL
 
@@ -113,13 +123,12 @@ curl --fail-with-body --request POST \
   --data '{"action":"test","telegramId":"5988446905"}'
 ```
 
-The 202 response means **queued**, not delivered. Check the returned `eventId` via GET. The outbound body has `type="webhook.test"`, `transactionId=null`, `donation=null`, and a `test` object with `telegramId="5988446905"`, `amount="1"`, `currency="USD"`. This performs no charge, creates no ledger row and must award no XP. It exercises delivery, signature verification and receiver acknowledgement without changing finance totals.
+The 202 response means **queued**, not delivered. Check the returned `eventId` via GET. The outbound body has `type="webhook.test"`, `transactionId=null`, `donation=null`, a `test` object with `telegramId="5988446905"`, `amount="1"`, `currency="USD"`, and that Telegram ID's real current `donor` summary, so the receiver can test parsing `autoXp`. This performs no charge, creates no ledger row and must award no XP. It exercises delivery, signature verification and receiver acknowledgement without changing finance totals.
 
-The existing URLs continue to serve history and live verification:
+The one data API is:
 
 ```text
 GET https://sentinel.piratezparty.com/api/sentry-bridge/donations
-GET https://sentinel.piratezparty.com/api/sentry-bridge/donations/{transactionId}
 ```
 
-Razorpay/BMC inbound webhook URLs remain provider-specific. This new outbound webhook combines their ledger results with manual donations for Sentry.
+The legacy `/api/sentry-bridge/events` feed, `/api/sentry-bridge/donations/{id}` and the raw `/api/sentry-bridge/bmc/*` endpoints were removed. Razorpay/BMC inbound webhook URLs remain provider-specific; this outbound webhook combines their ledger results with manual donations for Sentry.

@@ -9,7 +9,7 @@ vi.mock("./bmc-account-history", async original => ({ ...await original<object>(
 vi.mock("./bmc-history", async original => ({ ...await original<object>(), bmcDashboardSession: mocks.session }));
 vi.mock("./bmc-donor-gate", () => ({ publishVerifiedBmcDonors: mocks.gate }));
 import { BmcHistoryError } from "./bmc-history";
-import { matchBmcHistoryPayment, readBmcHistorySnapshot, syncBmcAccountHistory } from "./bmc-history-sync";
+import { bmcHistoryCheckSettled, matchBmcHistoryPayment, readBmcHistorySnapshot, requestBmcHistoryCheck, syncBmcAccountHistory } from "./bmc-history-sync";
 import { bmcPrivatePath, writeBmcPrivate } from "./bmc-private-store";
 import type { BmcAccountPayment } from "./bmc-account-history";
 const payment: BmcAccountPayment = { id: "bmc-history:11", supportId: "11", subscriptionId: "1", paymentId: "pi_paid", amount: "6.00", currency: "USD", occurredAt: "2026-11-16T00:16:27Z", refundStatus: "NOT_REPORTED", state: "RECORDED", evidenceSource: "BMC_RENEWAL_HISTORY", supporterId: "9", stripeSubscriptionId: "sub_paid", frequency: "MONTHLY" };
@@ -28,18 +28,18 @@ beforeEach(async () => {
   }));
 });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
-it("is not made ambiguous by an already-voided duplicate (Ryuzaki, August)", () => {
+it("is not made ambiguous by an already-voided duplicate (an August renewal)", () => {
   const duplicate = { ...transaction, id: "dup", voidedAt: new Date(), providerState: "CAPTURED" };
   expect(matchBmcHistoryPayment(payment, [transaction, duplicate], "donor")).toMatchObject({ kind: "MATCH", transaction: { id: "tx1" } });
-  // Two live rows for one charge are still ambiguous: one is an extra credit (Ace, August).
+  // Two live rows for one charge are still ambiguous: one is an extra credit.
   expect(matchBmcHistoryPayment(payment, [transaction, { ...transaction, id: "extra" }], "donor")).toMatchObject({ kind: "REVIEW", reason: "AMBIGUOUS_MATCH" });
 });
-it("uses a monthly row's billing period, not its misdated date (Ace, August)", () => {
+it("uses a monthly row's billing period, not its misdated date (an August renewal)", () => {
   // BMC: $1.04 on 16 Aug 17:25. Ledger: the real August row (period 16 Aug 17:24:30) and a
   // September-period row (period 16 Sep 17:24:30) that a webhook wrongly dated 16 Aug 00:00.
-  const august = { ...payment, supportId: "15220439", paymentId: "pi_aug", amount: "1.04", occurredAt: "2026-08-16T17:25:04Z", stripeSubscriptionId: "sub_ace" };
-  const real = { ...transaction, id: "aug", amount: "1.04", date: new Date("2026-08-16T17:24:33Z"), bmcEventId: "bmc_monthly_current_sub_ace_period_1786901070" };
-  const misdated = { ...real, id: "sep_misdated", date: new Date("2026-08-16T00:00:00Z"), bmcEventId: "bmc_monthly_creator_sub_ace_period_1789579470" };
+  const august = { ...payment, supportId: "900001", paymentId: "pi_aug", amount: "1.04", occurredAt: "2026-08-16T17:25:04Z", stripeSubscriptionId: "sub_example" };
+  const real = { ...transaction, id: "aug", amount: "1.04", date: new Date("2026-08-16T17:24:33Z"), bmcEventId: "bmc_monthly_current_sub_example_period_1786901070" };
+  const misdated = { ...real, id: "sep_misdated", date: new Date("2026-08-16T00:00:00Z"), bmcEventId: "bmc_monthly_creator_sub_example_period_1789579470" };
   expect(matchBmcHistoryPayment(august, [real, misdated], "donor")).toMatchObject({ kind: "MATCH", transaction: { id: "aug" } });
 });
 it("never matches a row already claimed by a different BMC charge", () => {
@@ -169,6 +169,38 @@ it("flags on the ledger row itself any payment BMC has no record of, without voi
   expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: "BMC_HISTORY_NOT_FOUND", transactionId: "unproven-october" }) }));
   expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: "Ledger payments not in BMC records", actionUrl: "/admin/transactions?bmcRecords=NOT_IN_BMC" }));
   expect(mocks.create).not.toHaveBeenCalled();
+});
+it("does not flag a payment recorded moments ago that BMC has not listed yet", async () => {
+  mocks.history.mockResolvedValue({ subscriptions: [], payments: [], fetchedAt: new Date().toISOString(), coverage: [] });
+  mocks.ledger.mockResolvedValue([{ id: "just-paid", providerState: "CAPTURED", createdAt: new Date() }]);
+  expect(await syncBmcAccountHistory()).toMatchObject({ reviews: 0, awaitingBmc: 1 });
+  expect(mocks.update).not.toHaveBeenCalled(); expect(mocks.notify).not.toHaveBeenCalled();
+  // After an hour it is missing, not late.
+  mocks.ledger.mockResolvedValue([{ id: "just-paid", providerState: "CAPTURED", createdAt: new Date(Date.now() - 61 * 60_000) }]);
+  mocks.candidates.mockResolvedValue([{ id: "just-paid" }]);
+  expect(await syncBmcAccountHistory()).toMatchObject({ reviews: 1, awaitingBmc: 0 });
+  expect(mocks.update.mock.calls[0][0].data).toEqual({ bmcReviewReason: "NOT_IN_BMC_HISTORY" });
+});
+it("collapses webhook bursts into one check and re-checks while a new payment is not listed yet", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.ledger.mockResolvedValue([{ id: "just-paid", providerState: "CAPTURED", createdAt: new Date() }]);
+    expect(requestBmcHistoryCheck()).toBe(true);
+    expect(requestBmcHistoryCheck()).toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await bmcHistoryCheckSettled();
+    expect(mocks.history).toHaveBeenCalledTimes(1);
+    // The new payment was not listed yet, so a follow-up is already scheduled.
+    expect(requestBmcHistoryCheck()).toBe(false);
+    // BMC listed it by the follow-up: matched, so no further checks.
+    mocks.ledger.mockResolvedValue([]);
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    await bmcHistoryCheckSettled();
+    expect(mocks.history).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await bmcHistoryCheckSettled();
+    expect(mocks.history).toHaveBeenCalledTimes(2);
+  } finally { vi.useRealTimers(); }
 });
 it("clears the flag once BMC history contains the payment", async () => {
   mocks.candidates.mockResolvedValue([{ ...transaction, bmcReviewReason: "NOT_IN_BMC_HISTORY" }]);

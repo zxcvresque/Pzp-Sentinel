@@ -1,72 +1,78 @@
-# Sentinel → Sentry: manual donor XP review
+# Sentinel → Sentry: donor bridge
 
-Sentinel owns payment facts and verified Telegram identity. Sentry owns the XP ratio, reviewers, manual decisions and grant history. Every monthly charge is reviewed manually, just like a one-time donation.
+Sentinel owns payment facts and verified Telegram identity. Sentry owns XP policy (how much, minimum amounts, reviewers, grant history). Sentry uses exactly **one API** and **one webhook**:
+
+| | What | Use |
+|---|---|---|
+| API | `GET /api/sentry-bridge/donations` | Read a donor (`?telegramId=`) or page through all donations |
+| Webhook | Signed `POST` from Sentinel to Sentry's receiver ([format](SENTRY_WEBHOOK.md)) | Sentinel tells Sentry a donor changed, with that donor's current state |
+
+Removed: the legacy `/api/sentry-bridge/events` feed, `/api/sentry-bridge/donations/:id`, and the raw `/api/sentry-bridge/bmc/*` endpoints. Two utility routes remain: `/api/sentry-bridge/webhook` (delivery status and a test delivery, see [SENTRY_WEBHOOK.md](SENTRY_WEBHOOK.md)) and `POST /api/sentry-bridge/entry` (creates a one-time donate link for a Telegram ID).
 
 ## Authentication
 
-Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. Use at least 32 random bytes (64 hex characters). Send `Authorization: Bearer <SENTRY_BRIDGE_SECRET>` over HTTPS. Keep the value in environment variables, outside Git and browser code. Neither a Telegram bot token nor a JWT secret is the bridge credential. Sentry also needs `SENTINEL_URL=https://sentinel.piratezparty.com` (or the actual Sentinel origin).
+Configure the **same** server-only `SENTRY_BRIDGE_SECRET` in both deployments. Use at least 32 random bytes (64 hex characters). Send `Authorization: Bearer <SENTRY_BRIDGE_SECRET>` over HTTPS. Keep the value in environment variables, outside Git and browser code. Sentry also needs `SENTINEL_URL=https://sentinel.piratezparty.com` (or the actual Sentinel origin).
 
-## API contract
+## The API
 
-### List
+`GET /api/sentry-bridge/donations?telegramId=123456789`
 
-`GET /api/sentry-bridge/donations?state=PAID%7CREVERSED&limit=100&offset=0`
-
-- `telegramId`: optional numeric Telegram user ID. This filters by verified donor ownership, never a name, email, BMC supporter ID, or payment reference. It also returns an all-time `donor` summary (counts and separate decimal totals per currency) from the same database snapshot.
+- `telegramId`: optional numeric Telegram user ID. Filters by verified donor ownership, never a name, email, BMC supporter ID, or payment reference, and adds the `donor` summary below. Use `&limit=1` if you only need the summary.
 - `state`: `PAID`, `REVERSED`, or `PAID|REVERSED` (default: both).
-- `from` and `to`: optional ISO timestamps with explicit timezones, both inclusive. Encode `+` as `%2B` in URLs.
-- With no date filters, the API exposes the entire recorded donation history. There is no fixed start-date cutoff; `cutoff` is `null`.
-- `limit`: 1–500, default 100. `offset`: 0–2,147,483,647, default 0.
-- Fixed filters: `isTest=false`, `direction=IN`, `type=DONATION`, `status=APPROVED`, positive amount.
-- Rows are sorted by payment date ascending, then immutable transaction ID.
+- `from` and `to`: optional ISO timestamps with explicit timezones, both inclusive. Encode `+` as `%2B`.
+- `limit`: 1–500, default 100. `offset`: 0–2,147,483,647, default 0. Follow `nextOffset` until `hasMore=false`.
+- Fixed filters: `isTest=false`, `direction=IN`, `type=DONATION`, `status=APPROVED`, positive amount. Sorted by payment date, then transaction ID. No start-date cutoff (`cutoff` is `null`).
+- Responses are `Cache-Control: private, no-store`. Errors: `401` bad bearer key, `400` invalid filters, `503` read failed (retry later; never treat as a removal).
 
 ```json
 {
   "donations": [{
-    "id": "razorpay:pay_example",
-    "provider": "razorpay",
-    "paymentId": "pay_example",
-    "transactionId": "sentinel_transaction_id",
-    "telegramId": "123456789",
-    "donorKey": "telegram:123456789",
-    "idempotencyKey": "sentinel:transaction:sentinel_transaction_id",
-    "aliases": ["razorpay:pay_example"],
-    "paymentDate": "2026-09-01",
-    "paymentDateTimeZone": "UTC",
-    "name": "Example donor",
-    "amount": "100",
-    "currency": "INR",
-    "inrEstimate": "100",
-    "fxRate": "1",
-    "frequency": "MONTHLY",
-    "occurredAt": "2026-09-01T00:00:00.000Z",
-    "state": "PAID",
-    "lifecycle": "ACTIVE",
-    "reversalReason": null
+    "id": "bmc:pi_example", "provider": "bmc", "paymentId": "pi_example",
+    "transactionId": "sentinel_transaction_id", "telegramId": "123456789",
+    "donorKey": "telegram:123456789", "idempotencyKey": "sentinel:transaction:sentinel_transaction_id",
+    "aliases": ["bmc:pi_example"], "name": "Example donor",
+    "amount": "6", "currency": "USD", "inrEstimate": null, "fxRate": null,
+    "occurredAt": "2026-11-16T01:18:37.000Z", "paymentDate": "2026-11-16", "paymentDateTimeZone": "UTC",
+    "frequency": "MONTHLY", "state": "PAID", "lifecycle": "ACTIVE",
+    "paymentConfirmed": true, "verificationStatus": "CONFIRMED", "xpEligible": true,
+    "reviewReason": null, "reversalReason": null, "verification": "BMC_COMPLETE_HISTORY"
   }],
-  "limit": 100,
-  "offset": 0,
-  "hasMore": false,
-  "nextOffset": null,
-  "cutoff": null
+  "donor": {
+    "telegramId": "123456789", "donorKey": "telegram:123456789",
+    "donationCount": 4, "reviewCount": 0, "reversedCount": 0,
+    "totals": [{ "currency": "USD", "amount": "24", "donationCount": 4 }],
+    "bmcVerification": { "status": "VERIFIED", "upToDate": true, "unpublishedCount": 0, "issues": [],
+      "lastVerifiedAt": "2026-11-28T09:00:00.000Z", "lastAttemptAt": "2026-11-28T09:00:00.000Z", "historyFetchedAt": "2026-11-28T08:59:58.000Z" },
+    "autoXp": {
+      "rule": "30_DAYS_PER_PAYMENT_STACKED_V1", "daysPerPayment": 30, "monthlyGraceDays": 3,
+      "activeUntil": "2026-12-16T00:00:00.000Z", "graceUntil": "2026-12-19T00:00:00.000Z",
+      "active": true, "inGrace": false,
+      "payments": [{ "id": "bmc:pi_example", "paymentDate": "2026-11-16", "frequency": "MONTHLY", "amount": "6", "currency": "USD" }]
+    }
+  },
+  "limit": 100, "offset": 0, "hasMore": false, "nextOffset": null, "cutoff": null
 }
 ```
 
-Amounts and rates are decimal strings; Telegram IDs are strings or null. Names are display labels, never proof of identity. IDs match the canonical format in Sentinel's CSV export and legacy feed. Unmatched users stay held. Voids, refunds (including partial refunds), reversals and disputes return `REVERSED`; voids also return `lifecycle=VOIDED` and their reason.
+Amounts are decimal strings in the currency Sentinel received (BMC: the USD amount BMC credited, e.g. ₹2,500 → `25.85` USD). Names are display labels, never proof of identity. Voids, refunds, reversals and disputes return `state=REVERSED` (voids also `lifecycle=VOIDED`) with `reversalReason`. USD rows have `inrEstimate=null`; `GET /api/exchange-rate` returns the current INR-per-USD rate if Sentry needs an estimate.
 
-USD rows have `inrEstimate=null` and `fxRate=null`: the ledger has no saved historical FX rate. **GET `/api/exchange-rate` remains available**, returning `rate` (INR per USD), `updatedAt`, and optionally `stale`. Sentry resolves an estimate on demand and saves it with the grant. Missing FX blocks approval. This estimate is not a historical settlement rate or actual provider net proceeds.
+### `donor.autoXp`
 
-Each list request performs one bounded ledger-page query. When `telegramId` is supplied, currency aggregates and review/reversal counts are also read in a repeatable-read transaction, so the page and donor summary describe the same snapshot. It does not refresh the event feed, call providers, write bridge tables or drain history. Records edited between pages can shift offsets; refresh to restart. Sentry filters already reviewed donation/transaction IDs locally, so pages can be sparse; `hasMore`/`nextOffset` still work.
+Computed by Sentinel from the donor's **verified, XP-eligible** payments only (`state=PAID`, `xpEligible=true`; BMC only after complete-history verification):
 
-Follow `nextOffset` until `hasMore=false` to read all historical records. Existing verified Razorpay/BMC webhooks and admin-approved manual entries update Sentinel's ledger, and subsequent API reads immediately reflect saved additions, corrections and reversals. Sentinel can also deliver signed HTTPS notifications to a Sentry-hosted receiver; see [outbound webhook setup and contract](SENTRY_WEBHOOK.md). There is no second payment intake endpoint. A date-filtered recent-payment query alone cannot discover reversals of older payments; recheck previously awarded IDs through the detail endpoint. These APIs expose each payment's current state, not an append-only revision log. Display dates in Sentinel use DD/MM/YYYY; API timestamps remain ISO 8601.
+- each payment grants 30 days; a payment made before the window ends adds 30 days to it, otherwise a new window starts on its `paymentDate` (UTC day);
+- if the latest payment is monthly, auto-XP stays on for 3 more days (`graceUntil`) so a renewal charged a day or two late (31-day months, retries) causes no gap;
+- `active` = now < `graceUntil`; `inGrace` = between `activeUntil` and `graceUntil`. Both ends are exclusive UTC instants;
+- it depends only on the payments, so it is identical however often it is read, and a late BMC verification never shortens the donor's time (it counts from the payment date);
+- `payments` lists exactly what was counted, oldest first. Sentry policy such as a minimum amount is Sentry's: filter `payments` and re-run the same rule. Sentinel applies no minimum.
 
-### Single-payment live verification
+## What Sentry should do
 
-`GET /api/sentry-bridge/donations/razorpay%3Apay_example`
-
-Returns `{ "donation": { ...same fields... } }`. The path accepts a pinned donation ID, immutable `transactionId`, or a known BMC alias (original webhook or history payment/support reference). Aliases resolve to the same donation and are never extra donation records. Sentry uses the saved transaction ID to check a previous award even if its provider reference changed.
-
-Both routes return `Cache-Control: private, no-store`. Errors: `401` missing/incorrect bearer key, `400` invalid list filters, `404` missing or currently ineligible payment, `503` failed read, or `503` with `code: "BMC_HISTORY_UNVERIFIED"` for a BMC payment whose donor has not yet passed complete-history verification (see the gate section). A `404` blocks new approval; a previous award can be inspected for manual reversal.
+1. On every webhook: verify the signature, then use its `donor` (current state, including `autoXp`). If you prefer, fetch `GET /donations?telegramId=…&limit=1` instead; it returns the same summary.
+2. Every hour or so, re-read the donors you track (`?telegramId=…&limit=1`) so a missed webhook fixes itself.
+3. Auto-XP is on while now < `autoXp.graceUntil`. No webhook is needed for expiry.
+4. Never shorten anything because a donation is missing, a request failed (503), or `bmcVerification.status` is `BLOCKED`/`UNVERIFIED`. A refund or void arrives explicitly as `state=REVERSED` and is already reflected in `autoXp`.
+5. Whether XP already claimed is taken back after a refund is Sentry's policy.
 
 ## BMC complete-history verification gate
 
@@ -86,12 +92,10 @@ If all checks pass, the donor's rows are written to `BmcBridgePublication` in **
 
 What Sentry sees for BMC:
 
-- **List** (`/donations`): only published BMC records, filtered on their published facts. Unpublished BMC rows are absent. Razorpay/manual rows are unchanged (live ledger).
+- **API** (`/donations`): only published BMC records. Unpublished BMC rows are absent from the list, the totals and `autoXp`. Razorpay/manual rows come from the live ledger.
 - **Amounts** are what BMC credited, in the account currency (USD). A supporter paying ₹2,500.00 is published as USD 25.85, the same figure BMC's dashboard shows after the arrow. Sentinel's own pages also show what the supporter paid (`bmcSupporterAmount`/`bmcSupporterCurrency`, display only).
-- **Donor summary** (`telegramId=`): totals and counts combine live non-BMC rows with published BMC records. `reviewCount` is the number of this donor's BMC ledger payments not yet published. `bmcVerification` = `{ status: VERIFIED | BLOCKED | UNVERIFIED | NOT_APPLICABLE, upToDate, unpublishedCount, issues[], lastVerifiedAt, lastAttemptAt, historyFetchedAt }`.
-- **Detail** (`/donations/:id`): the frozen published record, even if the ledger row changed since. An approved but unpublished BMC payment returns **503 `{ code: "BMC_HISTORY_UNVERIFIED" }`**, never 404 or REVERSED. Sentry must treat it like a temporary lookup failure: no award, no deduction.
-- **Webhooks**: BMC ledger writes no longer enqueue anything. Only an insert or a changed fingerprint in `BmcBridgePublication` enqueues a delivery (database trigger, same transaction). Unchanged re-verifications enqueue nothing. Undelivered BMC deliveries queued before the gate are marked `supersededAt` during the upgrade and never sent.
-- **Legacy `/events` feed**: BMC events come only from publications.
+- **Donor summary** (`telegramId=`): totals, counts and `autoXp` combine live non-BMC rows with published BMC records. `reviewCount` is the number of this donor's BMC ledger payments not yet published. `bmcVerification` = `{ status: VERIFIED | BLOCKED | UNVERIFIED | NOT_APPLICABLE, upToDate, unpublishedCount, issues[], lastVerifiedAt, lastAttemptAt, historyFetchedAt }`.
+- **Webhook**: BMC ledger writes enqueue nothing. Only an insert or a changed fingerprint in `BmcBridgePublication` enqueues a delivery (database trigger, same transaction). Unchanged re-verifications enqueue nothing. A signed BMC webhook makes Sentinel check BMC history about 30 seconds later (re-checking every 2 minutes, up to 5 times, while a just-recorded payment is not yet listed), so a verified BMC payment usually reaches Sentry within a minute or two; the 15-minute check is the backstop. A just-recorded payment is not flagged "Not in BMC records" until it has been missing from BMC's history for an hour.
 
 Right after deployment nothing BMC is published until the first successful check (automatic within 15 minutes, or **Check history now**).
 
@@ -117,7 +121,7 @@ List, detail and legacy-feed responses separate ledger state from evidence. Only
 
 Sentry must require both `state=PAID` and `xpEligible=true` before a new award. `REQUIRES_REVIEW` must never deduct existing XP or convert a previous grant into a reversal. Keep the original transaction identity when reviewing corrections. This consumer check must also be implemented in Sentry; adding fields to Sentinel alone does not enforce its award policy. Existing incorrect XP reversals require an audited restoration in Sentry, without duplicating an award.
 
-The [private BMC account-history integration](BMC_HISTORY_API.md) adds authenticated discovery at `/api/sentry-bridge/bmc/subscriptions` and the latest complete all-time monthly/one-time support snapshot at `/api/sentry-bridge/bmc/history`. Subscription lifecycle is separate from payment evidence: explicit cancellation/pause flags report `ACTIVE`, `PAUSED`, `CANCELLING` or `CANCELLED`; cancellation never reverses earlier paid charges. The admin connects or renews its encrypted account session inside Sentinel’s mobile/desktop website by pasting a session copied with the local Helium extractor. Checks run every 15 minutes while the bot is online and audit evidence-backed confirmations/recoveries. Ambiguous matches and explicit refunds go to review; outages/missing records retain prior evidence and never trigger automatic XP deductions. This history API is evidence, not a replacement for donation-bridge award eligibility.
+The [private BMC account-history integration](BMC_HISTORY_API.md) keeps BMC's raw history inside Sentinel (Sentry reads only verified publications). Subscription lifecycle is separate from payment evidence: explicit cancellation/pause flags report `ACTIVE`, `PAUSED`, `CANCELLING` or `CANCELLED`; cancellation never reverses earlier paid charges. The admin connects or renews its encrypted account session inside Sentinel’s mobile/desktop website by pasting a session copied with the local Helium extractor. Checks run every 15 minutes while the bot is online and audit evidence-backed confirmations/recoveries. Ambiguous matches and explicit refunds go to review; outages/missing records retain prior evidence and never trigger automatic XP deductions. This history API is evidence, not a replacement for donation-bridge award eligibility.
 
 An operator can preview and apply exact ledger corrections with:
 
@@ -158,7 +162,7 @@ Sentry: `python -B -m unittest discover -s donor_xp -t . -q` and `node --check w
 
 Tests use temporary SQLite databases, fake Sentinel responses and mocked Telegram delivery. They do not contact production.
 
-After upgrading the VPS, run `npx tsx scripts/verify-donation-ledger.ts 604642404` with `SENTINEL_URL` and `SENTRY_BRIDGE_SECRET` configured there. This read-only check traverses all pages, checks that no cutoff/caching remains and verifies matching payments through the live detail API. It reports when the user has no eligible payment; it never fabricates a payment or grants XP.
+After upgrading the VPS, run `npx tsx scripts/verify-donation-ledger.ts 604642404` with `SENTINEL_URL` and `SENTRY_BRIDGE_SECRET` configured there. This read-only check traverses all pages, checks that no cutoff/caching remains, and checks that `donor.autoXp` counts exactly the listed XP-eligible payments. It reports when the user has no eligible payment; it never fabricates a payment or grants XP.
 
 ## Telegram identity and repeat checks
 

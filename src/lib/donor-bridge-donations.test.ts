@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mocks, client } = vi.hoisted(() => {
-  const mocks = { findMany: vi.fn(), groupBy: vi.fn(), count: vi.fn(), transaction: vi.fn(), pubGroupBy: vi.fn(), pubCount: vi.fn(), verification: vi.fn() };
+  const mocks = { findMany: vi.fn(), groupBy: vi.fn(), count: vi.fn(), transaction: vi.fn(), pubGroupBy: vi.fn(), pubCount: vi.fn(), pubFindMany: vi.fn(), verification: vi.fn() };
   const client = () => ({ transaction: { findMany: mocks.findMany, groupBy: mocks.groupBy, count: mocks.count },
-    bmcBridgePublication: { groupBy: mocks.pubGroupBy, count: mocks.pubCount }, bmcDonorVerification: { findFirst: mocks.verification } });
+    bmcBridgePublication: { groupBy: mocks.pubGroupBy, count: mocks.pubCount, findMany: mocks.pubFindMany }, bmcDonorVerification: { findFirst: mocks.verification } });
   return { mocks, client };
 });
 vi.mock("./db", () => ({ prisma: { ...client(), $transaction: mocks.transaction } }));
@@ -22,7 +22,7 @@ function published(ledger: Record<string, unknown>, verdict: Parameters<typeof p
 }
 beforeEach(() => {
   vi.clearAllMocks(); mocks.findMany.mockResolvedValue([]);
-  mocks.groupBy.mockResolvedValue([]); mocks.pubGroupBy.mockResolvedValue([]); mocks.count.mockResolvedValue(0); mocks.pubCount.mockResolvedValue(0); mocks.verification.mockResolvedValue(null);
+  mocks.groupBy.mockResolvedValue([]); mocks.pubGroupBy.mockResolvedValue([]); mocks.count.mockResolvedValue(0); mocks.pubCount.mockResolvedValue(0); mocks.pubFindMany.mockResolvedValue([]); mocks.verification.mockResolvedValue(null);
   mocks.transaction.mockImplementation(async run => run(client()));
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -139,6 +139,24 @@ it("groups a Telegram donor independently of display names and provider referenc
   expect(where).not.toMatch(/Omar|Changed name|providerPaymentId/);
   expect(mocks.groupBy.mock.calls[0][0].where).not.toHaveProperty("date");
   expect(mocks.pubGroupBy.mock.calls[0][0].where).toEqual({ telegramId: "574705248", state: "PAID" });
+});
+it("serves the auto-XP window from verified, XP-eligible payments only", async () => {
+  const tg = { telegramId: "900000002", name: "Monthly donor" };
+  const bmc = (id: string, paidOn: string) => publicationPayload({ ...row, id, method: "BMC", currency: "USD", amount: { toString: () => "6" }, providerPaymentId: `pi_${id}`, fromUser: tg, bmcPaymentConfirmed: true } as never, { kind: "PAID", paidOn });
+  const listRow = { ...row, id: "list-only", fromUser: tg };
+  // Ledger read for auto-XP: a paid Razorpay donation, a refunded one, and a BMC row (never counted live).
+  mocks.findMany.mockResolvedValueOnce([listRow]).mockResolvedValueOnce([
+    { ...row, id: "rzp", date: new Date("2026-11-20T10:00:00Z"), donationFrequency: "ONE_TIME", fromUser: tg },
+    { ...row, id: "refunded", providerState: "REFUNDED", fromUser: tg },
+    { ...row, id: "bmc-unverified", method: "BMC", bmcPaymentConfirmed: true, fromUser: tg },
+  ]);
+  mocks.pubFindMany.mockResolvedValue([{ payload: bmc("aug", "2026-08-16") }, { payload: bmc("nov", "2026-11-16") }]);
+  const { donor } = await listDonations(parseDonationQuery(new URLSearchParams("telegramId=900000002&limit=1")));
+  expect(donor?.autoXp.payments.map(payment => payment.paymentDate)).toEqual(["2026-08-16", "2026-11-16", "2026-11-20"]);
+  // 16 Nov opens a new window (Aug's ran out); 20 Nov is before its end, so +30 days.
+  expect(donor?.autoXp).toMatchObject({ rule: "30_DAYS_PER_PAYMENT_STACKED_V1", activeUntil: "2027-01-15T00:00:00.000Z", graceUntil: "2027-01-15T00:00:00.000Z" });
+  expect(donor?.autoXp.payments[0]).toEqual({ id: expect.stringMatching(/^bmc:/), paymentDate: "2026-08-16", frequency: "MONTHLY", amount: "6", currency: "USD" });
+  expect(mocks.pubFindMany.mock.calls[0][0].where).toEqual({ telegramId: "900000002", state: "PAID" });
 });
 it.each(["abc", "0", "-123", "123.4", "", "123456789012345678901"])("rejects malformed Telegram ID %s", telegramId => {
   expect(() => parseDonationQuery(new URLSearchParams({ telegramId }))).toThrow("telegramId");

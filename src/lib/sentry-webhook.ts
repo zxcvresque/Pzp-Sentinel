@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { bridgePool } from "./donor-bridge";
-import { BmcUnverifiedError, getDonation } from "./donor-bridge-donations";
+import { BmcUnverifiedError, donorDonationSummary, getDonation } from "./donor-bridge-donations";
 
 type Delivery = {
   id: string; transactionId: string | null; body: string | null;
@@ -34,7 +34,7 @@ export function webhookHeaders(body: string, eventId: string, secret: string, ti
 export async function queueWebhookTest(telegramId: string | null) {
   const id = randomUUID();
   const body = JSON.stringify({
-    id, schemaVersion: 1, type: "webhook.test", createdAt: new Date().toISOString(),
+    id, schemaVersion: 2, type: "webhook.test", createdAt: new Date().toISOString(),
     transactionId: null, donation: null,
     test: { telegramId, amount: "1", currency: "USD", message: "Delivery test only; no payment occurred and no XP should be awarded." },
   });
@@ -80,7 +80,7 @@ export async function drainSentryWebhooks(limit = 20) {
           // Removal of an unpublished BMC row is not a payment correction.
           if (method === "BMC" && !donation) { await supersede("Superseded: BMC payment not published"); continue; }
           body = JSON.stringify({
-            id: job.id, schemaVersion: 1, type: donation ? "donation.changed" : "donation.unavailable",
+            id: job.id, schemaVersion: 2, type: donation ? "donation.changed" : "donation.unavailable",
             createdAt: job.createdAt.toISOString(), observedAt: new Date().toISOString(),
             transactionId: job.transactionId, donation,
           });
@@ -88,8 +88,14 @@ export async function drainSentryWebhooks(limit = 20) {
           const saved = await bridgePool.query('UPDATE "SentryWebhookDelivery" SET body = $1 WHERE id = $2 AND lease = $3', [body, job.id, lease]);
           if (saved.rowCount !== 1) continue;
         }
+        // The donor's current state (totals, BMC verification, auto-XP) is
+        // computed at send time, so even a late retry carries current facts.
+        // The event ID and the donation record stay as first observed.
+        const frozen = JSON.parse(body) as { donation?: { telegramId?: string | null } | null; test?: { telegramId?: string | null } };
+        const telegramId = frozen.donation?.telegramId || frozen.test?.telegramId || null;
+        const sent = JSON.stringify({ ...frozen, schemaVersion: 2, sentAt: new Date().toISOString(), donor: telegramId ? await donorDonationSummary(telegramId) : null });
         const response = await fetch(config.url, {
-          method: "POST", headers: webhookHeaders(body, job.id, config.secret), body,
+          method: "POST", headers: webhookHeaders(sent, job.id, config.secret), body: sent,
           redirect: "manual", signal: AbortSignal.timeout(10_000),
         });
         await response.body?.cancel();
